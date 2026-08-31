@@ -14,6 +14,39 @@ from kira.money import Money
 DEMO_DATE = date(2026, 9, 3)
 
 
+def place_from_record(record: dict) -> Place:
+    """One stored record as the planner's Place.
+
+    The single place a line of the data file becomes an object, so the shape
+    the file is allowed to have is stated once. Every field added since the
+    first version is read with a default: the generator is run by hand and a
+    checkout can be carrying a file written before the field existed, which
+    must load rather than raise.
+    """
+    return Place(
+        record["id"],
+        record["name"],
+        record["kind"],
+        record["lat"],
+        record["lng"],
+        # Estimates are stored as whole sen, so they stay integer money the
+        # whole way in -- no float ever touches this path.
+        Money(record["estimate_sen"]),
+        record["confidence"],
+        record["halal"],
+        record["note"],
+        record["address"],
+        # Every cuisine OSM states for the place, display kind first. A
+        # record from before the field existed carries none, and Place
+        # reads that as the one kind it shows.
+        tuple(record.get("kinds") or ()),
+        # What a model believes the place also serves. Absent from every record
+        # in a file generated with no model to ask, which reads as the empty
+        # tuple -- nothing is believed about anywhere, which is exactly true.
+        tuple(record.get("also_serves") or ()),
+    )
+
+
 def _load_kl_places() -> tuple[Place, ...]:
     """Read the curated KL set that ships inside the package.
 
@@ -26,27 +59,7 @@ def _load_kl_places() -> tuple[Place, ...]:
     raw = json.loads(
         (files("kira.adapters") / "data" / "kl_places.json").read_text(encoding="utf-8")
     )
-    return tuple(
-        Place(
-            record["id"],
-            record["name"],
-            record["kind"],
-            record["lat"],
-            record["lng"],
-            # Estimates are stored as whole sen, so they stay integer money the
-            # whole way in -- no float ever touches this path.
-            Money(record["estimate_sen"]),
-            record["confidence"],
-            record["halal"],
-            record["note"],
-            record["address"],
-            # Every cuisine OSM states for the place, display kind first. A
-            # record from before the field existed carries none, and Place
-            # reads that as the one kind it shows.
-            tuple(record.get("kinds") or ()),
-        )
-        for record in raw["places"]
-    )
+    return tuple(place_from_record(record) for record in raw["places"])
 
 
 # Places APIs expose a price band, not menu prices. These estimates are curated
