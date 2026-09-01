@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from kira.agent.tools import (
     capture,
+    chat,
     commitments,
     dashboard,
     day_plan,
@@ -32,6 +33,7 @@ from kira.agent.tools.spec import (
 )
 
 MODULES = (
+    chat,
     dashboard,
     ledger,
     goals,

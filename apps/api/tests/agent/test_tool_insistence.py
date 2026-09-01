@@ -153,6 +153,21 @@ class TestTurnsThatAreNotAboutPlaces:
         # And with nothing to speak from, the honest refusal still stands.
         assert result.answer == NOTHING_RAN
 
+    async def test_a_greeting_overrides_an_unneeded_financial_tool_call(
+        self, session, butler, today
+    ):
+        result = await ask(
+            session,
+            butler,
+            today,
+            "Hello",
+            scripted_factory(("calculate_safe_to_spend", {})),
+        )
+
+        assert result.tools_used == ["just_talk"]
+        assert result.evidence == []
+        assert result.answer != NOTHING_RAN
+
     async def test_a_question_naming_an_amount_stays_a_question_about_money(
         self, session, butler, today, place_world
     ):
@@ -454,6 +469,30 @@ class TestWhatTheNodeItselfReturns:
             self.RUNTIME,
         )
         assert added == {}
+
+    async def test_a_combined_dinner_question_hands_the_measured_cost_to_goals(self):
+        planned = ToolMessage(
+            content=(
+                '{"recommendation": {"id": "place-1", "name": "Kopi Kaki", '
+                '"total_sen": 1450}}'
+            ),
+            name="start_day_planning",
+            tool_call_id="t1",
+        )
+        added = await insist_node.insist(
+            self.state(
+                "Somewhere cheap for dinner — and does it hurt my house goal?",
+                planned,
+                AIMessage(id="a2", content=""),
+            ),
+            self.RUNTIME,
+        )
+
+        (message,) = added["messages"]
+        (call,) = message.tool_calls
+        assert call["name"] == "start_goal_planning"
+        assert call["args"]["action"] == "impact"
+        assert call["args"]["proposed_spend_sen"] == 1450
 
     @pytest.mark.parametrize(
         "text",

@@ -231,6 +231,12 @@ def route_after_tools(state: ButlerState) -> str:
     stops the loop on the iteration cap or the wall-clock budget, and a pass
     with nothing left to ask proposes no call and falls through to compose.
     """
+    # ``just_talk`` is the explicit end to a conversational turn. It gives the
+    # composer permission to speak warmly without evidence, and there is no
+    # reason to spend a second model pass deciding whether a greeting needs a
+    # balance after all.
+    if "just_talk" in (state.get("tools_used") or []):
+        return "compose"
     if state.get("pending_workflow"):
         return "workflow"
     if state.get("pending_write"):

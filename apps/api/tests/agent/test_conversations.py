@@ -152,6 +152,38 @@ class TestBills:
         assert "Rent · protected" in labels(result)
 
 
+class TestOrdinaryConversation:
+    async def test_a_greeting_is_an_explicit_warm_turn(self, session, butler, today):
+        result = await ask(session, butler, today, "Hi")
+
+        assert result.tools_used == ["just_talk"]
+        assert result.evidence == []
+        assert result.answer.strip()
+        assert "RM" not in result.answer
+        assert "didn't look anything up" not in result.answer
+
+    async def test_a_greeting_with_a_financial_question_is_not_downgraded_to_chat(
+        self, session, butler, today
+    ):
+        result = await ask(session, butler, today, "Hi, what is my balance?")
+
+        assert "just_talk" not in result.tools_used
+        assert result.evidence
+
+
+class TestCompoundSpecialistTurns:
+    async def test_dinner_cost_is_checked_against_the_house_goal(self, session, butler, today):
+        result = await ask(
+            session,
+            butler,
+            today,
+            "Somewhere cheap for dinner — and does it hurt my house goal?",
+        )
+
+        assert result.tools_used == ["start_day_planning", "start_goal_planning"]
+        assert any(label == "Cheapest nearby" for label, _ in result.evidence)
+
+
 class TestEvidenceIsRecordedNotClaimed:
     async def test_every_row_came_from_a_tool_that_ran(self, session, butler, today):
         result = await ask(session, butler, today, "Where do I stand today?")

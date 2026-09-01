@@ -90,6 +90,7 @@ def build_graph(checkpointer: BaseCheckpointSaver | None = None):
             "approval": "approval",
             "workflow": "delegate",
             "agent": "agent",
+            "compose": "compose",
         },
     )
     # A specialist reports and the Butler reads the report — except where it

@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import uuid
 from contextlib import asynccontextmanager
 
 import pytest
+from sqlalchemy import select
 
 from kira.api.deps import stream_session_factory
+from kira.api.routers import butler as butler_router
+from kira.api.schemas import ButlerAskRequest
+from kira.db.models import User
 from kira.seed.demo import DEMO_EMAIL, DEMO_PASSWORD, seed_demo_user
 
 
@@ -113,6 +119,62 @@ class TestAsking:
         assert "inspect_attachment" in stream[-1]["tools_used"]
         body = (await butler_client.get("/v1/butler/thread")).json()
         assert body["messages"][0]["attachment"]["merchant"] == "Nasi Kandar Pelita"
+
+    async def test_overlapping_requests_are_persisted_in_turn_order(
+        self, butler_client, session, monkeypatch
+    ):
+        """A slow first turn cannot be filed underneath the next user message."""
+        app = butler_client._transport.app
+        factory = app.dependency_overrides[stream_session_factory]()
+        user = (await session.execute(select(User))).scalar_one()
+        thread_id = (await butler_client.get("/v1/butler/thread")).json()["id"]
+
+        first_started = asyncio.Event()
+        release_first = asyncio.Event()
+
+        async def delayed_stream(*_, text, **__):
+            if text == "first":
+                first_started.set()
+                await release_first.wait()
+            yield {
+                "type": "done",
+                "answer": f"answer to {text}",
+                "evidence": [],
+                "tools_used": [],
+            }
+
+        async def collect(source):
+            return [event async for event in source]
+
+        monkeypatch.setattr(butler_router, "stream_turn", delayed_stream)
+        first = asyncio.create_task(
+            collect(
+                butler_router._run(
+                    factory, user.id, uuid.UUID(thread_id), ButlerAskRequest(text="first")
+                )
+            )
+        )
+        await first_started.wait()
+        second = asyncio.create_task(
+            collect(
+                butler_router._run(
+                    factory, user.id, uuid.UUID(thread_id), ButlerAskRequest(text="second")
+                )
+            )
+        )
+        await asyncio.sleep(0)
+        assert not second.done()
+
+        release_first.set()
+        await asyncio.gather(first, second)
+
+        messages = (await butler_client.get("/v1/butler/thread")).json()["messages"]
+        assert [(message["role"], message["content"]) for message in messages] == [
+            ("user", "first"),
+            ("kira", "answer to first"),
+            ("user", "second"),
+            ("kira", "answer to second"),
+        ]
 
 
 class TestMemories:

@@ -20,6 +20,8 @@ FALLBACK = (
     "The numbers above are still live and correct — they come from your ledger, not from it."
 )
 
+CHAT_FALLBACK = "Hey — what would you like to look at?"
+
 # Said when no tool ran, in place of an answer nothing can vouch for.
 NOTHING_RAN = (
     "I didn't look anything up for that, so I'd rather not answer it from memory.\n"
@@ -53,10 +55,15 @@ def _evidence_block(rows: list[list[str]]) -> str:
 async def compose(state: ButlerState, runtime: Runtime[ButlerContext]) -> dict:
     events.emit(runtime, events.THINKING, text="Putting it in words")
     evidence = state.get("evidence") or []
+    conversation_turn = "just_talk" in (state.get("tools_used") or [])
     system = SystemMessage(
         prompt.composing_prompt(
-            context=state.get("context_block", ""),
-            memory=state.get("memory_block", ""),
+            # A conversational turn must not see the snapshot it intentionally
+            # chose not to read. Otherwise a greeting can repeat a balance the
+            # model happened to notice in the context, which is a dashboard in
+            # a friendlier voice rather than conversation.
+            context="" if conversation_turn else state.get("context_block", ""),
+            memory="" if conversation_turn else state.get("memory_block", ""),
             # Withheld when nothing ran. Asked the same question twice, the model
             # read the places and prices out of its own earlier reply and wrote
             # them again having called nothing — prose that looked right above a
@@ -67,7 +74,7 @@ async def compose(state: ButlerState, runtime: Runtime[ButlerContext]) -> dict:
             # reasoning turn still sees the whole history, so "add the second
             # one" still knows which one that was.
             history=state.get("history_block", "") if evidence else "",
-            attachment=state.get("attachment_block", ""),
+            attachment="" if conversation_turn else state.get("attachment_block", ""),
             evidence=_evidence_block(evidence),
         )
     )
@@ -105,6 +112,18 @@ async def compose(state: ButlerState, runtime: Runtime[ButlerContext]) -> dict:
     #
     # So the turn says the one true thing available: it does not know yet.
     if not evidence:
+        if conversation_turn:
+            # `just_talk` is an explicit decision, not a missing lookup. It
+            # earns a normal composing call, with no financial facts in scope.
+            model = _model(runtime, None, "")
+            answer = await _stream(runtime, model, conversation)
+            if not answer.strip():
+                offline = OfflineChatModel()
+                answer = await _stream(runtime, offline, conversation)
+            if not answer.strip():
+                answer = CHAT_FALLBACK
+                events.emit(runtime, events.TOKEN, text=answer)
+            return {"answer": answer, "messages": [AIMessage(content=answer)]}
         # One turn runs no tool and is still not a guess. "I bought lunch at the
         # mamak" is spending with the amount left out, and the honest reply is to
         # ask for the figure — which is the one thing the rule above protects,

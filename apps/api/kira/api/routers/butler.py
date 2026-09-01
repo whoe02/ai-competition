@@ -7,6 +7,7 @@ is the wrong thing to show. It is a POST with a bearer header, which
 
 from __future__ import annotations
 
+import asyncio
 import json
 import uuid
 from collections.abc import AsyncIterator
@@ -36,6 +37,21 @@ from kira.services.audit import ACTOR_USER, record
 from kira.services.clock import today_for
 
 router = APIRouter(prefix="/v1/butler", tags=["butler"])
+
+# A thread is a conversation, not a mailbox. Two overlapping streams used to
+# append both user messages before either answer finished, so a slow reply was
+# stored underneath the next thing the person said. The app runs one ASGI
+# process; this lock makes its turns FIFO and keeps the durable transcript in
+# the same order the person experienced it.
+_thread_turn_locks: dict[uuid.UUID, asyncio.Lock] = {}
+
+
+def _turn_lock(thread_id: uuid.UUID) -> asyncio.Lock:
+    lock = _thread_turn_locks.get(thread_id)
+    if lock is None:
+        lock = asyncio.Lock()
+        _thread_turn_locks[thread_id] = lock
+    return lock
 
 NO_THREAD = HTTPException(status.HTTP_404_NOT_FOUND, "No such conversation")
 NO_APPROVAL = HTTPException(status.HTTP_404_NOT_FOUND, "No such approval")
@@ -133,6 +149,18 @@ async def post_default_message(
 
 
 async def _run(
+    factory: SessionFactory,
+    user_id: uuid.UUID,
+    thread_id: uuid.UUID,
+    body: ButlerAskRequest,
+) -> AsyncIterator[str]:
+    """Run new messages for one conversation in the order they were received."""
+    async with _turn_lock(thread_id):
+        async for event in _run_locked(factory, user_id, thread_id, body):
+            yield event
+
+
+async def _run_locked(
     factory: SessionFactory,
     user_id: uuid.UUID,
     thread_id: uuid.UUID,

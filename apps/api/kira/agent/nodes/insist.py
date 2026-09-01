@@ -29,13 +29,14 @@ goes next; it cannot put the call into the state for the guard to read.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Sequence
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
 from langgraph.runtime import Runtime
 
 from kira.agent import events
-from kira.agent.llm import _today_from, route_for
+from kira.agent.llm import _goal_workflow_args, _today_from, route_for
 from kira.agent.state import ButlerContext, ButlerState
 from kira.agent.tools import REGISTRY
 
@@ -53,10 +54,16 @@ PLANNER = "start_day_planning"
 # happens to mention the planner, so widening the offline router later cannot
 # quietly widen this with it.
 PLACES = "places"
+PLACES_THEN_GOAL = "places_then_goal_impact"
+CHAT = "chat"
+JUST_TALK = "just_talk"
+GOALS = "start_goal_planning"
 
 # Only ever attached to a call this node added, so a transcript says plainly
 # which calls the model asked for and which one it did not.
 CALL_ID = "insisted-start_day_planning"
+CHAT_CALL_ID = "insisted-just-talk"
+GOAL_CALL_ID = "insisted-goal-impact"
 
 
 def _last_ai(messages: Sequence[BaseMessage]) -> AIMessage | None:
@@ -86,19 +93,23 @@ def _already_answered(messages: Sequence[BaseMessage]) -> bool:
     )
 
 
+def _report(messages: Sequence[BaseMessage], name: str) -> dict | None:
+    """The structured report a completed specialist left for its parent."""
+    for message in reversed(messages):
+        if not isinstance(message, ToolMessage) or message.name != name:
+            continue
+        try:
+            value = json.loads(message.content)
+        except (TypeError, json.JSONDecodeError):
+            return None
+        return value if isinstance(value, dict) else None
+    return None
+
+
 async def insist(state: ButlerState, runtime: Runtime[ButlerContext]) -> dict:
     messages = state.get("messages", [])
     reply = _last_ai(messages)
     if reply is None:  # pragma: no cover - agent always leaves one behind
-        return {}
-
-    # The model asked for something, so it is engaging with its tools and its
-    # arguments are better than this node's. That covers the write path too: a
-    # proposed add_place_to_today is left alone to reach the approval card.
-    if getattr(reply, "tool_calls", None):
-        return {}
-
-    if _already_answered(messages):
         return {}
 
     text, attachment = _last_human(messages), state.get("attachment")
@@ -107,7 +118,76 @@ async def insist(state: ButlerState, runtime: Runtime[ButlerContext]) -> dict:
     # online model is no better at this on its own: with nothing to go on it
     # answered the same sentence out of its own head.
     route = route_for(text, attachment, state.get("history_block", ""))
-    if route.name != PLACES:
+
+    # The model sees a live financial snapshot on every reasoning pass, and a
+    # greeting used to make it reach for that snapshot as though friendliness
+    # needed a balance. This route is deliberately deterministic: it replaces
+    # whatever the model proposed with the explicit no-op call below, so "Hi"
+    # cannot become a dashboard simply because a model changed its mind.
+    if route.name == CHAT:
+        if any(
+            isinstance(message, ToolMessage) and message.name == JUST_TALK
+            for message in messages
+        ):
+            return {}
+        spec = REGISTRY.get(JUST_TALK)
+        if spec is None or spec.is_write:  # pragma: no cover - registry contract
+            return {}
+        return {
+            "messages": [
+                AIMessage(
+                    id=reply.id,
+                    content="",
+                    tool_calls=[
+                        {"name": JUST_TALK, "args": {}, "id": CHAT_CALL_ID, "type": "tool_call"}
+                    ],
+                )
+            ]
+        }
+
+    if route.name == PLACES_THEN_GOAL:
+        # The first specialist has measured and chosen a real outing. Its total
+        # is the only price the Goals specialist may test, so a combined dinner
+        # question never makes the user guess an amount the Planner already
+        # knows. A completed Goals report means both halves have run and the
+        # next model pass can compose them.
+        if _report(messages, GOALS) is not None:
+            return {}
+        planner = _report(messages, PLANNER)
+        if planner is not None:
+            recommendation = planner.get("recommendation")
+            amount = recommendation.get("total_sen") if isinstance(recommendation, dict) else None
+            if not isinstance(amount, int) or amount < 0:
+                return {}
+            goal_args = _goal_workflow_args(text, attachment)
+            goal_args["proposed_spend_sen"] = amount
+            events.emit(runtime, events.THINKING, text="Checking what that does to your goal")
+            return {
+                "messages": [
+                    AIMessage(
+                        id=reply.id,
+                        content="",
+                        tool_calls=[
+                            {
+                                "name": GOALS,
+                                "args": goal_args,
+                                "id": GOAL_CALL_ID,
+                                "type": "tool_call",
+                            }
+                        ],
+                    )
+                ]
+            }
+
+    # The model asked for something, so it is engaging with its tools and its
+    # arguments are better than this node's. That covers the write path too: a
+    # proposed add_place_to_today is left alone to reach the approval card.
+    if getattr(reply, "tool_calls", None) and route.name != PLACES_THEN_GOAL:
+        return {}
+
+    if _already_answered(messages):
+        return {}
+    if route.name not in (PLACES, PLACES_THEN_GOAL):
         return {}
 
     # Structural rather than trusting: whatever PLANNER names, this node will

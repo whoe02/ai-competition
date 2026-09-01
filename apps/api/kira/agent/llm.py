@@ -1057,6 +1057,19 @@ _GOAL_IMPACT = re.compile(
     re.I,
 )
 
+_PLACES_PATTERN = re.compile(
+    r"where.*(?:eat|lunch|dinner|breakfast|food|makan)"
+    r"|(?:somewhere|place|places|spot)s? to eat"
+    r"|(?:somewhere|place|places|spot)s?.*(?:eat|lunch|dinner|breakfast|food|makan)"
+    r"|what can i eat|where should i (?:eat|go)|makan|hungry"
+    r"|(?:eat|food|lunch|dinner).*(?:nearby|near me|around here)"
+    # Nobody asks about halal except about food, and "somewhere halal under
+    # RM15" otherwise fell through to the balance.
+    r"|\bhalal\b"
+    rf"|{_CRAVING}",
+    re.I,
+)
+
 
 ROUTES: tuple[Route, ...] = (
     Route(
@@ -1092,6 +1105,18 @@ ROUTES: tuple[Route, ...] = (
     # Before generic affordability: "can I buy this without hurting my house
     # goal" is a goal-impact question, not only a today-room question.
     Route(
+        # The Planner has to run before a goal-impact calculation: it is the
+        # source of the real outing total. The Butler then hands that total to
+        # Goals on the next pass rather than asking the user to guess it.
+        "places_then_goal_impact",
+        _GOAL_IMPACT,
+        ("start_day_planning",),
+        arguments=lambda text, attachment, today=None: {
+            "start_day_planning": _places_args(text) | {"request": text}
+        },
+        when=lambda text: _PLACES_PATTERN.search(text) is not None,
+    ),
+    Route(
         "goal_impact",
         _GOAL_IMPACT,
         ("start_goal_planning",),
@@ -1120,17 +1145,7 @@ ROUTES: tuple[Route, ...] = (
     # today's room rather than answered with a list of restaurants.
     Route(
         "places",
-        re.compile(
-            r"where.*(?:eat|lunch|dinner|breakfast|food|makan)"
-            r"|(?:somewhere|place|places|spot)s? to eat"
-            r"|what can i eat|where should i (?:eat|go)|makan|hungry"
-            r"|(?:eat|food|lunch|dinner).*(?:nearby|near me|around here)"
-            # Nobody asks about halal except about food, and "somewhere halal
-            # under RM15" otherwise fell through to the balance.
-            r"|\bhalal\b"
-            rf"|{_CRAVING}",
-            re.I,
-        ),
+        _PLACES_PATTERN,
         ("start_day_planning",),
         arguments=lambda text, attachment, today: {
             "start_day_planning": _places_args(text) | {"request": text}
@@ -1174,7 +1189,7 @@ ROUTES: tuple[Route, ...] = (
         re.compile(
             r"^\s*(?:hi|hey|hello|yo|hai|good (?:morning|afternoon|evening)|thanks|"
             r"thank you|cheers|ok|okay|cool|nice|who are you|what can you do|"
-            r"what do you do|how are you)\b",
+            r"what do you do|how are you)\s*[!.?]*\s*$",
             re.I,
         ),
         (),
