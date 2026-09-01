@@ -42,10 +42,14 @@ class ButlerState(TypedDict, total=False):
     # write, which only the approval path can run.
     approved_reads: list[dict[str, Any]]
     pending_write: dict[str, Any] | None
+    # A typed handoff to a specialised subgraph. It is validated by the same
+    # guard as a tool call, but never executed as a free-form model tool.
+    pending_workflow: dict[str, Any] | None
     # Set by the approval node, then read by the API to build the response.
     pending_approval: dict[str, Any] | None
     # Set by the approval node once a write has actually run.
     applied: dict[str, Any] | None
+    goal_llm_calls: int
     # Facts extract_memory kept from this turn.
     learned: list[str]
     answer: str
@@ -90,7 +94,9 @@ def initial_state(
         refusals=[],
         approved_reads=[],
         pending_write=None,
+        pending_workflow=None,
         pending_approval=None,
         applied=None,
+        goal_llm_calls=0,
         answer="",
     )

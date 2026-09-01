@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import re
+from calendar import monthrange
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
@@ -96,9 +97,7 @@ _GROUPING = re.compile(r",(?=\d{3})")
 def _amount_sen(text: str) -> int | None:
     match = _AMOUNT.search(text)
     if match:
-        raw = _GROUPING.sub("", match.group(1) or match.group(2)).replace(",", ".")
-        whole, _, minor = raw.partition(".")
-        return int(whole) * 100 + int((minor + "00")[:2] or 0)
+        return _matched_amount_sen(match)
     spoken = _spoken_sen(text)
     if spoken is not None:
         return spoken
@@ -107,6 +106,16 @@ def _amount_sen(text: str) -> int | None:
         return None
     whole, _, minor = bare.group(1).partition(".")
     return int(whole) * 100 + int((minor + "00")[:2] or 0)
+
+
+def _matched_amount_sen(match: re.Match[str]) -> int:
+    raw = _GROUPING.sub("", match.group(1) or match.group(2)).replace(",", ".")
+    whole, _, minor = raw.partition(".")
+    return int(whole) * 100 + int((minor + "00")[:2] or 0)
+
+
+def _amounts_sen(text: str) -> list[int]:
+    return [_matched_amount_sen(match) for match in _AMOUNT.finditer(text)]
 
 
 # ── the offline model ─────────────────────────────────────────────────────────
@@ -689,18 +698,6 @@ def _compose_log_ask(messages: Sequence[BaseMessage], text: str) -> str:
     )
 
 
-_PLAN_GOAL = re.compile(r"monthly savings for\s+(.+?)\s+to\s+rm", re.I)
-
-
-def _plan_goal_args(text: str, attachment: dict[str, Any] | None, today: date) -> dict[str, Any]:
-    match = _PLAN_GOAL.search(text)
-    name = match.group(1).strip(" .,'\"") if match else ""
-    return {
-        "update_goal": {
-            "target_goal_name": name,
-            "monthly_sen": max(1, _amount_sen(text) or 0),
-        }
-    }
 def _compose_places(messages: Sequence[BaseMessage], text: str) -> str:
     result = _payload(messages, "build_day_plan") or {}
     places = result.get("places") or []
@@ -847,12 +844,188 @@ def _compose_places(messages: Sequence[BaseMessage], text: str) -> str:
     return f"{head}\n{sub} {unread}"
 
 
+_GOAL_TYPES_BY_WORDS = (
+    (("emergency", "starter"), "emergency_starter_fund", "Emergency starter fund"),
+    (("upcoming", "bill"), "upcoming_bill_annual_expense", "Upcoming bill"),
+    (("annual", "bill"), "upcoming_bill_annual_expense", "Annual bill"),
+    (("annual", "expense"), "upcoming_bill_annual_expense", "Annual expense"),
+    (("bill",), "upcoming_bill_annual_expense", "Upcoming bill"),
+    (("trip",), "travel", "Travel"),
+    (("travel",), "travel", "Travel"),
+    (("big", "purchase"), "big_purchase", "Big purchase"),
+    (("event", "deposit"), "wedding_event_deposit", "Event deposit"),
+    (("house",), "house_down_payment", "House down payment"),
+    (("home",), "house_down_payment", "House down payment"),
+    (("car",), "car_down_payment", "Car down payment"),
+    (("education",), "education_family_goal", "Education goal"),
+    (("family",), "education_family_goal", "Family goal"),
+    (("wedding", "deposit"), "wedding_event_deposit", "Wedding deposit"),
+    (("wedding",), "wedding_fund", "Wedding fund"),
+    (("emergency",), "full_emergency_fund", "Emergency fund"),
+)
+
+_MONTHS = {
+    "jan": 1,
+    "january": 1,
+    "feb": 2,
+    "february": 2,
+    "mar": 3,
+    "march": 3,
+    "apr": 4,
+    "april": 4,
+    "may": 5,
+    "jun": 6,
+    "june": 6,
+    "jul": 7,
+    "july": 7,
+    "aug": 8,
+    "august": 8,
+    "sep": 9,
+    "sept": 9,
+    "september": 9,
+    "oct": 10,
+    "october": 10,
+    "nov": 11,
+    "november": 11,
+    "dec": 12,
+    "december": 12,
+}
+
+
+def _goal_deadline(text: str) -> str | None:
+    iso = re.search(r"\b(20\d{2})-(0[1-9]|1[0-2])-([0-2]\d|3[01])\b", text)
+    if iso:
+        try:
+            return date(*(int(value) for value in iso.groups())).isoformat()
+        except ValueError:
+            return None
+    named = re.search(
+        r"\b(" + "|".join(_MONTHS) + r")(?:\s+(\d{1,2})(?:st|nd|rd|th)?)?[,\s]+(20\d{2})\b",
+        text,
+        re.I,
+    )
+    if not named:
+        return None
+    month = _MONTHS[named.group(1).casefold()]
+    year = int(named.group(3))
+    day = int(named.group(2)) if named.group(2) else monthrange(year, month)[1]
+    try:
+        return date(year, month, day).isoformat()
+    except ValueError:
+        return None
+
+
+def _goal_identity(text: str) -> tuple[str, str, str]:
+    lowered = text.casefold()
+    for words, goal_type, name in _GOAL_TYPES_BY_WORDS:
+        if all(word in lowered for word in words):
+            return goal_type, name, " ".join(words)
+    return "custom_goal", "Savings goal", "savings goal"
+
+
+def _amount_near(text: str, marker: str) -> int | None:
+    location = text.casefold().find(marker)
+    if location < 0:
+        return None
+    return _amount_sen(text[location : location + 100])
+
+
+def _goal_workflow_args(text: str, attachment: dict[str, Any] | None) -> dict[str, Any]:
+    del attachment
+    lowered = text.casefold()
+    goal_type, name, reference = _goal_identity(text)
+    amounts = _amounts_sen(text)
+    select = any(
+        phrase in lowered
+        for phrase in ("cash-flow-safe", "cash flow safe", "accelerated", "on-time option")
+    )
+    impact = bool(
+        re.search(r"\b(?:hurt|affect|impact|delay|derail)\b.*\b(?:goal|fund)\b", lowered)
+        or re.search(r"\b(?:goal|fund)\b.*\b(?:buy|spend|purchase|afford)\b", lowered)
+    )
+    replan = bool(
+        re.search(
+            r"\b(?:change|update|increase|decrease|raise|lower|extend|move|replan|adjust)\b",
+            lowered,
+        )
+    )
+    action = (
+        "select_scenario"
+        if select
+        else "impact"
+        if impact
+        else "replan"
+        if replan
+        else "create"
+    )
+    args: dict[str, Any] = {"action": action}
+    if action == "create":
+        args.update({"goal_type": goal_type, "name": name})
+        if amounts:
+            args["target_amount_sen"] = amounts[0]
+        saved = _amount_near(text, "already saved") or _amount_near(text, "saved")
+        if saved is not None:
+            args["current_saved_sen"] = saved
+        deadline = _goal_deadline(text)
+        if deadline is not None:
+            args["target_date"] = deadline
+    else:
+        args["goal_reference"] = reference
+    if action == "impact" and amounts:
+        args["proposed_spend_sen"] = amounts[0]
+    if action == "select_scenario":
+        if "accelerated" in lowered:
+            args["scenario_label"] = "Accelerated"
+        elif "on-time" in lowered:
+            args["scenario_label"] = "On-time target"
+        else:
+            args["scenario_label"] = "Cash-flow-safe"
+    if action == "replan":
+        contribution = next(
+            (
+                _matched_amount_sen(match)
+                for match in _AMOUNT.finditer(text)
+                if "payday" in lowered[max(0, match.start() - 35) : match.end() + 35]
+                or "contribution" in lowered[max(0, match.start() - 35) : match.end() + 35]
+            ),
+            None,
+        )
+        if contribution is not None:
+            args["contribution_per_payday_sen"] = contribution
+        elif amounts and "target" in lowered:
+            args["target_amount_sen"] = amounts[0]
+        saved = _amount_near(text, "saved")
+        if saved is not None:
+            args["current_saved_sen"] = saved
+        deadline = _goal_deadline(text)
+        if deadline is not None:
+            args["target_date"] = deadline
+    return args
+
+
+_GOAL_WORKFLOW = re.compile(
+    r"\b(?:want|need|plan|save|saving|start|create|set up)\b.{0,100}"
+    r"\b(?:goal|fund|deposit|down payment|trip|travel|wedding|house|home|car|education|"
+    r"purchase|bill|annual expense)\b"
+    r"|\b(?:change|update|increase|decrease|raise|lower|extend|move|replan|adjust)\b.{0,80}"
+    r"\b(?:goal|fund|contribution|target|payday|date)\b"
+    r"|\b(?:cash[- ]flow[- ]safe|accelerated|on-time)\b.{0,30}\b(?:option|scenario)\b",
+    re.I,
+)
+
+_GOAL_IMPACT = re.compile(
+    r"\b(?:hurt|affect|impact|delay|derail)\b.*\b(?:goal|fund)\b"
+    r"|\b(?:goal|fund)\b.*\b(?:buy|spend|purchase|afford)\b",
+    re.I,
+)
+
+
 ROUTES: tuple[Route, ...] = (
     Route(
         "attachment",
         re.compile(r"receipt|scanned|photo|this bill|heard|voice note", re.I),
         ("inspect_attachment", "calculate_safe_to_spend"),
-        arguments=lambda text, attachment, today: {
+        arguments=lambda text, attachment, today=None: {
             "inspect_attachment": {},
             "calculate_safe_to_spend": _afford_args(text, attachment),
         },
@@ -862,7 +1035,7 @@ ROUTES: tuple[Route, ...] = (
         "remember",
         re.compile(r"\bremember\b|from now on|always tell me|never suggest", re.I),
         ("remember",),
-        arguments=lambda text, attachment, today: {
+        arguments=lambda text, attachment, today=None: {
             "remember": {
                 "kind": "preference",
                 "subject": "stated preference",
@@ -873,16 +1046,20 @@ ROUTES: tuple[Route, ...] = (
         compose=_compose_remember,
     ),
     Route(
-        "plan_goal",
-        re.compile(r"propose setting my monthly savings for", re.I),
-        ("update_goal",),
-        arguments=_plan_goal_args,
-    ),
-    Route(
         "overspend",
         re.compile(r"overspent|overspend|blew|over budget|went over", re.I),
         ("get_financial_snapshot", "list_activity"),
         compose=_compose_overspend,
+    ),
+    # Before generic affordability: "can I buy this without hurting my house
+    # goal" is a goal-impact question, not only a today-room question.
+    Route(
+        "goal_impact",
+        _GOAL_IMPACT,
+        ("start_goal_planning",),
+        arguments=lambda text, attachment, today=None: {
+            "start_goal_planning": _goal_workflow_args(text, attachment)
+        },
     ),
     Route(
         "afford",
@@ -892,6 +1069,14 @@ ROUTES: tuple[Route, ...] = (
             "calculate_safe_to_spend": _afford_args(text, attachment)
         },
         compose=_compose_afford,
+    ),
+    Route(
+        "goal_workflow",
+        _GOAL_WORKFLOW,
+        ("start_goal_planning",),
+        arguments=lambda text, attachment, today=None: {
+            "start_goal_planning": _goal_workflow_args(text, attachment)
+        },
     ),
     # After "afford", so a question naming an amount still gets tested against
     # today's room rather than answered with a list of restaurants.

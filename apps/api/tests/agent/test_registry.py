@@ -115,8 +115,12 @@ def test_every_module_contributes_at_least_one_spec():
         assert spec.module in modules
 
 
-def test_reads_and_writes_partition_the_registry():
-    assert len(REGISTRY.reads()) + len(REGISTRY.writes()) == len(REGISTRY)
+def test_reads_writes_and_workflows_partition_the_registry():
+    assert (
+        len(REGISTRY.reads()) + len(REGISTRY.writes()) + len(REGISTRY.workflows())
+        == len(REGISTRY)
+    )
+    assert {spec.name for spec in REGISTRY.workflows()} == {"start_goal_planning"}
 
 
 class TestAddTransactionCategory:

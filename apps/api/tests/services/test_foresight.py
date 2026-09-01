@@ -27,7 +27,7 @@ async def test_the_band_is_ordered_and_widens(session):
     user = await demo(session)
     result = await foresight(session, user, DEMO_TODAY)
     p10, p90 = result.bands.bands.p10, result.bands.bands.p90
-    assert all(low <= high for low, high in zip(p10, p90))
+    assert all(low <= high for low, high in zip(p10, p90, strict=True))
     assert (p90[-1].sen - p10[-1].sen) > (p90[0].sen - p10[0].sen)
 
 

@@ -42,6 +42,7 @@ class TurnResult:
     approval: dict[str, Any] | None = None
     applied: dict[str, Any] | None = None
     learned: list[str] = field(default_factory=list)
+    goal_llm_calls: int = 0
 
 
 def _context(
@@ -77,7 +78,11 @@ async def _result(graph, config) -> TurnResult:
     state = await graph.aget_state(config)
     values = state.values or {}
     interrupts = getattr(state, "interrupts", ()) or ()
-    approval = dict(interrupts[0].value) if interrupts else None
+    approval = (
+        dict(interrupts[0].value)
+        if interrupts
+        else values.get("pending_approval")
+    )
     return TurnResult(
         answer=values.get("answer") or (PROPOSAL_LEAD if approval else ""),
         evidence=list(values.get("evidence") or []),
@@ -85,6 +90,7 @@ async def _result(graph, config) -> TurnResult:
         approval=approval,
         applied=values.get("applied"),
         learned=list(values.get("learned") or []),
+        goal_llm_calls=values.get("goal_llm_calls", 0),
     )
 
 
@@ -121,6 +127,7 @@ async def stream_turn(
         "tools_used": result.tools_used,
         "approval": result.approval,
         "learned": result.learned,
+        "llm_calls": result.goal_llm_calls,
     }
 
 

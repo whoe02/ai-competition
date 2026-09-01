@@ -174,6 +174,44 @@ class GoalImpactResponse(ResponseModel):
     evidence_refs: list[str]
 
 
+class GoalGraphIntentRequest(BaseModel):
+    """Structured form/event input that bypasses the intake model."""
+
+    action: Literal["create", "replan", "impact", "select_scenario", "recalculate"]
+    goal_id: uuid.UUID | None = None
+    goal_reference: str | None = Field(default=None, max_length=80)
+    goal_type: GoalType | None = None
+    name: str | None = Field(default=None, min_length=1, max_length=80)
+    target_amount_sen: int | None = Field(default=None, strict=True, gt=0)
+    current_saved_sen: int | None = Field(default=None, strict=True, ge=0)
+    target_date: date | None = None
+    contribution_per_payday_sen: int | None = Field(default=None, strict=True, gt=0)
+    priority: GoalPriority | None = None
+    funding_account_ids: list[uuid.UUID] = Field(default_factory=list)
+    proposed_spend_sen: int | None = Field(default=None, strict=True, ge=0)
+    scenario_id: uuid.UUID | None = None
+    scenario_label: str | None = Field(default=None, max_length=60)
+    wants_scenarios: bool = False
+
+
+class GoalGraphRunRequest(BaseModel):
+    text: str = Field(default="", max_length=2000)
+    thread_id: uuid.UUID | None = None
+    intent: GoalGraphIntentRequest | None = None
+    explain: bool = True
+
+
+class GoalGraphRunResponse(ResponseModel):
+    request_id: uuid.UUID
+    thread_id: uuid.UUID
+    final_response: str
+    llm_calls: int
+    goal_id: uuid.UUID | None = None
+    feasible: bool | None = None
+    approval: dict | None = None
+    errors: list[str] = Field(default_factory=list)
+
+
 class PlaceResponse(ResponseModel):
     """One outing, priced on the distance named by ``distance_basis``.
 

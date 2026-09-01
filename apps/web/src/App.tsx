@@ -24,10 +24,9 @@ import { ScrollContext } from "./components/Reveal";
 import { SheetHostContext } from "./components/Sheet";
 import { Activity } from "./screens/Activity";
 import { Butler } from "./screens/Butler";
-import { DayPlan } from "./screens/DayPlan";
 import { Login } from "./screens/Login";
 import { More } from "./screens/More";
-import { Plan } from "./screens/Plan";
+import { Plan, type PlanView } from "./screens/Plan";
 import { Today } from "./screens/Today";
 
 export type Tab = "today" | "activity" | "butler" | "plan" | "more";
@@ -39,6 +38,7 @@ export function App() {
   const [dir, setDir] = useState(0);
   const [boot, setBoot] = useState(true);
   const [signedIn, setSignedIn] = useState(false);
+  const [planView, setPlanView] = useState<PlanView>("daily");
   const [entry, setEntry] = useState(false);
   // A sentence raised from Today or Activity, handed to the Butler to ask.
   const [pending, setPending] = useState<{ text: string; attachment?: EntryAttachment } | null>(
@@ -94,8 +94,9 @@ export function App() {
     };
   }, [tab]);
 
-  const go = (next: Tab) => {
+  const go = (next: Tab, nextPlanView: PlanView = "daily") => {
     if (next === tab) return;
+    if (next === "plan") setPlanView(nextPlanView);
     const from = TABS.indexOf(tab);
     const to = TABS.indexOf(next);
     setDir(next === "butler" || tab === "butler" ? 0 : to > from ? 1 : -1);
@@ -105,10 +106,12 @@ export function App() {
   const proposeDriver = (driver: ForesightDriver) => {
     const amount = `RM${(Math.abs(driver.lever.delta.sen) / 100).toFixed(2)}`;
     const goal = dashboard.data?.goals.find((item) => item.id === driver.lever.target_id);
-    const revisedMonthly = goal ? goal.monthly_sen + driver.lever.delta.sen : null;
+    const outlook = foresight.data?.outlooks.find(
+      (item) => item.goal_id === driver.lever.target_id,
+    );
     const text =
-      driver.lever.kind === "goal_monthly" && goal && revisedMonthly !== null
-        ? `Please propose setting my monthly savings for ${goal.name} to RM${(revisedMonthly / 100).toFixed(2)}. Show me the approval card; do not apply anything yet.`
+      driver.lever.kind === "goal_monthly" && goal
+        ? `Please replan my ${goal.name} goal${outlook ? ` with target date ${outlook.target_date}` : ""} using the latest forecast. Calculate safe deterministic options and ask for approval before changing the active plan.`
         : driver.lever.kind === "commitment_amount"
           ? `Please help me propose reducing this commitment by ${amount}. Show me the approval card; do not apply anything yet.`
           : `Help me make a plan to spend ${amount} less each day. Do not change anything yet.`;
@@ -203,12 +206,12 @@ export function App() {
                   )}
                   {signedIn && tab === "plan" && (
                     <Plan
+                      initialView={planView}
                       data={foresight.data}
                       goals={dashboard.data?.goals}
                       isLoading={foresight.isLoading}
                       isError={foresight.isError}
                       onDriver={proposeDriver}
-                      dayPlan={<DayPlan />}
                     />
                   )}
                   {signedIn && tab === "more" && (

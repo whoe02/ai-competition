@@ -3,7 +3,14 @@ import { useEffect, useRef, useState } from "react";
 import type { ButlerThread, Capture, Category, HindsightResponse } from "@kira/contracts";
 import { useQueryClient } from "@tanstack/react-query";
 
-import { ask, decide, type ButlerEvent, type EvidenceRow } from "../api/butler";
+import {
+  ask,
+  decide,
+  type ApprovalView,
+  type ButlerEvent,
+  type EvidenceRow,
+  type GoalPlanPreview,
+} from "../api/butler";
 import {
   activityKey,
   briefingTodayKey,
@@ -19,21 +26,13 @@ import { takeButlerHandoff } from "../lib/butlerHandoff";
 
 type Attachment = (Capture & { preview?: string }) | null;
 
-/** A write the graph has paused on, with the arguments it paused holding. */
-type Proposal = {
-  id: string;
-  summary: string;
-  tool: string;
-  args: Record<string, unknown>;
-};
-
 type Turn = {
   role: "user" | "kira";
   text: string;
   evidence: EvidenceRow[];
   attachment?: Attachment;
-  approval?: Proposal | null;
-  approvals?: Proposal[];
+  approval?: ApprovalView | null;
+  approvals?: ApprovalView[];
   applied?: boolean;
 };
 
@@ -43,10 +42,47 @@ type Live = {
   tools: string[];
   evidence: EvidenceRow[];
   text: string;
-  approval: Proposal | null;
+  approval: ApprovalView | null;
 };
 
 const EMPTY: Live = { thinking: "", tools: [], evidence: [], text: "", approval: null };
+
+function planPreview(value: unknown): GoalPlanPreview | null {
+  if (!value || typeof value !== "object") return null;
+  const plan = value as Partial<GoalPlanPreview>;
+  if (
+    typeof plan.target_amount_sen !== "number" ||
+    typeof plan.current_saved_sen !== "number" ||
+    typeof plan.required_contribution_per_payday_sen !== "number" ||
+    typeof plan.target_date !== "string" ||
+    typeof plan.feasible !== "boolean"
+  ) {
+    return null;
+  }
+  return plan as GoalPlanPreview;
+}
+
+function approvalView(
+  id: string,
+  summary: string,
+  tool: string,
+  args: Record<string, unknown> = {},
+  before?: unknown,
+  after?: unknown,
+  basePlanVersion?: number,
+): ApprovalView {
+  return {
+    id,
+    summary,
+    tool,
+    args,
+    before: planPreview(before ?? args.before),
+    after: planPreview(after ?? args.after),
+    basePlanVersion:
+      basePlanVersion ??
+      (typeof args.base_plan_version === "number" ? args.base_plan_version : undefined),
+  };
+}
 
 const PROMPTS = [
   "Can I afford RM60 dinner tonight?",
@@ -96,12 +132,14 @@ export function Butler({
         attachment: (message.attachment as Attachment) ?? null,
         approvals:
           index === thread.messages.length - 1 && message.role !== "user"
-            ? pending.map((approval) => ({
-                id: approval.id,
-                summary: approval.summary,
-                tool: approval.tool,
-                args: approval.args as Record<string, unknown>,
-              }))
+            ? pending.map((approval) =>
+                approvalView(
+                  approval.id,
+                  approval.summary,
+                  approval.tool,
+                  approval.args as Record<string, unknown>,
+                ),
+              )
             : [],
       })),
     );
@@ -166,12 +204,15 @@ export function Butler({
         case "approval":
           state = {
             ...state,
-            approval: {
-              id: event.approval_id,
-              summary: event.summary,
-              tool: event.tool,
-              args: event.args,
-            },
+            approval: approvalView(
+              event.approval_id,
+              event.summary,
+              event.tool,
+              event.args,
+              event.before,
+              event.after,
+              event.base_plan_version,
+            ),
           };
           break;
         case "done":
@@ -180,7 +221,7 @@ export function Butler({
             {
               role: "kira",
               text: event.answer || state.text,
-              evidence: event.evidence.length ? event.evidence : state.evidence,
+              evidence: event.evidence?.length ? event.evidence : state.evidence,
               approval: state.approval,
               applied: Boolean(event.applied),
             },
@@ -440,17 +481,42 @@ function Approval({
   busy,
   onDecide,
 }: {
-  proposal: Proposal;
+  proposal: ApprovalView;
   categories?: Category[];
   busy: boolean;
   onDecide: (action: "accept" | "edit" | "reject", args?: Record<string, unknown>) => void;
 }) {
-  const [args, setArgs] = useState(proposal.args);
-  const fields = Object.keys(proposal.args).flatMap((key) => {
+  if (proposal.tool === "apply_goal_plan_change" && proposal.after) {
+    return <GoalPlanApproval approval={proposal} busy={busy} onDecide={onDecide} />;
+  }
+  return (
+    <GenericApproval
+      proposal={proposal}
+      categories={categories}
+      busy={busy}
+      onDecide={onDecide}
+    />
+  );
+}
+
+function GenericApproval({
+  proposal,
+  categories,
+  busy,
+  onDecide,
+}: {
+  proposal: ApprovalView;
+  categories?: Category[];
+  busy: boolean;
+  onDecide: (action: "accept" | "edit" | "reject", args?: Record<string, unknown>) => void;
+}) {
+  const originalArgs = proposal.args ?? {};
+  const [args, setArgs] = useState(originalArgs);
+  const fields = Object.keys(originalArgs).flatMap((key) => {
     const spec = EDITABLE[key];
     return spec ? [{ key, spec }] : [];
   });
-  const touched = fields.some(({ key }) => args[key] !== proposal.args[key]);
+  const touched = fields.some(({ key }) => args[key] !== originalArgs[key]);
   const set = (key: string, value: unknown) => setArgs((prior) => ({ ...prior, [key]: value }));
 
   return (
@@ -495,6 +561,151 @@ function Approval({
       </p>
     </div>
   );
+}
+
+function GoalPlanApproval({
+  approval,
+  busy,
+  onDecide,
+}: {
+  approval: ApprovalView;
+  busy: boolean;
+  onDecide: (action: "accept" | "edit" | "reject", args?: Record<string, unknown>) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const after = approval.after!;
+  const [target, setTarget] = useState(() => senToRinggit(after.target_amount_sen));
+  const [contribution, setContribution] = useState(() =>
+    senToRinggit(after.required_contribution_per_payday_sen),
+  );
+  const [targetDate, setTargetDate] = useState(after.target_date);
+  const targetSen = ringgitToSen(target);
+  const contributionSen = ringgitToSen(contribution);
+  const validEdit = targetSen !== null && contributionSen !== null && Boolean(targetDate);
+
+  return (
+    <div className="approval">
+      <span className="eyebrow on-ink" style={{ color: "var(--brass-lit)" }}>
+        Proposed change · not applied
+      </span>
+      <p style={{ margin: "10px 0 0", fontSize: 14.5, lineHeight: 1.5 }}>
+        {approval.summary}
+      </p>
+      {!editing ? (
+        <div className="goal-plan-compare">
+          <PlanPreview label="Before" plan={approval.before ?? null} />
+          <PlanPreview label="After" plan={after} />
+        </div>
+      ) : (
+        <div className="goal-plan-edit">
+          <label>
+            Target amount (RM)
+            <input
+              aria-label="Target amount (RM)"
+              inputMode="decimal"
+              value={target}
+              onChange={(event) => setTarget(event.target.value)}
+            />
+          </label>
+          <label>
+            Per payday (RM)
+            <input
+              aria-label="Per payday (RM)"
+              inputMode="decimal"
+              value={contribution}
+              onChange={(event) => setContribution(event.target.value)}
+            />
+          </label>
+          <label>
+            Target date
+            <input
+              aria-label="Target date"
+              type="date"
+              value={targetDate}
+              onChange={(event) => setTargetDate(event.target.value)}
+            />
+          </label>
+        </div>
+      )}
+      <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+        {editing ? (
+          <button
+            className="btn btn-brass btn-sm"
+            style={{ flex: 1 }}
+            disabled={busy || !validEdit}
+            onClick={() =>
+              onDecide("edit", {
+                target_amount_sen: targetSen,
+                contribution_per_payday_sen: contributionSen,
+                target_date: targetDate,
+              })
+            }
+          >
+            Recalculate
+          </button>
+        ) : (
+          <button
+            className="btn btn-brass btn-sm"
+            style={{ flex: 1 }}
+            disabled={busy}
+            onClick={() => onDecide("accept")}
+          >
+            Approve
+          </button>
+        )}
+        <button
+          className="btn btn-sm btn-ghost"
+          disabled={busy}
+          onClick={() => setEditing((value) => !value)}
+        >
+          {editing ? "Cancel edit" : "Edit plan"}
+        </button>
+        <button className="btn btn-sm btn-ghost" disabled={busy} onClick={() => onDecide("reject")}>
+          Reject
+        </button>
+      </div>
+      <p style={{ margin: "11px 0 0", fontSize: 11.5, color: "rgba(233,237,233,.45)", lineHeight: 1.45 }}>
+        Nothing changes until you approve. Your buffer and protected bills stay off limits.
+      </p>
+    </div>
+  );
+}
+
+function PlanPreview({ label, plan }: { label: string; plan: GoalPlanPreview | null }) {
+  return (
+    <div>
+      <span>{label}</span>
+      {plan ? (
+        <>
+          <b>RM{displayRinggit(plan.required_contribution_per_payday_sen)} / payday</b>
+          <small>RM{displayRinggit(plan.target_amount_sen)} by {plan.target_date}</small>
+        </>
+      ) : (
+        <b>No active plan</b>
+      )}
+    </div>
+  );
+}
+
+function senToRinggit(sen: number): string {
+  const whole = Math.trunc(sen / 100);
+  const cents = Math.abs(sen % 100).toString().padStart(2, "0");
+  return `${whole}.${cents}`;
+}
+
+function displayRinggit(sen: number): string {
+  const [whole, cents] = senToRinggit(sen).split(".");
+  return `${Number(whole).toLocaleString("en-MY")}.${cents}`;
+}
+
+function ringgitToSen(value: string): number | null {
+  const match = value.trim().match(/^(\d+)(?:\.(\d{1,2}))?$/);
+  if (!match) return null;
+  const whole = Number(match[1]);
+  const cents = Number((match[2] ?? "").padEnd(2, "0"));
+  if (!Number.isSafeInteger(whole) || whole <= 0) return null;
+  const sen = whole * 100 + cents;
+  return Number.isSafeInteger(sen) ? sen : null;
 }
 
 function ProposalField({

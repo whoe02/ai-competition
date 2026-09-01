@@ -207,7 +207,8 @@ SPECS = (
         label="Projecting your next months",
         description=(
             "Project the user's balance and dated goals from confirmed spending history. "
-            "Returns a median closing balance, goal probabilities, useful changes and its assumption."
+            "Returns a median closing balance, goal probabilities, useful changes and "
+            "its assumption."
         ),
         args_model=ProjectFutureArgs,
         handler=_project,

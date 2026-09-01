@@ -614,6 +614,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/goals/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run Goal Graph
+         * @description Run natural-language intake or a structured zero-intake trigger.
+         */
+        post: operations["run_goal_graph_v1_goals_runs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/goals/{goal_id}": {
         parameters: {
             query?: never;
@@ -1284,6 +1304,91 @@ export interface components {
             funding_account_ids: string[];
             /** Current Plan Version */
             current_plan_version?: number | null;
+        };
+        /**
+         * GoalGraphIntentRequest
+         * @description Structured form/event input that bypasses the intake model.
+         */
+        GoalGraphIntentRequest: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "create" | "replan" | "impact" | "select_scenario" | "recalculate";
+            /** Goal Id */
+            goal_id?: string | null;
+            /** Goal Reference */
+            goal_reference?: string | null;
+            /** Goal Type */
+            goal_type?: ("emergency_starter_fund" | "upcoming_bill_annual_expense" | "travel" | "big_purchase" | "wedding_event_deposit" | "house_down_payment" | "car_down_payment" | "wedding_fund" | "full_emergency_fund" | "education_family_goal" | "custom_goal") | null;
+            /** Name */
+            name?: string | null;
+            /** Target Amount Sen */
+            target_amount_sen?: number | null;
+            /** Current Saved Sen */
+            current_saved_sen?: number | null;
+            /** Target Date */
+            target_date?: string | null;
+            /** Contribution Per Payday Sen */
+            contribution_per_payday_sen?: number | null;
+            /** Priority */
+            priority?: ("protected" | "important" | "flexible") | null;
+            /** Funding Account Ids */
+            funding_account_ids?: string[];
+            /** Proposed Spend Sen */
+            proposed_spend_sen?: number | null;
+            /** Scenario Id */
+            scenario_id?: string | null;
+            /** Scenario Label */
+            scenario_label?: string | null;
+            /**
+             * Wants Scenarios
+             * @default false
+             */
+            wants_scenarios: boolean;
+        };
+        /** GoalGraphRunRequest */
+        GoalGraphRunRequest: {
+            /**
+             * Text
+             * @default
+             */
+            text: string;
+            /** Thread Id */
+            thread_id?: string | null;
+            intent?: components["schemas"]["GoalGraphIntentRequest"] | null;
+            /**
+             * Explain
+             * @default true
+             */
+            explain: boolean;
+        };
+        /** GoalGraphRunResponse */
+        GoalGraphRunResponse: {
+            /**
+             * Request Id
+             * Format: uuid
+             */
+            request_id: string;
+            /**
+             * Thread Id
+             * Format: uuid
+             */
+            thread_id: string;
+            /** Final Response */
+            final_response: string;
+            /** Llm Calls */
+            llm_calls: number;
+            /** Goal Id */
+            goal_id?: string | null;
+            /** Feasible */
+            feasible?: boolean | null;
+            /** Approval */
+            approval?: {
+                [key: string]: unknown;
+            } | null;
+            /** Errors */
+            errors?: string[];
         };
         /** GoalImpactRequest */
         GoalImpactRequest: {
@@ -2735,6 +2840,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GoalCreateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_goal_graph_v1_goals_runs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GoalGraphRunRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoalGraphRunResponse"];
                 };
             };
             /** @description Validation Error */

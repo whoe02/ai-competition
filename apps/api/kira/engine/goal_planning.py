@@ -489,6 +489,88 @@ def calculate_goal_feasibility(goal: GoalDefinition, snapshot: FinancialSnapshot
     )
 
 
+def calculate_goal_plan_for_contribution(
+    goal: GoalDefinition,
+    snapshot: FinancialSnapshot,
+    contribution_per_payday_sen: int,
+    *,
+    target_date: date | None = None,
+) -> GoalPlan:
+    """Build a complete plan for a user-selected deterministic contribution."""
+    _require_int("contribution_per_payday_sen", contribution_per_payday_sen)
+    effective = replace(goal, target_date=target_date or goal.target_date)
+    validate_goal_definition(effective, as_of_date=snapshot.as_of_utc.astimezone(UTC).date())
+    if effective.user_id != snapshot.user_id:
+        raise ValueError("goal and snapshot users differ")
+    if effective.currency != snapshot.currency:
+        raise ValueError("goal and snapshot currencies differ")
+
+    remaining = max(0, effective.target_amount_sen - effective.current_saved_sen)
+    projected = calculate_projected_completion_date(
+        effective, snapshot, contribution_per_payday_sen
+    )
+    schedule_target = projected or effective.target_date
+    schedule = build_goal_contribution_schedule(
+        replace(effective, target_date=schedule_target),
+        snapshot,
+        contribution_per_payday_sen=contribution_per_payday_sen,
+    )
+    available_now = _available_before_goal(snapshot, effective.goal_id)
+    cash_covers = available_now >= remaining
+    first_safe = bool(schedule) and (
+        available_now + (_payday_capacity(snapshot, effective.goal_id, schedule[0].payday) or 0)
+        >= schedule[0].amount_sen
+    )
+    future_safe = all(
+        (capacity := _payday_capacity(snapshot, effective.goal_id, item.payday)) is not None
+        and capacity >= item.amount_sen
+        for item in schedule[1:]
+    )
+    feasible = remaining == 0 or (
+        contribution_per_payday_sen > 0
+        and bool(schedule)
+        and (cash_covers or (first_safe and future_safe))
+    )
+    risks: list[str] = []
+    assumptions = [
+        f"paydays repeat every {snapshot.pay_cycle_days} days from "
+        f"{_next_payday(snapshot).isoformat()}",
+        "the selected per-payday contribution is fixed",
+        "confirmed cash, commitments, and account records are used",
+        "emergency buffer and near-term commitments remain reserved",
+    ]
+    if remaining == 0:
+        risks.append("goal_already_achieved")
+    elif contribution_per_payday_sen == 0:
+        risks.append("no_positive_contribution")
+    if not feasible:
+        risks.append("contribution_exceeds_confirmed_capacity")
+    if snapshot.next_income_payday.amount_sen is None and not cash_covers:
+        risks.append("income_amount_unavailable")
+        assumptions.append("future income amount is unknown and counted as zero")
+    if projected is not None and projected > effective.target_date:
+        risks.append("projected_after_target")
+        feasible = False
+    if snapshot.data_confidence == "low":
+        risks.append("low_data_confidence")
+    return GoalPlan(
+        goal_id=effective.goal_id,
+        feasible=feasible,
+        target_amount_sen=effective.target_amount_sen,
+        current_saved_sen=effective.current_saved_sen,
+        remaining_amount_sen=remaining,
+        target_date=effective.target_date,
+        required_contribution_per_payday_sen=contribution_per_payday_sen,
+        next_required_reserve_sen=min(remaining, contribution_per_payday_sen),
+        projected_completion_date=projected,
+        milestones=_milestones(effective, snapshot, contribution_per_payday_sen),
+        risk_flags=tuple(dict.fromkeys(risks)),
+        assumptions=tuple(assumptions),
+        calculation_version=CALCULATION_VERSION,
+        evidence_refs=snapshot.evidence_refs,
+    )
+
+
 def _scenario(
     goal: GoalDefinition,
     snapshot: FinancialSnapshot,

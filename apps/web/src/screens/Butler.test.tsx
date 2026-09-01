@@ -93,6 +93,35 @@ const PROPOSAL = sse(
   },
 );
 
+const GOAL_PROPOSAL = sse(
+  { type: "message", id: "m3", role: "user" },
+  {
+    type: "approval",
+    approval_id: "goal-a1",
+    tool: "apply_goal_plan_change",
+    module: "goal_planning",
+    summary: "Goal plan change — before: no active plan; after: RM100 per payday.",
+    args: {
+      before: null,
+      after: {
+        target_amount_sen: 100000,
+        current_saved_sen: 20000,
+        required_contribution_per_payday_sen: 10000,
+        target_date: "2026-12-31",
+        feasible: true,
+      },
+      base_plan_version: 1,
+    },
+  },
+  {
+    type: "done",
+    answer: "Set aside RM100 per payday.",
+    evidence: [],
+    tools_used: ["start_goal_planning"],
+    approval: { approval_id: "goal-a1", summary: "Goal plan change" },
+  },
+);
+
 const CATEGORIES = [
   { slug: "food", label: "Food & drink" },
   { slug: "transport", label: "Transport" },
@@ -329,11 +358,63 @@ function bodyOf(call: [string, RequestInit]): Record<string, unknown> {
   return JSON.parse(String(call[1].body));
 }
 
+describe("Butler goal-plan approvals", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("shows deterministic before and after plan figures", async () => {
+    vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(streamed(GOAL_PROPOSAL))));
+    const user = setup();
+    await user.type(screen.getByLabelText("Ask Kira"), "Plan my trip{Enter}");
+
+    await waitFor(() => expect(screen.getByText("No active plan")).toBeInTheDocument());
+    expect(screen.getByText("RM100.00 / payday")).toBeInTheDocument();
+    expect(screen.getByText("RM1,000.00 by 2026-12-31")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Edit plan" })).toBeInTheDocument();
+  });
+
+  it("sends integer-sen edits back for deterministic recalculation", async () => {
+    const settled = sse({
+      type: "done",
+      answer: "I recalculated the plan.",
+      evidence: [],
+      tools_used: ["start_goal_planning"],
+      approval: null,
+    });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(streamed(GOAL_PROPOSAL))
+      .mockResolvedValue(streamed(settled));
+    vi.stubGlobal("fetch", fetchMock);
+    const user = setup();
+    await user.type(screen.getByLabelText("Ask Kira"), "Plan my trip{Enter}");
+    await waitFor(() => screen.getByRole("button", { name: "Edit plan" }));
+
+    await user.click(screen.getByRole("button", { name: "Edit plan" }));
+    await user.clear(screen.getByLabelText("Target amount (RM)"));
+    await user.type(screen.getByLabelText("Target amount (RM)"), "1200.50");
+    await user.clear(screen.getByLabelText("Per payday (RM)"));
+    await user.type(screen.getByLabelText("Per payday (RM)"), "125.25");
+    await user.click(screen.getByRole("button", { name: "Recalculate" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    const [, options] = fetchMock.mock.calls[1]!;
+    expect(JSON.parse((options as RequestInit).body as string)).toEqual({
+      action: "edit",
+      args: {
+        target_amount_sen: 120050,
+        contribution_per_payday_sen: 12525,
+        target_date: "2026-12-31",
+      },
+    });
+  });
+});
+
 describe("Correcting a proposal before approving it", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(streamed(LOG_PROPOSAL))));
   });
-
   afterEach(() => {
     vi.unstubAllGlobals();
   });

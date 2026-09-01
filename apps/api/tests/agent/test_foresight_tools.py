@@ -90,13 +90,13 @@ async def test_a_goal_change_from_the_plan_still_stops_at_approval(session, butl
         user,
         thread,
         text=(
-            "Please propose setting my monthly savings for Emergency top-up to RM310.00. "
-            "Show me the approval card; do not apply anything yet."
+            "Please replan my Emergency top-up goal with target date December 2026 "
+            "using the latest forecast. "
+            "Calculate safe deterministic options and ask for approval before changing it."
         ),
         today=today,
     )
 
     assert result.approval is not None
-    assert result.approval["tool"] == "update_goal"
-    assert result.approval["args"]["target_goal_name"] == "Emergency top-up"
-    assert result.approval["args"]["monthly_sen"] == 31000
+    assert result.approval["tool"] == "apply_goal_plan_change"
+    assert result.approval["after"]["required_contribution_per_payday_sen"] > 0

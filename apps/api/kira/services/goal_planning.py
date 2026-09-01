@@ -47,6 +47,10 @@ class InvalidFundingAccount(Exception):
     """A proposed funding account does not belong to this user."""
 
 
+class StalePlanVersion(Exception):
+    """The approved draft was calculated from a plan that is no longer current."""
+
+
 def definition_from_record(goal: Goal) -> GoalDefinition:
     if goal.target_date is None:
         raise ValueError("legacy goal has no target_date and needs replanning")
@@ -254,6 +258,7 @@ async def create_draft_goal(
     priority: str,
     funding_account_ids: tuple[uuid.UUID, ...],
     as_of_utc: datetime,
+    goal_id: uuid.UUID | None = None,
 ) -> tuple[Goal, GoalPlanRecord]:
     if funding_account_ids:
         owned_ids = set(
@@ -268,7 +273,7 @@ async def create_draft_goal(
         if owned_ids != set(funding_account_ids):
             raise InvalidFundingAccount("one or more funding accounts are unavailable")
 
-    goal_id = uuid.uuid4()
+    goal_id = goal_id or uuid.uuid4()
     definition = GoalDefinition(
         goal_id=str(goal_id),
         user_id=str(user.id),
@@ -374,3 +379,60 @@ async def purchase_impact(
     record = await current_plan_record(session, user, goal_id)
     snapshot = await load_financial_snapshot(session, user, as_of_utc)
     return evaluate_goal_impact(proposed_spend_sen, snapshot, plan_from_record(record))
+
+
+async def apply_approved_plan_change(
+    session: AsyncSession,
+    user: User,
+    *,
+    definition: GoalDefinition,
+    plan: GoalPlan,
+    base_plan_version: int,
+    as_of_utc: datetime,
+) -> GoalPlanRecord:
+    """Append an approved version after an optimistic version check.
+
+    The caller owns the surrounding transaction so the plan, approval row and
+    audit event commit together. Previous approved versions are retained.
+    """
+    goal_id = uuid.UUID(definition.goal_id)
+    goal = (
+        await session.execute(
+            select(Goal).where(Goal.id == goal_id, Goal.user_id == user.id).with_for_update()
+        )
+    ).scalar_one_or_none()
+    if goal is None:
+        raise GoalNotFound(str(goal_id))
+    current = (
+        await session.execute(
+            select(GoalPlanRecord)
+            .where(GoalPlanRecord.goal_id == goal_id)
+            .order_by(GoalPlanRecord.version.desc())
+            .limit(1)
+            .with_for_update()
+        )
+    ).scalar_one_or_none()
+    current_version = current.version if current is not None else 0
+    if current_version != base_plan_version:
+        raise StalePlanVersion(
+            f"expected plan version {base_plan_version}, found {current_version}"
+        )
+
+    goal.name = definition.name
+    goal.goal_type = definition.goal_type
+    goal.currency = definition.currency
+    goal.target = Money(definition.target_amount_sen, definition.currency)
+    goal.saved = Money(definition.current_saved_sen, definition.currency)
+    goal.target_date = definition.target_date
+    goal.horizon = classify_goal_horizon(definition, as_of_utc.astimezone(UTC).date())
+    goal.priority = definition.priority
+    if plan.remaining_amount_sen == 0:
+        goal.status = "achieved"
+    else:
+        goal.status = "active" if plan.feasible else "at_risk"
+    goal.monthly = Money(plan.required_contribution_per_payday_sen, definition.currency)
+    goal.funding_account_ids = list(definition.funding_account_ids)
+    record = await persist_new_plan_version(session, goal, plan, approval_status="approved")
+    record.approved_at = datetime.now(tz=UTC)
+    await session.flush()
+    return record

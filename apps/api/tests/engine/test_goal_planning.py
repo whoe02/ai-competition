@@ -12,6 +12,7 @@ from kira.engine import (
     ProtectedCommitment,
     build_goal_contribution_schedule,
     calculate_goal_feasibility,
+    calculate_goal_plan_for_contribution,
     calculate_required_contribution,
     evaluate_goal_impact,
     generate_goal_scenarios,
@@ -97,6 +98,13 @@ class TestDatesAndImpact:
         later = calculate_required_contribution(goal(target_date=date(2026, 11, 4)), snapshot())
         assert original == 5_001
         assert later == 3_334
+
+    def test_selected_contribution_that_misses_target_is_infeasible(self):
+        plan = calculate_goal_plan_for_contribution(goal(), snapshot(), 2_000)
+        assert plan.required_contribution_per_payday_sen == 2_000
+        assert plan.projected_completion_date > plan.target_date
+        assert plan.feasible is False
+        assert "projected_after_target" in plan.risk_flags
 
     def test_purchase_can_delay_goal_without_touching_protected_money(self):
         plan = calculate_goal_feasibility(goal(), snapshot())

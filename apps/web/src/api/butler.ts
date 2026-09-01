@@ -4,6 +4,24 @@ import { api } from "./client";
 
 export type EvidenceRow = [string, string];
 
+export type GoalPlanPreview = {
+  target_amount_sen: number;
+  current_saved_sen: number;
+  required_contribution_per_payday_sen: number;
+  target_date: string;
+  feasible: boolean;
+};
+
+export type ApprovalView = {
+  id: string;
+  summary: string;
+  tool: string;
+  args?: Record<string, unknown>;
+  before?: GoalPlanPreview | null;
+  after?: GoalPlanPreview | null;
+  basePlanVersion?: number;
+};
+
 export type ButlerEvent =
   | { type: "message"; id: string; role: string }
   | { type: "thinking"; text: string }
@@ -17,14 +35,18 @@ export type ButlerEvent =
       module: string;
       summary: string;
       args: Record<string, unknown>;
+      before?: GoalPlanPreview | null;
+      after?: GoalPlanPreview | null;
+      base_plan_version?: number;
     }
   | {
       type: "done";
       answer: string;
-      evidence: EvidenceRow[];
-      tools_used: string[];
+      evidence?: EvidenceRow[];
+      tools_used?: string[];
       approval: { approval_id: string; summary: string } | null;
       applied?: { tool: string; summary: string } | null;
+      llm_calls?: number;
     }
   | { type: "error"; message: string };
 

@@ -46,7 +46,9 @@ def test_a_different_seed_gives_a_different_run():
 
 def test_the_bands_are_ordered():
     result = simulate(snapshot(), VARIED, 60, trials=300, seed=11)
-    for low, mid, high in zip(result.bands.p10, result.bands.p50, result.bands.p90):
+    for low, mid, high in zip(
+        result.bands.p10, result.bands.p50, result.bands.p90, strict=True
+    ):
         assert low <= mid <= high
 
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { fmt, parseSen, toRinggitInput } from "./money";
+import { fmt, parseNonNegativeSen, parseSen, toRinggitInput } from "./money";
 
 describe("fmt", () => {
   it("formats sen as grouped ringgit", () => {
@@ -69,5 +69,13 @@ describe("parseSen", () => {
     expect(parseSen(toRinggitInput(1400))).toBe(1400);
     expect(toRinggitInput(1990)).toBe("19.90");
     expect(toRinggitInput(5)).toBe("0.05");
+  });
+});
+
+describe("parseNonNegativeSen", () => {
+  it("allows an empty goal's zero balance while still using integer sen", () => {
+    expect(parseNonNegativeSen("0.00")).toBe(0);
+    expect(parseNonNegativeSen("8,000.25")).toBe(800025);
+    expect(parseNonNegativeSen("-1.00")).toBeNull();
   });
 });

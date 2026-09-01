@@ -1,6 +1,10 @@
+import json
+from contextlib import asynccontextmanager
 from datetime import date
 
+from kira.api.deps import stream_session_factory
 from kira.api.schemas import GoalCreateRequest
+from kira.seed.demo import DEMO_EMAIL, DEMO_PASSWORD, seed_demo_user
 
 from .test_auth import register
 
@@ -84,3 +88,56 @@ class TestGoalContracts:
 def test_request_contract_keeps_target_date_as_a_date():
     request = GoalCreateRequest.model_validate(payload())
     assert request.target_date == date(2026, 12, 2)
+
+
+async def test_structured_goal_graph_run_and_approval_resume(client, session):
+    @asynccontextmanager
+    async def shared():
+        yield session
+
+    client._transport.app.dependency_overrides[stream_session_factory] = lambda: shared
+    await seed_demo_user(session)
+    await session.commit()
+    logged_in = await client.post(
+        "/v1/auth/login", json={"email": DEMO_EMAIL, "password": DEMO_PASSWORD}
+    )
+    headers = auth(logged_in.json()["access_token"])
+    started = await client.post(
+        "/v1/goals/runs",
+        json={
+            "text": "",
+            "explain": False,
+            "intent": {
+                "action": "create",
+                "goal_type": "travel",
+                "name": "Penang trip",
+                "target_amount_sen": 100_000,
+                "current_saved_sen": 20_000,
+                "target_date": "2026-12-31",
+                "priority": "important",
+            },
+        },
+        headers=headers,
+    )
+    assert started.status_code == 200, started.text
+    body = started.json()
+    assert body["llm_calls"] == 0
+    assert body["approval"]["base_plan_version"] == 1
+
+    resumed = await client.post(
+        f"/v1/butler/approvals/{body['approval']['approval_id']}/respond",
+        json={"action": "accept"},
+        headers=headers,
+    )
+    assert resumed.status_code == 200, resumed.text
+    events = [
+        json.loads(line.removeprefix("data: "))
+        for line in resumed.text.splitlines()
+        if line.startswith("data: ")
+    ]
+    assert events[-1]["type"] == "done"
+    assert events[-1]["approval"]["status"] == "applied"
+
+    plan = await client.get(f"/v1/goals/{body['goal_id']}/plan", headers=headers)
+    assert plan.json()["version"] == 2
+    assert plan.json()["approval_status"] == "approved"

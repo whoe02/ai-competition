@@ -1,4 +1,3 @@
-import type { ReactNode } from "react";
 import { useState } from "react";
 
 import type { ForesightDriver, ForesightResponse, GoalSummary } from "@kira/contracts";
@@ -7,15 +6,18 @@ import { FanChart } from "../components/FanChart";
 import { Reveal } from "../components/Reveal";
 import { Ring } from "../components/Ring";
 import { fmt } from "../lib/money";
+import { DayPlan } from "./DayPlan";
+import { GoalPlanner } from "./goals/GoalPlanner";
+
+export type PlanView = "daily" | "goals";
 
 type PlanProps = {
-  data: ForesightResponse | undefined;
+  initialView?: PlanView;
+  data?: ForesightResponse;
   goals?: GoalSummary[];
-  isLoading: boolean;
-  isError: boolean;
-  onDriver: (driver: ForesightDriver) => void;
-  /** The day planner, rendered in its own section rather than on its own tab. */
-  dayPlan?: ReactNode;
+  isLoading?: boolean;
+  isError?: boolean;
+  onDriver?: (driver: ForesightDriver) => void;
 };
 
 const SHORT = "#4E8F79";
@@ -45,9 +47,99 @@ function driverCopy(driver: ForesightDriver, goalNames: Map<string, string>): st
   return `${driver.lever.delta.sen < 0 ? "Reduce" : "Raise"} a commitment by ${amount}`;
 }
 
-export function Plan({ data, goals = [], isLoading, isError, onDriver, dayPlan }: PlanProps) {
-  const [section, setSection] = useState<"overview" | "foresight" | "day">("overview");
+/** Shared PLAN shell. Foresight belongs inside Goals, not in bottom navigation. */
+export function Plan({
+  initialView = "daily",
+  data,
+  goals = [],
+  isLoading = false,
+  isError = false,
+  onDriver = () => undefined,
+}: PlanProps) {
+  const [view, setView] = useState<PlanView>(initialView);
+  const [showForesight, setShowForesight] = useState(false);
 
+  const selectView = (next: PlanView) => {
+    setView(next);
+    if (next === "daily") setShowForesight(false);
+  };
+
+  return (
+    <>
+      <div className="plan-view-switch">
+        <div className="seg-toggle" role="tablist" aria-label="Plan view">
+          <span
+            className="seg-thumb"
+            aria-hidden="true"
+            style={{
+              transform:
+                view === "goals" ? "translateX(calc(100% + 5px))" : "translateX(0)",
+            }}
+          />
+          <button
+            id="plan-daily-tab"
+            className={`seg-btn ${view === "daily" ? "on" : ""}`}
+            type="button"
+            role="tab"
+            aria-selected={view === "daily"}
+            aria-controls="plan-daily-panel"
+            onClick={() => selectView("daily")}
+          >
+            Daily
+          </button>
+          <button
+            id="plan-goals-tab"
+            className={`seg-btn ${view === "goals" ? "on" : ""}`}
+            type="button"
+            role="tab"
+            aria-selected={view === "goals"}
+            aria-controls="plan-goals-panel"
+            onClick={() => selectView("goals")}
+          >
+            Goals
+          </button>
+        </div>
+      </div>
+
+      {view === "daily" ? (
+        <div id="plan-daily-panel" role="tabpanel" aria-labelledby="plan-daily-tab">
+          <DayPlan />
+        </div>
+      ) : (
+        <div id="plan-goals-panel" role="tabpanel" aria-labelledby="plan-goals-tab">
+          {showForesight ? (
+            <Foresight
+              data={data}
+              goals={goals}
+              isLoading={isLoading}
+              isError={isError}
+              onBack={() => setShowForesight(false)}
+              onDriver={onDriver}
+            />
+          ) : (
+            <GoalPlanner onOpenForesight={() => setShowForesight(true)} />
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
+function Foresight({
+  data,
+  goals,
+  isLoading,
+  isError,
+  onBack,
+  onDriver,
+}: {
+  data?: ForesightResponse;
+  goals: GoalSummary[];
+  isLoading: boolean;
+  isError: boolean;
+  onBack: () => void;
+  onDriver: (driver: ForesightDriver) => void;
+}) {
   const names = new Map(goals.map((goal) => [goal.id, goal.name]));
   const details = new Map(goals.map((goal) => [goal.id, goal]));
   const notReady = !data || data.profile_days < 14 || data.outlooks.length === 0;
@@ -56,108 +148,34 @@ export function Plan({ data, goals = [], isLoading, isError, onDriver, dayPlan }
     <>
       <div className="topbar">
         <div>
-          <p className="eyebrow" style={{ margin: 0 }}>Plan</p>
-          <h1>
-            {section === "overview"
-              ? "Your money, deliberately"
-              : section === "day"
-                ? "Today, out there"
-                : "The road ahead"}
-          </h1>
+          <p className="eyebrow" style={{ margin: 0 }}>Goals · Foresight</p>
+          <h1>The road ahead</h1>
         </div>
-        {section === "foresight" && data && <span className="plan-horizon">{data.horizon_days} days</span>}
+        {data && <span className="plan-horizon">{data.horizon_days} days</span>}
       </div>
-
       <div className="pad">
-        {section === "overview" ? (
-          <Reveal>
-            <section className="plan-empty" aria-label="Plan overview">
-              <p className="eyebrow" style={{ margin: 0 }}>Your commitments and goals</p>
-              <h2>Keep the next move clear.</h2>
+        <button className="btn btn-ghost btn-sm" onClick={onBack}>Back to goals</button>
+
+        {isLoading || (!data && !isError) ? (
+          <p className="voice" style={{ fontSize: 17, marginTop: 24 }}>Looking ahead…</p>
+        ) : isError ? (
+          <section className="plan-empty" style={{ marginTop: 18 }}>
+            <h2>I couldn’t reach your forecast just now.</h2>
+            <p>Nothing has changed. Try again in a moment.</p>
+          </section>
+        ) : notReady ? (
+          <Reveal style={{ marginTop: 18 }}>
+            <section className="plan-empty">
+              <p className="eyebrow" style={{ margin: 0 }}>Still learning</p>
+              <h2>Not enough history to forecast yet.</h2>
               <p>
-                Your daily number protects bills, your buffer and the goals you are building toward.
-                Foresight is available when you want to explore possible futures.
+                Confirmed spending gives Kira a pattern to learn. Once there is enough of it,
+                this will show a range of plausible futures — not a made-up certainty.
               </p>
-              {goals.length > 0 && (
-                <div style={{ display: "grid", gap: 9, marginTop: 18 }}>
-                  {goals.map((goal) => (
-                    <div
-                      key={goal.id}
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        gap: 12,
-                        paddingTop: 10,
-                        borderTop: "1px solid rgba(35,52,45,.1)",
-                      }}
-                    >
-                      <span>
-                        <b style={{ display: "block", fontSize: 14 }}>{goal.name}</b>
-                        <small style={{ color: "var(--muted)" }}>
-                          RM{fmt(goal.monthly_sen)} each month
-                        </small>
-                      </span>
-                      <b style={{ fontSize: 13.5, whiteSpace: "nowrap" }}>
-                        RM{fmt(goal.saved_sen)} saved
-                      </b>
-                    </div>
-                  ))}
-                </div>
-              )}
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 20 }}>
-                <button className="btn btn-primary btn-sm" onClick={() => setSection("foresight")}>
-                  Open Foresight
-                </button>
-                {dayPlan && (
-                  <button className="btn btn-ghost btn-sm" onClick={() => setSection("day")}>
-                    Open day planner
-                  </button>
-                )}
-              </div>
             </section>
           </Reveal>
-        ) : section === "day" ? (
+        ) : data ? (
           <>
-            <button className="btn btn-ghost btn-sm" onClick={() => setSection("overview")}>
-              Back to plan
-            </button>
-            <div style={{ marginTop: 18 }}>{dayPlan}</div>
-          </>
-        ) : isLoading || !data ? (
-          <div style={{ paddingTop: 28 }}>
-            <button className="btn btn-ghost btn-sm" onClick={() => setSection("overview")}>
-              Back to plan
-            </button>
-            <p className="voice" style={{ fontSize: 17, marginTop: 24 }}>
-              {isError ? "I couldn't reach your forecast just now." : "Looking ahead…"}
-            </p>
-            {isError && (
-              <p style={{ fontSize: 13, color: "var(--muted)" }}>
-                Nothing has changed. Pull down to try again.
-              </p>
-            )}
-          </div>
-        ) : notReady ? (
-          <>
-            <button className="btn btn-ghost btn-sm" onClick={() => setSection("overview")}>
-              Back to plan
-            </button>
-            <Reveal style={{ marginTop: 18 }}>
-              <section className="plan-empty">
-                <p className="eyebrow" style={{ margin: 0 }}>Still learning</p>
-                <h2>Not enough history to forecast yet.</h2>
-                <p>
-                  Confirmed spending gives Kira a pattern to learn. Once there is enough of it,
-                  this will show a range of plausible futures — not a made-up certainty.
-                </p>
-              </section>
-            </Reveal>
-          </>
-        ) : (
-          <>
-            <button className="btn btn-ghost btn-sm" onClick={() => setSection("overview")}>
-              Back to plan
-            </button>
             <Reveal style={{ marginTop: 18 }}>
               <section className="plan-forecast">
                 <div className="plan-card-head">
@@ -236,7 +254,7 @@ export function Plan({ data, goals = [], isLoading, isError, onDriver, dayPlan }
               </section>
             </Reveal>
           </>
-        )}
+        ) : null}
       </div>
     </>
   );

@@ -2,10 +2,11 @@
 
     START
       → load_context
-      → agent → insist  ⇄  guard  →  tools       (reads; on to compose)
-                           guard  →  approval    (writes; interrupt())
-                           guard  →  agent       (all refused, nothing ran; once)
-      → compose
+      → agent → insist  ⇄  guard  →  tools          (reads; on to compose)
+                           guard  →  approval       (ordinary writes; interrupt())
+                           guard  →  goal_workflow  (typed Goal subgraph)
+                           guard  →  agent          (all refused, nothing ran; once)
+      → compose (ordinary turns; Goal already composed its own response)
       → extract_memory
       → END
 
@@ -32,6 +33,7 @@ from kira.agent.nodes.approve import approval
 from kira.agent.nodes.compose import compose
 from kira.agent.nodes.context import load_context
 from kira.agent.nodes.execute import tools
+from kira.agent.nodes.goal import goal_workflow
 from kira.agent.nodes.guard import guard, route_after_guard, route_after_tools
 from kira.agent.nodes.insist import insist
 from kira.agent.nodes.memory import extract_memory
@@ -46,6 +48,7 @@ def build_graph(checkpointer: BaseCheckpointSaver | None = None):
     builder.add_node("agent", agent)
     builder.add_node("insist", insist)
     builder.add_node("guard", guard)
+    builder.add_node("goal_workflow", goal_workflow)
     builder.add_node("tools", tools)
     builder.add_node("approval", approval)
     builder.add_node("compose", compose)
@@ -61,7 +64,13 @@ def build_graph(checkpointer: BaseCheckpointSaver | None = None):
     builder.add_conditional_edges(
         "guard",
         route_after_guard,
-        {"tools": "tools", "approval": "approval", "compose": "compose", "agent": "agent"},
+        {
+            "tools": "tools",
+            "approval": "approval",
+            "workflow": "goal_workflow",
+            "compose": "compose",
+            "agent": "agent",
+        },
     )
     # A batch holding both reads and a write executes the reads first, then
     # stops at the write — so the approval card is asked with its evidence
@@ -70,8 +79,18 @@ def build_graph(checkpointer: BaseCheckpointSaver | None = None):
     builder.add_conditional_edges(
         "tools",
         route_after_tools,
-        {"approval": "approval", "agent": "agent", "compose": "compose"},
+        {
+            "approval": "approval",
+            "workflow": "goal_workflow",
+            "agent": "agent",
+            "compose": "compose",
+        },
     )
+    # The Goal subgraph already composed the authoritative turn.
+    # The ordinary composer would spend a third LLM call; generic memory
+    # extraction would also misclassify "I want RM... for a goal" as a durable
+    # preference when it is already represented by the Goal domain.
+    builder.add_edge("goal_workflow", END)
     builder.add_edge("approval", "compose")
     builder.add_edge("compose", "extract_memory")
     builder.add_edge("extract_memory", END)
@@ -103,10 +122,15 @@ async def setup_checkpointer(dsn: str) -> BaseCheckpointSaver | None:
     global _graph, _saver_context
     from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
-    _saver_context = AsyncPostgresSaver.from_conn_string(dsn)
+    from kira.agent.goal_graph.graph import checkpoint_serializer
+
+    _saver_context = AsyncPostgresSaver.from_conn_string(dsn, serde=checkpoint_serializer())
     saver = await _saver_context.__aenter__()
     await saver.setup()
     _graph = build_graph(saver)
+    from kira.agent.goal_graph.graph import configure_goal_graph
+
+    configure_goal_graph(saver)
     return saver
 
 
@@ -117,6 +141,9 @@ async def close_checkpointer() -> None:
         await _saver_context.__aexit__(None, None, None)
         _saver_context = None
     _graph = None
+    from kira.agent.goal_graph.graph import configure_goal_graph
+
+    configure_goal_graph(None)
 
 
 def graph_thread_id(thread_id: uuid.UUID, message_id: uuid.UUID) -> str:

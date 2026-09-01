@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -345,20 +345,49 @@ describe("App", () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     await user.click(await screen.findByRole("button", { name: /sign in/i }));
     await user.click(await screen.findByRole("button", { name: /^Plan$/i }));
+    await user.click(await screen.findByRole("tab", { name: "Goals" }));
     await user.click(await screen.findByRole("button", { name: /open foresight/i }));
 
     expect(await screen.findByText("The road ahead")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^Today$/i })).toBeInTheDocument();
   });
 
-  it("reaches the day planner from the plan overview", async () => {
+  it("keeps Daily and Goals inside the selected Plan tab", async () => {
     renderApp();
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     await user.click(await screen.findByRole("button", { name: /sign in/i }));
-    await user.click(await screen.findByRole("button", { name: /^Plan$/i }));
-    await user.click(await screen.findByRole("button", { name: /open day planner/i }));
+    const planNav = await screen.findByRole("button", { name: /^Plan$/i });
+    await user.click(planNav);
 
-    await waitFor(() => expect(screen.getByText(/What today's money can buy/i)).toBeInTheDocument());
+    const daily = await screen.findByRole("tab", { name: "Daily" });
+    const goals = screen.getByRole("tab", { name: "Goals" });
+    expect(daily).toHaveAttribute("aria-selected", "true");
+    expect(await screen.findByText(/What today's money can buy/i)).toBeVisible();
+    expect(planNav).toHaveClass("active");
+
+    await user.click(goals);
+    expect(goals).toHaveAttribute("aria-selected", "true");
+    expect(await screen.findByText("Start with one goal that matters")).toBeVisible();
+    expect(screen.queryByText(/What today's money can buy/i)).not.toBeInTheDocument();
+    expect(planNav).toHaveClass("active");
+    expect(
+      within(screen.getByRole("navigation")).queryByRole("button", { name: "Goals" }),
+    ).not.toBeInTheDocument();
+
+    await user.click(daily);
+    expect(daily).toHaveAttribute("aria-selected", "true");
+    expect(await screen.findByText(/What today's money can buy/i)).toBeVisible();
+  });
+
+  it("opens the existing Today goals card in PLAN's Goals mode", async () => {
+    renderApp();
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    await user.click(await screen.findByRole("button", { name: /sign in/i }));
+    await user.click(await screen.findByRole("button", { name: /Your goals/i }));
+
+    expect(await screen.findByRole("tab", { name: "Goals" })).toHaveAttribute("aria-selected", "true");
+    expect(await screen.findByText("Start with one goal that matters")).toBeVisible();
+    expect(screen.getByRole("button", { name: /^Plan$/i })).toHaveClass("active");
   });
 });
 

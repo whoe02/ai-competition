@@ -166,28 +166,35 @@ class TestDeciding:
     async def test_an_edit_is_revalidated_before_it_runs(self, session, butler, today):
         """The row is not a licence to execute whatever it happens to contain."""
         user, thread = butler
-        goal = (await session.execute(select(Goal).limit(1))).scalar_one()
+        bill = (
+            await session.execute(
+                select(Commitment).where(Commitment.protected.is_(False)).limit(1)
+            )
+        ).scalar_one()
         factory = scripted_factory(
-            ("update_goal", {"goal_id": str(goal.id), "monthly_sen": 60000})
+            ("update_commitment", {"commitment_id": str(bill.id), "amount_sen": 60000})
         )
         await run_turn(
-            session, user, thread, text="Put more aside", today=today, model_factory=factory
+            session, user, thread, text="Update that bill", today=today, model_factory=factory
         )
         approval = (await session.execute(select(ButlerApproval).limit(1))).scalar_one()
-        before = goal.monthly
+        before = bill.amount
 
         result = await resume_approval(
             session,
             user,
             thread,
             graph_thread=approval.graph_thread_id,
-            decision={"action": "edit", "args": {"goal_id": str(goal.id), "monthly_sen": -5}},
+            decision={
+                "action": "edit",
+                "args": {"commitment_id": str(bill.id), "amount_sen": -5},
+            },
             today=today,
             model_factory=factory,
         )
 
         assert result.applied is None
-        assert goal.monthly == before
+        assert bill.amount == before
         assert approval.status == APPROVAL_PENDING
 
 

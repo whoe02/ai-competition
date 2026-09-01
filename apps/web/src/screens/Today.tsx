@@ -3,6 +3,7 @@ import { useState } from "react";
 import type { BriefingInboxResponse, DashboardToday } from "@kira/contracts";
 
 import type { Tab } from "../App";
+import type { PlanView } from "./Plan";
 import { ClaimLine, type Band } from "../components/ClaimLine";
 import { IcArrow, IcBell, IcChev, IcLock } from "../components/Icons";
 import { Odometer } from "../components/Odometer";
@@ -30,7 +31,7 @@ type TodayProps = {
   isLoading: boolean;
   isError: boolean;
   briefing?: BriefingInboxResponse | null;
-  go: (tab: Tab) => void;
+  go: (tab: Tab, planView?: PlanView) => void;
 };
 
 export function Today({ data, isLoading, isError, briefing, go }: TodayProps) {
@@ -249,7 +250,7 @@ export function Today({ data, isLoading, isError, briefing, go }: TodayProps) {
         )}
 
         <Reveal delay={40} style={{ marginTop: 16 }}>
-          <button className="card tapp" style={{ width: "100%", textAlign: "left" }} onClick={() => go("plan")}>
+          <button className="card tapp" style={{ width: "100%", textAlign: "left" }} onClick={() => go("plan", "goals")}>
             <div
               style={{
                 display: "flex",

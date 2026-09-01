@@ -1,9 +1,11 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import type { ForesightResponse, GoalSummary } from "@kira/contracts";
 
+import { dashboardTodayKey } from "../api/hooks";
 import { Plan } from "./Plan";
 
 export const FORECAST: ForesightResponse = {
@@ -64,8 +66,20 @@ const GOALS: GoalSummary[] = [
 ];
 
 function renderPlan(overrides: Partial<Parameters<typeof Plan>[0]> = {}) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  client.setQueryData(dashboardTodayKey, { goals: GOALS });
   return render(
-    <Plan data={FORECAST} goals={GOALS} isLoading={false} isError={false} onDriver={vi.fn()} {...overrides} />,
+    <QueryClientProvider client={client}>
+      <Plan
+        initialView="goals"
+        data={FORECAST}
+        goals={GOALS}
+        isLoading={false}
+        isError={false}
+        onDriver={vi.fn()}
+        {...overrides}
+      />
+    </QueryClientProvider>,
   );
 }
 
@@ -78,7 +92,7 @@ describe("Plan", () => {
 
   it("keeps forecasts in a dedicated Foresight section", async () => {
     renderPlan();
-    expect(screen.getByRole("region", { name: /plan overview/i })).toBeInTheDocument();
+    expect(screen.getByText("What are you saving toward?")).toBeInTheDocument();
     expect(screen.queryByText("62%")).not.toBeInTheDocument();
 
     await openForesight();
