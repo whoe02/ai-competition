@@ -62,8 +62,9 @@ const STYLES = `
 .device{
   width:390px;max-width:100%;height:820px;position:relative;
   border-radius:46px;padding:9px;
-  background:linear-gradient(160deg,#C3CAC3 0%,#8E9A94 32%,#6E7C77 60%,#AAB4AE 100%);
-  box-shadow:0 40px 90px -34px rgba(15,28,26,.55), 0 2px 0 rgba(255,255,255,.55) inset;
+  background:linear-gradient(150deg,#303433 0%,#080A09 30%,#000 68%,#292D2B 100%);
+  box-shadow:0 40px 90px -34px rgba(15,28,26,.65), 0 1px 0 rgba(255,255,255,.22) inset,
+    0 0 0 1px rgba(0,0,0,.78);
   animation:deviceIn 1.1s var(--spring) both;
 }
 @keyframes deviceIn{from{opacity:0;transform:translateY(26px) scale(.965);}to{opacity:1;transform:none;}}
@@ -86,14 +87,28 @@ const STYLES = `
   100%{transform:translate3d(0,-72px,0) scale(1);}
 }
 
-.statusbar{height:34px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:0 26px;
-  font-size:11.5px;font-weight:700;color:var(--ink);transition:color .5s ease;}
+.statusbar{height:42px;flex:none;display:flex;align-items:flex-start;justify-content:space-between;padding:11px 19px 0;
+  font-size:12px;font-weight:700;color:var(--ink);position:relative;z-index:30;transition:color .5s ease;}
 .screen.dim .statusbar{color:#E9EDE9;}
-.sb-dots{display:flex;gap:4px;align-items:center;}
-.sb-dots i{width:3px;height:9px;border-radius:1px;background:currentColor;opacity:.75;display:block;}
-.sb-dots i:nth-child(2){height:11px}.sb-dots i:nth-child(3){height:13px}
-.sb-batt{width:19px;height:10px;border:1.4px solid currentColor;border-radius:3px;opacity:.8;position:relative;}
-.sb-batt::after{content:'';position:absolute;inset:1.6px;right:5px;background:currentColor;border-radius:1px;}
+.status-time,.status-icons{position:relative;z-index:2;}
+.status-icons{display:flex;gap:6px;align-items:center;height:13px;}
+.device-notch{position:absolute;z-index:1;left:50%;top:0;width:202px;height:31px;transform:translateX(-50%);
+  display:flex;align-items:center;justify-content:center;gap:11px;background:#030403;border-radius:0 0 19px 19px;
+  box-shadow:0 1px 0 rgba(255,255,255,.04) inset,0 1px 2px rgba(0,0,0,.18);}
+.notch-speaker{width:48px;height:5px;border-radius:999px;background:#1B1E1D;
+  box-shadow:0 1px 1px rgba(255,255,255,.06) inset;}
+.notch-camera{width:8px;height:8px;border-radius:50%;background:radial-gradient(circle at 62% 38%,#22496A 0 10%,#10293D 24%,#080E12 58%,#010202 72%);
+  box-shadow:0 0 0 1px #111514,0 0 4px rgba(41,91,132,.35) inset;}
+.sb-signal{height:12px;display:flex;gap:2px;align-items:flex-end;}
+.sb-signal i{width:2.5px;border-radius:1px;background:currentColor;display:block;}
+.sb-signal i:nth-child(1){height:4px}.sb-signal i:nth-child(2){height:7px}
+.sb-signal i:nth-child(3){height:10px}.sb-signal i:nth-child(4){height:12px}
+.sb-wifi{width:16px;height:13px;overflow:visible;fill:currentColor;stroke:currentColor;stroke-width:1.8;
+  stroke-linecap:round;fill:none;}
+.sb-wifi circle{fill:currentColor;stroke:none;}
+.sb-batt{width:20px;height:10px;border:1.3px solid currentColor;border-radius:3px;position:relative;display:block;}
+.sb-batt::after{content:'';position:absolute;right:-3px;top:2px;width:1.5px;height:4px;border-radius:0 1px 1px 0;background:currentColor;opacity:.55;}
+.sb-batt i{position:absolute;inset:1.5px;background:currentColor;border-radius:1px;display:block;}
 
 .viewport{flex:1;overflow-y:auto;overflow-x:hidden;scrollbar-width:none;position:relative;}
 .viewport::-webkit-scrollbar{display:none;}
@@ -1117,11 +1132,21 @@ export default function Kira() {
             </div>
           )}
 
-          <div className="statusbar">
-            <span>12:47</span>
-            <span style={{ display: "flex", gap: 7, alignItems: "center" }}>
-              <span className="sb-dots"><i /><i /><i /><i /></span>
-              <span className="sb-batt" />
+          <div className="statusbar" aria-label="Device status">
+            <span className="status-time">12:47</span>
+            <span className="device-notch" aria-hidden="true">
+              <i className="notch-speaker" />
+              <i className="notch-camera" />
+            </span>
+            <span className="status-icons" aria-hidden="true">
+              <span className="sb-signal"><i /><i /><i /><i /></span>
+              <svg className="sb-wifi" viewBox="0 0 18 14">
+                <path d="M1.5 4.25A11.3 11.3 0 0 1 16.5 4.25" />
+                <path d="M4.1 7.2a7.4 7.4 0 0 1 9.8 0" />
+                <path d="M7 10.15a3.2 3.2 0 0 1 4 0" />
+                <circle cx="9" cy="12.25" r="1.05" />
+              </svg>
+              <span className="sb-batt"><i /></span>
             </span>
           </div>
 

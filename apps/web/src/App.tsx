@@ -152,11 +152,21 @@ export function App() {
             </div>
           )}
 
-          <div className="statusbar">
-            <span>12:47</span>
-            <span style={{ display: "flex", gap: 7, alignItems: "center" }}>
-              <span className="sb-dots"><i /><i /><i /><i /></span>
-              <span className="sb-batt" />
+          <div className="statusbar" aria-label="Device status">
+            <span className="status-time">12:47</span>
+            <span className="device-notch" aria-hidden="true">
+              <i className="notch-speaker" />
+              <i className="notch-camera" />
+            </span>
+            <span className="status-icons" aria-hidden="true">
+              <span className="sb-signal"><i /><i /><i /><i /></span>
+              <svg className="sb-wifi" viewBox="0 0 18 14">
+                <path d="M1.5 4.25A11.3 11.3 0 0 1 16.5 4.25" />
+                <path d="M4.1 7.2a7.4 7.4 0 0 1 9.8 0" />
+                <path d="M7 10.15a3.2 3.2 0 0 1 4 0" />
+                <circle cx="9" cy="12.25" r="1.05" />
+              </svg>
+              <span className="sb-batt"><i /></span>
             </span>
           </div>
 
