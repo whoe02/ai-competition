@@ -10,7 +10,7 @@ import re
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, replace
 from datetime import date
-from typing import Literal
+from typing import Literal, Protocol
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,6 +29,25 @@ Band = Literal["ok", "tight", "over"]
 # destinations and fail on others, and a single flag for the list would have to
 # lie about half of it.
 DistanceBasis = Literal["road", "straight_line"]
+# Why a search kept this place. ``tagged`` is OpenStreetMap stating the cuisine
+# outright; ``inferred`` is a model, asked once at build time, believing the
+# place also serves it; ``judged`` is a model reading this search's own request
+# and saying this place answers it, with nothing in the data to point at. All
+# three are matches and all three are in the list, but they are not the same
+# kind of truth and nothing downstream may present them as one: a tag is a
+# record about a real business, the other two are guesses about one.
+MatchBasis = Literal["tagged", "inferred", "judged"]
+# How well a ranking model thought a place answers the request. Only ever set
+# where a model actually judged this search; the deterministic filter leaves it
+# None, because a word either matched or it did not and there is no degree in
+# that.
+MatchStrength = Literal["strong", "weak"]
+# Which of the two narrowed this search. ``deterministic`` is the kind filter --
+# the offline path, and the whole of the product where the relevance pass is
+# off. ``model`` is a model having read the request. Carried on the result so a
+# screen can say which it is looking at rather than presenting a fallback as an
+# answer.
+Ranking = Literal["model", "deterministic"]
 
 
 # ── What kind of food ─────────────────────────────────────────────────────────
@@ -126,6 +145,11 @@ class EvaluatedPlace:
     # What this place can be found by, ``kind`` first. Carried through the
     # evaluation because the kind filter and the landscape both run after it.
     kinds: tuple[str, ...]
+    # What a model believes it also serves, beyond the tags above. Carried for
+    # the same two readers, and kept in its own field for the same reason the
+    # place itself keeps it in one: the filter may match on either, and every
+    # answer built from that has to be able to say which of the two it was.
+    also_serves: tuple[str, ...]
     address: str
     # Where it stands, so a client can point a map at this shop rather than at
     # its name. A quarter of the addresses above are a locality rather than a
@@ -150,6 +174,72 @@ class EvaluatedPlace:
     confidence: str
     halal: bool
     note: str
+    # Why the search kept this place, or None where nothing was asked for and
+    # there was nothing to match. None is also what the places a filter turned
+    # away carry: they matched nothing, so there is no basis to state.
+    #
+    # Defaulted because it is not known at evaluation time. A place is priced
+    # before any request is considered, and the basis is stamped on afterwards
+    # by the one step that knows what was asked.
+    match_basis: MatchBasis | None = None
+    # How strongly a ranking model thought this place answers the request, or
+    # None where no model judged it -- which is every place on the deterministic
+    # path. It is the model's only say in the order: strong matches stand ahead
+    # of weak ones, and inside each group the totals below still decide.
+    match_strength: MatchStrength | None = None
+    # Why this place is on the list, in a few words a row can print as they
+    # stand: "Tagged chicken", "Also serves chicken", "The model thinks this
+    # serves beef". It exists because a row otherwise cannot explain itself --
+    # a place labelled Dessert answering a search for chicken is either a good
+    # answer or a bug, and the label alone does not say which.
+    #
+    # Every word of it is composed here, from what the data says and from a
+    # single food word the model was allowed to contribute. Never a sentence the
+    # model wrote, and never a name: see ``_judged``.
+    match_reason: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class Judgement:
+    """One line of a ranking model's answer: a place, and how well it fits.
+
+    ``place_id`` has to be one of the ids the model was handed. Anything else is
+    dropped rather than trusted -- see ``_judged``. That is the guard that keeps
+    this apart from the failure this project has already produced once, where a
+    model with nothing to go on answered with a restaurant that does not exist.
+    A model that can only return identifiers can only ever return real places.
+
+    ``serves`` is the model's own two or three words for what this place serves
+    that answers the request -- "beef", "grilled fish". It is the only thing it
+    contributes to what a row says, and it is not a sentence: the sentence is
+    composed here, so nothing the model wrote reaches the screen unframed.
+    Empty is ordinary, and means the row falls back to quoting the request.
+    """
+
+    place_id: str
+    strength: MatchStrength
+    serves: str = ""
+
+
+class PlaceRanker(Protocol):
+    """Reads a request and says which of these places answer it.
+
+    The implementation lives above this layer, in ``kira.agent``, and is handed
+    in by whoever is calling. A service that reached up for it would invert the
+    one dependency this app keeps straight, and -- more to the point here -- a
+    search with nothing handed in runs the deterministic filter along the exact
+    path it ran before any of this existed.
+
+    None is every way of not having an answer: no model configured, the feature
+    off, a timeout, a refusal, a reply that would not parse. It means fall back
+    to the kind filter. An empty sequence is a different thing entirely -- a
+    model that read the request, looked at the places, and says none of them
+    answer it.
+    """
+
+    async def __call__(
+        self, request: str, places: Sequence[EvaluatedPlace]
+    ) -> Sequence[Judgement] | None: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -161,7 +251,10 @@ class KindPrice:
     held against it directly.
 
     ``count`` is how many places a filter for this kind would return, which is
-    not a share of the list: see ``price_landscape``.
+    not a share of the list: see ``price_landscape``. A filter matches a tag or
+    a belief, so a row can be counting either, and a row can exist because of a
+    belief alone -- it says what a search for that word would come back with,
+    which is the only thing it has ever promised.
     """
 
     kind: str
@@ -185,14 +278,31 @@ def price_landscape(evaluated: Iterable[EvaluatedPlace]) -> tuple[KindPrice, ...
     some. The price is that the counts no longer sum to the length of the list.
     They never were meant to: this is one answer per kind, not a division of
     the places between them.
+
+    A believed kind counts exactly as a tagged one does, and for that same
+    reason. The filter matches either, so a chicken search reaches the burger
+    place a model says fries chicken; counted only under the tags, the chicken
+    row would promise fewer places than the search hands back. What kind of
+    truth each row rests on is not lost by this -- it is on the rows underneath,
+    where a place says outright which of the two matched it.
     """
     # The kind is carried beside the place because a row is labelled with the
     # word its own group was matched on -- the seafood row says "Seafood", not
     # whatever the cheapest place in it happens to be labelled.
     by_key: dict[str, list[tuple[str, EvaluatedPlace]]] = {}
     for place in evaluated:
-        for kind in place.kinds:
-            by_key.setdefault(kind_key(kind), []).append((kind, place))
+        # Once per key per place, tags read first. A search returns a place
+        # once however many of its words match, so a place standing twice in
+        # one group would have the row promising more than the list can show.
+        # The shipped generator already drops a belief that restates a tag, but
+        # this is the count the row is judged on and it holds for any adapter.
+        counted: set[str] = set()
+        for kind in (*place.kinds, *place.also_serves):
+            key = kind_key(kind)
+            if key in counted:
+                continue
+            counted.add(key)
+            by_key.setdefault(key, []).append((kind, place))
     rows = []
     for group in by_key.values():
         kind, cheapest = min(group, key=lambda pair: pair[1].total_sen)
@@ -245,6 +355,7 @@ def evaluate_place(
         name=place.name,
         kind=place.kind,
         kinds=place.kinds,
+        also_serves=place.also_serves,
         address=place.address,
         lat=place.lat,
         lng=place.lng,
@@ -276,13 +387,16 @@ class PlacesFound:
       ``nearby_count`` means the halal toggle is the cause -- raising the
       ceiling would do nothing, and telling the user to raise it sends them at
       a slider that cannot help.
-    * ``kind_count`` is what was still standing after the food-type filter, and
-      equals ``matching_count`` when no kind was asked for. Nil against a
+    * ``kind_count`` is what was still standing after the food-type filter --
+      or after the relevance pass, where ``ranking`` says a model ran instead --
+      and equals ``matching_count`` when nothing was asked for. Nil against a
       non-nil ``matching_count`` means there is nothing of that kind around
       here at all -- again not a ceiling, and not a distance either, since
       other food is in range. It counts places, so a place that carries the
       asked-for kind alongside two others is one of them, and it is the same
-      figure as the ``landscape`` row for that kind.
+      figure as the ``landscape`` row for that kind. Tagged and believed
+      matches are counted alike, because both are in the list: which of the two
+      any one place is stands on the place itself, in ``match_basis``.
     * anything left after that, with ``places`` still empty, is the ceiling:
       the one cause the user can actually drag away.
 
@@ -311,9 +425,12 @@ class PlacesFound:
     turned away, with the kind they really are and the price they really cost.
     It exists because the tags are one word per place and a menu is not. OSM
     calls McDonald's ``burger`` and stops there, so a search for chicken finds
-    KFC and walks the user past a McDonald's that fries chicken all day. No
-    refresh of the data fixes that -- there is no tag for it -- and the only
-    thing in this app that knows it is the language model.
+    KFC and walks the user past a McDonald's that fries chicken all day. Some of
+    that gap is closed before this list is built: a place a model was asked
+    about at build time and believed serves the thing is a match now, and turns
+    up in ``places`` marked ``inferred`` rather than down here. What is left is
+    the rest of the gap -- the shops nobody was asked about, and the ones the
+    model did not recognise.
     So these rows are handed over for it to reason across: real places, really
     nearby, at prices this search measured. What none of them is, is a match.
     Each one keeps its own kind, and anything said about what it serves beyond
@@ -325,6 +442,14 @@ class PlacesFound:
     ``landscape`` row for its own kind, and that is the two saying different
     things rather than disagreeing -- the row is the cheapest of that kind
     anywhere in range, and this is the closest one.
+
+    ``ranking`` says which of the two narrowed this search: a model that read
+    the request, or the deterministic kind filter. It is stated because the two
+    are not equally good and the difference is invisible in the list itself. A
+    fallback presented as an answer is the failure this whole field exists to
+    prevent -- a screen that cannot say "I could not reach my model, so this is
+    the word filter" will say nothing, and a search that quietly went back to
+    matching two dozen cuisine tags looks exactly like one that did not.
     """
 
     places: tuple[EvaluatedPlace, ...]
@@ -334,6 +459,48 @@ class PlacesFound:
     landscape: tuple[KindPrice, ...]
     nearest_over_cap: tuple[EvaluatedPlace, ...] = ()
     near_misses: tuple[EvaluatedPlace, ...] = ()
+    ranking: Ranking = "deterministic"
+
+
+# ── The order the matches are read in ─────────────────────────────────────────
+
+# A weak match stands behind a strong one, and behind everything the
+# deterministic filter produced -- which carries no strength at all, because a
+# word either matched or it did not. Reading None as strong is what keeps the
+# order on that path byte-for-byte what it was before any of this existed.
+_STRENGTH_ORDER: dict[MatchStrength | None, int] = {None: 0, "strong": 0, "weak": 1}
+
+# Where two outings cost the same, the place the map actually records goes in
+# front of the one somebody guessed at. A model's judgement about this search
+# sits with the beliefs, for the same reason: both are guesses, and neither is a
+# record. This reproduces the tie-break that was here before, which read
+# ``match_basis == "inferred"`` and had only the two values to tell apart.
+_BASIS_ORDER: dict[MatchBasis | None, int] = {
+    None: 0,
+    "tagged": 0,
+    "inferred": 1,
+    "judged": 1,
+}
+
+
+def _order_key(place: EvaluatedPlace) -> tuple[int, int, int]:
+    """Strength, then price, then how well founded the match is.
+
+    Price is the middle term and never the outer one, and that is the whole
+    shape of what a ranking model is allowed to do here. It may say a place
+    answers the request strongly or weakly; it may not make a dearer outing look
+    cheaper than it is. Inside a group of equally relevant places the money is
+    still what orders them, and every figure in the group is one this search
+    measured.
+
+    On the deterministic path the first term is constant and the third is the
+    tie-break that was always here, so this sorts exactly as it used to.
+    """
+    return (
+        _STRENGTH_ORDER[place.match_strength],
+        place.total_sen,
+        _BASIS_ORDER[place.match_basis],
+    )
 
 
 # How many of the turned-away places are offered back when the ceiling admitted
@@ -357,7 +524,11 @@ def _nearest_over_cap(turned_away: Sequence[EvaluatedPlace]) -> tuple[EvaluatedP
     ``share`` is untouched, because that is a real ratio against a real room and
     nothing here has changed it.
     """
-    nearest = sorted(turned_away, key=lambda place: place.total_sen)[:NEAREST_OVER_CAP]
+    # Ranked exactly as the list above the ceiling is, tie-break included. These
+    # are the same places under the same question, and two orders for one answer
+    # would put a belief in front of a tag here and behind it a slider's width
+    # away.
+    nearest = sorted(turned_away, key=_order_key)[:NEAREST_OVER_CAP]
     return tuple(replace(place, band="over") for place in nearest)
 
 
@@ -398,6 +569,140 @@ def _near_misses(turned_away: Sequence[EvaluatedPlace]) -> tuple[EvaluatedPlace,
     return tuple(nearest.values())[:NEAR_MISSES]
 
 
+# The three things a row can say about why it is here, and the whole vocabulary
+# of it. Two are read straight off the data. The third is the only one a model
+# has any hand in, and even there its contribution is the food word alone.
+def _tagged_reason(kind: str) -> str:
+    return f"Tagged {kind.lower()}"
+
+
+def _believed_reason(kind: str) -> str:
+    return f"Also serves {kind.lower()}"
+
+
+def _judged_reason(serves: str, request: str) -> str:
+    """Said as a belief, out loud, every time.
+
+    "The model thinks" is not hedging for its own sake. This row is on the list
+    because something with no menu in front of it read a name and a category and
+    formed an opinion; drawn like a tagged row it would arrive wearing the map's
+    authority, and the user would have no way to tell the two apart.
+    """
+    if serves:
+        return f"The model thinks this serves {serves}"
+    return f"The model thinks this answers “{' '.join(request.split())}”"
+
+
+def _first_matching(words: Iterable[str], wanted: str) -> str | None:
+    """The first of ``words`` that is the kind asked for, in its own spelling."""
+    return next((word for word in words if kind_key(word) == wanted), None)
+
+
+def _matching(evaluated: Sequence[EvaluatedPlace], wanted: str) -> list[EvaluatedPlace]:
+    """Every place a search for ``wanted`` reaches, each stamped with why.
+
+    Two different claims come back in one list, and that is the point of the
+    stamp. OpenStreetMap tagging a place chicken is a record about a real
+    business; a model believing McDonald's also fries chicken is a guess about
+    one -- and the guess is what makes the list wide enough to be useful, since
+    OSM tags McDonald's burger and stops there. Both are matches. What must not
+    happen is the two arriving indistinguishable, so the reason is written onto
+    the place here, at the one step that knows what was asked for.
+
+    A tag beats a belief wherever both would answer. A place OSM already calls
+    chicken is not made less certain by a model agreeing with it.
+
+    The words are the place's own rather than the user's, so a row says what the
+    data records about it: someone searching "noodle" reads "Tagged noodles".
+    """
+    matched: list[EvaluatedPlace] = []
+    for place in evaluated:
+        tagged = _first_matching(place.kinds, wanted)
+        if tagged is not None:
+            matched.append(
+                replace(place, match_basis="tagged", match_reason=_tagged_reason(tagged))
+            )
+            continue
+        believed = _first_matching(place.also_serves, wanted)
+        if believed is not None:
+            matched.append(
+                replace(place, match_basis="inferred", match_reason=_believed_reason(believed))
+            )
+    return matched
+
+
+def _named_in(request: str, words: Iterable[str]) -> str | None:
+    """The first of ``words`` the request actually says, or None if it says none.
+
+    The same whole-word rule ``resolve_kind`` uses, and forgiving in the same
+    one direction -- case and a plural ending, nothing else. It runs against the
+    place's own words rather than against the shipped vocabulary, because a
+    place in range can carry a kind that vocabulary has never heard of, and
+    because a search has to stay correct under a maps adapter that is not the
+    curated one.
+    """
+    folded = f" {' '.join(request.split()).casefold()} "
+    for word in words:
+        if re.search(rf"(?<!\w){re.escape(kind_key(word))}s?(?!\w)", folded):
+            return word
+    return None
+
+
+def _judged(
+    evaluated: Sequence[EvaluatedPlace],
+    judgements: Sequence[Judgement],
+    request: str,
+) -> list[EvaluatedPlace]:
+    """The places a ranking model kept, each stamped with why it is here.
+
+    Only ids it was actually given survive, and that is the whole guardrail
+    rather than a tidiness check. A model that returns an identifier can only
+    return a place that exists, was measured, and has a price behind it; the
+    moment one it composed were let through, the list would carry a shop nobody
+    can go to at a price nobody measured -- which is exactly what happened here
+    once already, under a name that read perfectly plausibly.
+
+    Nothing about a place changes but why it is on the list. The total, the
+    fare, the distance, the share and the band all come through untouched: they
+    were computed before this ran and the model has no way to reach them.
+
+    The reason prefers what can be proved. Where the request actually says a
+    word the map records for this place, the row says so and the model's opinion
+    is not needed; where it says a word the build-time belief carries, the row
+    says that instead. Only where neither holds -- a Dessert place answering a
+    search for beef -- does the row fall back to the model's own account of
+    itself, and there it says out loud that that is what it is.
+    """
+    by_id = {place.id: place for place in evaluated}
+    kept: list[EvaluatedPlace] = []
+    seen: set[str] = set()
+    for judgement in judgements:
+        place = by_id.get(judgement.place_id)
+        # An unknown id is dropped in silence, and a repeat of one already kept
+        # with it: a place standing twice would have the counts promising more
+        # than the list can show, exactly as a doubled landscape row would.
+        if place is None or place.id in seen:
+            continue
+        seen.add(place.id)
+        basis: MatchBasis
+        tagged = _named_in(request, place.kinds)
+        if tagged is not None:
+            basis, reason = "tagged", _tagged_reason(tagged)
+        elif (believed := _named_in(request, place.also_serves)) is not None:
+            basis, reason = "inferred", _believed_reason(believed)
+        else:
+            basis, reason = "judged", _judged_reason(judgement.serves, request)
+        kept.append(
+            replace(
+                place,
+                match_basis=basis,
+                match_strength=judgement.strength,
+                match_reason=reason,
+            )
+        )
+    return kept
+
+
 async def find_places(
     *,
     lat: float,
@@ -408,6 +713,8 @@ async def find_places(
     room_sen: int,
     radius_km: float = 5.0,
     kind: str | None = None,
+    request: str = "",
+    rank: PlaceRanker | None = None,
 ) -> PlacesFound:
     """cap_sen filters what is shown; room_sen (today's safe-to-spend) drives
     share/band and must never be swapped with cap_sen.
@@ -415,13 +722,33 @@ async def find_places(
     ``kind`` narrows to one sort of food, matched against the kinds of the
     places actually in range -- not against the shipped vocabulary, so a search
     stays correct under a maps adapter that is not the curated one. It matches
-    any kind a place carries, not just the one it is labelled with. A word
-    nothing matches returns nothing. It never widens back out to the whole
-    list: an unmatched filter answered with everything is the same lie as a
-    dropped "halal", and ``kind_count`` is there to say which filter it was.
-    What it turned away is not thrown away either -- a few of those places come
-    back in ``near_misses``, in their own field and under their own kinds, for
-    a caller that knows something about a menu that the tags do not.
+    any kind a place carries, not just the one it is labelled with, and it also
+    matches what a model believes the place serves beyond its tags, so a search
+    for chicken reaches the McDonald's that OSM only ever calls a burger shop.
+    Every place that comes back says which of the two kept it, in
+    ``match_basis`` -- a widened list is only worth having if the user can still
+    tell a record from a guess. A word nothing matches returns nothing. It never
+    widens back out to the whole list: an unmatched filter answered with
+    everything is the same lie as a dropped "halal", and ``kind_count`` is there
+    to say which filter it was. What it turned away is not thrown away either --
+    a few of those places come back in ``near_misses``, in their own field and
+    under their own kinds, for a caller that knows something about a menu that
+    neither the tags nor the beliefs do.
+
+    ``request`` is the user's own sentence, and ``rank`` is something that can
+    read it against the places in range. Given both, the model's verdict is what
+    narrows the search and ``kind`` narrows nothing: the two are not run one
+    over the other, because the word filter is the thing the model is there to
+    replace. Two dozen cuisine tags is the whole of what ``kind`` can match, and
+    "satay", "nasi lemak" and "beef" are none of them.
+
+    Given neither -- which is the default, and the whole product while the
+    feature is off -- not one line below behaves differently from the day before
+    this existed. There is no model to reach, so there is no timeout to wait
+    through and no call to pay for. The same holds when ``rank`` answers None:
+    it could not reach a model, and the deterministic filter takes the search
+    back exactly as it was. ``ranking`` on the result says which of the two
+    happened, because the difference is not visible in a list of places.
 
     The order below is load-bearing. Routing happens after the radius and the
     halal filter and before the kind filter and the ceiling, because it is the
@@ -484,21 +811,43 @@ async def find_places(
     # Blank is nobody asking for a kind. A word that is not blank and matches
     # nothing is a different thing entirely, and comes back empty below.
     wanted = kind_key(kind) if kind and kind.strip() else None
-    # Any of the kinds a place carries, not only the one on its label. OSM
-    # states two cuisines for a fifth of the places it knows anything about,
-    # and matching on the label alone hid every one of the others: a search for
-    # fried chicken missed Nando's, which OSM tags chicken and portuguese.
-    of_kind = (
-        evaluated
-        if wanted is None
-        else [p for p in evaluated if any(kind_key(k) == wanted for k in p.kinds)]
-    )
+
+    # The relevance pass, where there is one and a request for it to read. It
+    # runs after the pricing so the model sees the places as the search
+    # measured them, and before the ceiling so that dragging the ceiling is
+    # still a local filter over an answer already given.
+    #
+    # None covers every way of not having an answer, and every one of them ends
+    # in the same place: the kind filter, unchanged. Nothing is half-applied --
+    # a list narrowed by a model that then failed would be neither of the two
+    # things the screen can describe.
+    judgements = None if rank is None or not request.strip() else await rank(request, evaluated)
+
+    if judgements is None:
+        # Any of the kinds a place carries, not only the one on its label. OSM
+        # states two cuisines for a fifth of the places it knows anything
+        # about, and matching on the label alone hid every one of the others: a
+        # search for fried chicken missed Nando's, which OSM tags chicken and
+        # portuguese.
+        of_kind = evaluated if wanted is None else _matching(evaluated, wanted)
+        ranking: Ranking = "deterministic"
+        # Nobody asked for a kind, so nothing was turned away: see below.
+        narrowed = wanted is not None
+    else:
+        of_kind = _judged(evaluated, judgements, request)
+        ranking = "model"
+        # A model that answered has narrowed the search even where it kept
+        # everything, so what it left out is a near miss like any other.
+        narrowed = True
 
     # The ceiling runs last, on the total the road produced. Applying it to a
     # straight-line total would admit places the user cannot actually afford --
     # the 3.7 km that is really 8.1 km of driving is RM12.05 of fare under a
     # ceiling it clears and RM20.39 in the car it does not.
-    under_cap = sorted((p for p in of_kind if p.total_sen <= cap_sen), key=lambda p: p.total_sen)
+    #
+    # Price still orders the list, and a model's verdict never touches it: see
+    # ``_order_key``.
+    under_cap = sorted((p for p in of_kind if p.total_sen <= cap_sen), key=_order_key)
 
     # What the kind filter turned away, held to the same ceiling the list is.
     # Disjoint from the list by id rather than by a second run of the filter,
@@ -511,7 +860,7 @@ async def find_places(
     matched = {place.id for place in of_kind}
     near_misses = (
         ()
-        if wanted is None
+        if not narrowed
         else _near_misses([p for p in evaluated if p.id not in matched and p.total_sen <= cap_sen])
     )
 
@@ -526,6 +875,7 @@ async def find_places(
         # ceiling would be answering a question with a slightly different one.
         nearest_over_cap=() if under_cap else _nearest_over_cap(of_kind),
         near_misses=near_misses,
+        ranking=ranking,
     )
 
 

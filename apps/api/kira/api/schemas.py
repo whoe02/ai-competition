@@ -183,6 +183,31 @@ class PlaceResponse(ResponseModel):
     ``straight_line`` -- which the screen has to show, because a straight-line
     ride fare in Kuala Lumpur can be half of the real one. The basis is
     per-place: one search routes some destinations and fails on others.
+
+    ``match_basis`` is the other thing a row must not be read without. A search
+    matches what OpenStreetMap states about a place, and also what a model
+    believes it serves beyond that, so a chicken search reaches the McDonald's
+    that OSM only ever calls a burger shop. Those are not the same kind of truth
+    and a client may not have to guess between them: ``tagged`` is the map
+    stating the cuisine, ``inferred`` is a belief about the menu recorded when
+    the data was built, ``judged`` is a model reading this search's own request
+    and saying this place answers it with nothing in the data to point at, and
+    null is nothing having been asked for. A screen that drew any of the last
+    two exactly like a tagged one would be presenting a guess as a fact --
+    which is the one thing a wider list must not buy.
+
+    ``match_strength`` is how well that model thought this place answers the
+    request, and it is null on every row nothing judged -- which is every row
+    while ``DayPlanResponse.ranking`` says ``deterministic``, because a word
+    either matched or it did not and there is no degree in that.
+
+    ``match_reason`` is why this row is here, in words that can be printed as
+    they stand: "Tagged chicken", "Also serves chicken", "The model thinks this
+    serves beef". Empty where nothing matched. It exists because a row otherwise
+    cannot explain itself -- a place labelled Dessert answering a search for
+    chicken is either a good answer or a bug, and the category alone does not
+    say which. Every word of it is the server's; the model contributes at most
+    the name of a food.
     """
 
     id: str
@@ -208,6 +233,13 @@ class PlaceResponse(ResponseModel):
     confidence: str
     halal: bool
     note: str
+    # Null on every row of a list nobody narrowed, and on every near miss: those
+    # matched nothing, so there is no basis to state. Required rather than
+    # optional for the same reason ``nearest_over_cap`` is -- a field a client
+    # may find missing is a field a client will forget to read.
+    match_basis: Literal["tagged", "inferred", "judged"] | None
+    match_strength: Literal["strong", "weak"] | None
+    match_reason: str
 
 
 class DayPlanResponse(ResponseModel):
@@ -230,7 +262,17 @@ class DayPlanResponse(ResponseModel):
     ``kind`` is the food filter this list was actually built with, echoed back.
     Null means none was asked for. A client reads it rather than its own state
     for the same reason it reads ``cap_sen``: while a newly tapped filter is in
-    flight, its own state describes a list that has not arrived yet.
+    flight, its own state describes a list that has not arrived yet. It is also
+    the word every row's ``match_basis`` is about — a row saying ``inferred``
+    is saying it was kept for this kind on a belief rather than on a tag, and
+    the word that belief is about is the one here.
+
+    ``kind_count`` counts every sort of match, because all of them are in
+    ``places``. Where ``ranking`` is ``deterministic`` it is still the ``kind``
+    row of the price landscape and still the number of places a search for that
+    word returns; where a model ranked instead, it is how many places the model
+    kept. Which of them rest on a tag and which on a guess is on the rows
+    themselves and nowhere else.
 
     ``nearest_over_cap`` is the cheapest few places the ceiling turned away, and
     it is only ever non-empty when ``places`` is empty. It is a separate field
@@ -249,6 +291,13 @@ class DayPlanResponse(ResponseModel):
     nearby_count: int
     matching_count: int
     kind_count: int
+    # Which of the two narrowed this list. ``deterministic`` is the kind filter
+    # above; ``model`` is a model having read the request itself. Stated because
+    # the two are not equally good and the difference cannot be seen in a list
+    # of places: a client that cannot say "I could not reach my model, so this
+    # is the word filter" will say nothing, and a search that quietly fell back
+    # to matching two dozen cuisine tags looks exactly like one that did not.
+    ranking: Literal["model", "deterministic"]
     places: list[PlaceResponse]
     # Required rather than optional, and empty on almost every response. A field
     # a client may find missing is a field a client will forget to read, and the

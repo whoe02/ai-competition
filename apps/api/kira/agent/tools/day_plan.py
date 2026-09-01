@@ -141,6 +141,12 @@ async def _build(ctx: ToolContext, args: PlanArgs) -> ToolResult:
             "confidence": place.confidence,
             "halal": place.halal,
             "note": place.note,
+            # Why the kind filter kept it, so a wider list cannot be read as a
+            # more confident one. "tagged" is OpenStreetMap stating the cuisine;
+            # "inferred" is a belief that it also serves it, recorded at build
+            # time and never a tag. Null on a search that asked for no kind, and
+            # on every near miss, because neither matched anything.
+            "match_basis": place.match_basis,
         }
 
     # The room is stated rather than left in the shares: on a day already spent
@@ -212,6 +218,20 @@ async def _build(ctx: ToolContext, args: PlanArgs) -> ToolResult:
             ),
             EvidenceRow("Fits today's room", best.band),
         )
+        # Said on the panel, not only in the payload. The panel is the part the
+        # user reads against the answer, and a place that is on this list
+        # because something guessed at its menu must not sit there looking like
+        # one the map records. Only where a kind was asked for: with no filter
+        # nothing matched anything and there is no basis to state.
+        if best.match_basis is not None:
+            evidence += (
+                EvidenceRow(
+                    "Matched on",
+                    f"{args.kind} — tagged"
+                    if best.match_basis == "tagged"
+                    else f"{args.kind} — believed, not tagged",
+                ),
+            )
     elif found.nearby_count == 0:
         evidence = (room_row, EvidenceRow("Nearby places", "none within range"))
     elif found.matching_count == 0:
@@ -381,14 +401,32 @@ SPECS = (
             "and say how far over it is: 'nothing under RM10 — the closest is RM11.50 "
             "at Kopi Kaki'. Never present one as fitting, and never count them among "
             "the places that did.\n"
+            "Every place in `places` carries `match_basis`, which says why the kind "
+            "filter kept it, and the two are not the same kind of truth. `tagged` is "
+            "OpenStreetMap recording that cuisine for that place. `inferred` is the "
+            "map NOT recording it: the place is on the list because a model was asked "
+            "once, when the data was built, and believed it also serves that food — "
+            "McDonald's is tagged burgers and inferred chicken. Both are real places "
+            "at measured prices and either may be the one you recommend.\n"
+            "What differs is what you may say about them. A tagged match is the food "
+            "the data states, and you can name it flatly. An inferred one is a belief "
+            "and has to sound like one: 'The Chicken Rice Shop is tagged Malaysian "
+            "rather than chicken, but it does chicken' is yours to say, where "
+            "presenting it as a chicken restaurant the map lists is not. `inferred` "
+            "records that something guessed, never that anyone read a menu, so it is "
+            "not a licence to assert what a place serves — and the panel beside your "
+            "answer will go on showing that place under the category the data gives "
+            "it. Where an inferred place is what you pick, say so in the same breath: "
+            "the user asked for a wider list, not to be told a guess is a fact.\n"
             "`near_misses` appears only when you asked for a kind of food, and it is "
-            "the closest few places that kind did NOT match — nearest first, one per "
-            "kind, each with the kind the data really gives it and the price of the "
-            "whole outing. It is there for the one thing you know and the data does "
-            "not: what a place actually serves. "
+            "the closest few places that kind did NOT match on either footing — "
+            "nearest first, one per kind, each with the kind the data really gives it "
+            "and the price of the whole outing. It is there for the one thing you know "
+            "and the data does not: what a place actually serves. "
             "The kinds come from OpenStreetMap, which records one word per place and "
-            "no menu — it calls McDonald's burgers and stops, so a search for chicken "
-            "finds KFC and says nothing about the McDonald's across the road. When you "
+            "no menu, and the beliefs cover only the shops a model recognised — so a "
+            "search for chicken can still walk the user past somewhere that fries it "
+            "and says nothing on either count. When you "
             "can see a place in `near_misses` that you know serves what was asked for, "
             "you may point at it, after the recommendation rather than instead of it.\n"
             "Suggest it, never assert it. 'McDonald's is closer, and it does fried "

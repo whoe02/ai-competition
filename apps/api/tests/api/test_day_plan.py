@@ -217,6 +217,55 @@ class TestFilteringByKindOfFood:
         assert by_ceiling.json()["kind_count"] == by_ceiling.json()["matching_count"] == 7
 
 
+class TestWhyEachPlaceMatchedTheKind:
+    """A wider list is only worth having if the client can still read it.
+
+    The filter reaches what OpenStreetMap states about a place and what a model
+    believes it also serves, so a chicken search comes back with the burger shop
+    that fries chicken. Those are not the same kind of truth, and the wire has to
+    carry which is which -- a screen left to guess would draw them alike.
+    """
+
+    async def _places(self, client, session, place_world, **params) -> list[dict]:
+        token = await demo_token(client, session)
+        with serving(places=place_world.believed):
+            response = await client.get(
+                "/v1/day-plan/places",
+                params={**place_world.origin, "cap_sen": 100_000, **params},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert response.status_code == 200, response.text
+        return response.json()["places"]
+
+    async def test_every_row_says_which_kind_of_match_it_is(
+        self, client, session, place_world
+    ):
+        places = await self._places(client, session, place_world, kind="Chicken")
+        assert [(p["name"], p["match_basis"]) for p in places] == [
+            (place_world.tagged_chicken.name, "tagged"),
+            (place_world.believed_chicken.name, "inferred"),
+            (place_world.both_ways.name, "tagged"),
+        ]
+
+    async def test_a_list_nobody_narrowed_carries_the_field_and_leaves_it_null(
+        self, client, session, place_world
+    ):
+        # Present rather than omitted: a field a client may find missing is a
+        # field a client will forget to read. Null because nothing was matched.
+        places = await self._places(client, session, place_world)
+        assert len(places) == 4
+        assert all(p["match_basis"] is None for p in places)
+
+    async def test_a_believed_row_is_still_shown_under_its_own_kind(
+        self, client, session, place_world
+    ):
+        # The one guard on everything the screen says about it: matching wider
+        # does not relabel a shop. The burger place is still a burger place.
+        places = await self._places(client, session, place_world, kind="Chicken")
+        believed = next(p for p in places if p["match_basis"] == "inferred")
+        assert believed["kind"] == place_world.believed_chicken.kind == "Burger"
+
+
 class TestWhatTheDistanceWasMeasuredOn:
     """The screen has to be able to say whether a fare is a road fare.
 

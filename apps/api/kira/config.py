@@ -36,6 +36,23 @@ class Settings(BaseSettings):
     # and shows tokens arriving, where this one holds a screen of live figures
     # still and has nothing to show while it does.
     day_plan_interpret_timeout_seconds: float = 6.0
+    # ── The day planner's relevance pass ──────────────────────────────────────
+    # Off, and off is the whole product as it stands: the planner narrows a
+    # search by matching a word against the cuisines OpenStreetMap recorded,
+    # which is two dozen words for the whole city. "satay", "nasi lemak", "bak
+    # kut teh" and "beef" are none of them, and every one of those searches
+    # hands back nothing. On, the model reads the request against the places
+    # actually in range and says which of them answer it — a call per search,
+    # which is why this is a decision somebody makes rather than a default.
+    #
+    # Off must be indistinguishable from this feature not existing: the same
+    # filter, the same latency, no call, no quota. See ``find_places``.
+    plan_search_llm_enabled: bool = False
+    # Shorter than the ask box's, and for the reason ``routing_timeout_seconds``
+    # is short: this one sits on the critical path of a list the user is waiting
+    # to read, and the fallback below it is a filter that costs nothing.
+    plan_search_llm_timeout_seconds: float = 4.0
+
     # Voice and camera capture. Off means the affordances stay hidden rather
     # than pretending to work; the adapters behind them are chosen in the
     # adapter registry, not here.

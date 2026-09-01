@@ -42,6 +42,7 @@ const PELITA: Place = {
   confidence: "high",
   halal: true,
   note: "Fast counter service, open late.",
+  match_basis: null,
 };
 
 const CHEE_MENG: Place = {
@@ -64,6 +65,7 @@ const CHEE_MENG: Place = {
   confidence: "medium",
   halal: false,
   note: "Small shop, queue moves quickly.",
+  match_basis: null,
 };
 
 const SKY_BAR: Place = {
@@ -84,6 +86,7 @@ const SKY_BAR: Place = {
   confidence: "low",
   halal: true,
   note: "Way past today's room.",
+  match_basis: null,
 };
 
 const PLACES: Place[] = [PELITA, CHEE_MENG, SKY_BAR];
@@ -112,6 +115,7 @@ const KENNY_HILLS: Place = {
   confidence: "medium",
   halal: false,
   note: "",
+  match_basis: null,
 };
 
 const GERAI: Place = {
@@ -132,6 +136,7 @@ const GERAI: Place = {
   confidence: "high",
   halal: true,
   note: "",
+  match_basis: null,
 };
 
 const ABC_BISTRO: Place = {
@@ -152,6 +157,7 @@ const ABC_BISTRO: Place = {
   confidence: "high",
   halal: true,
   note: "",
+  match_basis: null,
 };
 
 const TENSION: DayPlanData = {
@@ -1903,5 +1909,134 @@ describe("DayPlan · the nearest places above the ceiling", () => {
         confidence: "high",
       }),
     );
+  });
+});
+
+describe("DayPlan · a place that matched on a belief rather than a tag", () => {
+  /**
+   * The list is wider than the map is. A kind filter matches what
+   * OpenStreetMap records about a shop and also what a model believed about it
+   * when the data was built — which is the only way a chicken search reaches
+   * the McDonald's that OSM calls a burger shop and stops. The rows have to go
+   * on saying which is which: the user asked for a longer list, not to be told
+   * a guess is a fact.
+   */
+  // The ids run against the answer on purpose. Ties used to fall to the lower
+  // id, so a belief at "m1" would lead a tagged place at "m2" on every figure
+  // being equal — which is exactly the ordering the basis has to overturn.
+  const TAGGED: Place = {
+    ...PELITA,
+    id: "m2",
+    name: "Ayam Bertanda",
+    kind: "Chicken",
+    match_basis: "tagged",
+  };
+  const BELIEVED: Place = {
+    ...PELITA,
+    id: "m1",
+    name: "Burger Bakar Satu",
+    kind: "Burgers",
+    match_basis: "inferred",
+  };
+  /** Belief first and level on every figure, so the ordering below has work to do. */
+  const CHICKEN: DayPlanData = {
+    ...RESPONSE,
+    kind: "Chicken",
+    nearby_count: 4,
+    matching_count: 4,
+    kind_count: 2,
+    places: [BELIEVED, TAGGED],
+  };
+
+  function rowFor(name: string): HTMLElement {
+    const row = Array.from(document.querySelectorAll<HTMLElement>(".place")).find(
+      (each) => each.querySelector("b")?.textContent === name,
+    );
+    if (!row) throw new Error(`no row for ${name}`);
+    return row;
+  }
+
+  it("hedges the row it is only believed to be right about", async () => {
+    vi.mocked(api.get).mockResolvedValue(CHICKEN);
+    renderDayPlan();
+    await screen.findByText("Burger Bakar Satu");
+
+    // The map's word for the shop is still the map's word, and the guess is
+    // beside it rather than in place of it.
+    expect(rowFor("Burger Bakar Satu").textContent).toContain("Burgers");
+    expect(rowFor("Burger Bakar Satu").textContent).toContain("may also do chicken");
+  });
+
+  it("says nothing of the kind on a row the map really does tag", async () => {
+    vi.mocked(api.get).mockResolvedValue(CHICKEN);
+    renderDayPlan();
+    await screen.findByText("Ayam Bertanda");
+
+    // A hedge here would be an apology for data that is not a guess, and the
+    // two rows would read alike again from the other direction.
+    expect(rowFor("Ayam Bertanda").textContent).toContain("Chicken");
+    expect(rowFor("Ayam Bertanda").textContent).not.toContain("may also do");
+  });
+
+  it("says nothing of the kind on a list nobody narrowed", async () => {
+    renderDayPlan();
+    await screen.findByText("Nasi Kandar Pelita");
+
+    expect(screen.queryByText(/may also do/i)).not.toBeInTheDocument();
+  });
+
+  it("puts the tag above the belief where nothing else separates them", async () => {
+    vi.mocked(api.get).mockResolvedValue(CHICKEN);
+    renderDayPlan();
+    await screen.findByText("Ayam Bertanda");
+
+    // Identical price, distance and journey, and the response listed the belief
+    // first. One of the two is known and the other is guessed.
+    expect(orderedNames()).toEqual(["Ayam Bertanda", "Burger Bakar Satu"]);
+  });
+
+  it("still lets a cheaper belief beat a dearer tag", async () => {
+    // The basis breaks ties and does nothing else. Re-ordering the list on
+    // something the user cannot see, beside figures they can, is what the sort
+    // control exists not to do.
+    vi.mocked(api.get).mockResolvedValue({
+      ...CHICKEN,
+      places: [{ ...TAGGED, total_sen: 2400 }, BELIEVED],
+    });
+    renderDayPlan();
+    await screen.findByText("Burger Bakar Satu");
+
+    expect(orderedNames()).toEqual(["Burger Bakar Satu", "Ayam Bertanda"]);
+  });
+
+  it("badges neither of two places a tie separated", async () => {
+    vi.mocked(api.get).mockResolvedValue(CHICKEN);
+    renderDayPlan();
+    await screen.findByText("Ayam Bertanda");
+
+    // "Best fit" is a claim about winning, and a tag standing ahead of a belief
+    // has not won on cost or on time. The badge rule is untouched by any of
+    // this.
+    expect(screen.queryByText("Best fit")).not.toBeInTheDocument();
+  });
+
+  it("spells the guess out in full when the row is opened", async () => {
+    vi.mocked(api.get).mockResolvedValue(CHICKEN);
+    renderDayPlan();
+    await screen.findByText("Burger Bakar Satu");
+
+    const { sheet } = await openSheet("Burger Bakar Satu");
+    expect(within(sheet).getByText(/it is not tagged chicken/i)).toBeInTheDocument();
+    expect(within(sheet).getByText(/records a guess/i)).toBeInTheDocument();
+    expect(within(sheet).getByText(/Nobody here has read its menu/i)).toBeInTheDocument();
+  });
+
+  it("puts nothing of the kind in the sheet of a place the map tags", async () => {
+    vi.mocked(api.get).mockResolvedValue(CHICKEN);
+    renderDayPlan();
+    await screen.findByText("Ayam Bertanda");
+
+    const { sheet } = await openSheet("Ayam Bertanda");
+    expect(within(sheet).queryByText(/records a guess/i)).not.toBeInTheDocument();
   });
 });

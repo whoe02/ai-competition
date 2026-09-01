@@ -7,7 +7,7 @@ from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query, status
 
-from kira.agent import plan_intent
+from kira.agent import place_relevance, plan_intent
 from kira.api.deps import CurrentUser, SessionDep
 from kira.api.schemas import (
     DayPlanInterpretRequest,
@@ -16,6 +16,7 @@ from kira.api.schemas import (
     PlanDraftRequest,
     TransactionResponse,
 )
+from kira.config import get_settings
 from kira.services.clock import today_for
 from kira.services.dashboard import today_dashboard
 from kira.services.day_plan import add_to_today, find_places
@@ -35,6 +36,7 @@ async def get_places(
     cap_sen: int | None = Query(default=None, gt=0),
     radius_km: float = Query(default=5.0, gt=0),
     kind: str | None = Query(default=None, max_length=40),
+    request: str | None = Query(default=None, max_length=280),
 ):
     """The cap only filters the list; the room is what every band is judged on.
 
@@ -42,10 +44,23 @@ async def get_places(
     because the client cannot read its own state against a list that is still
     in flight: the answer on screen has to say which kind it was actually
     filtered by, exactly as it says which ceiling.
+
+    ``request`` is the user's sentence as they typed it, and the two travel
+    together rather than one instead of the other. Where the relevance pass is
+    on and a model answers, the sentence is what narrows the list and ``kind``
+    narrows nothing; where it is off, or the model cannot be reached, ``kind``
+    is the whole of the filter exactly as it has always been. ``ranking`` on the
+    response says which of the two the client is looking at.
     """
     dashboard = await today_dashboard(session, user, today_for())
     room_sen = dashboard.safe_today_sen
     cap = cap_sen if cap_sen is not None else room_sen
+    # Nothing is handed in while the feature is off, so the search below is the
+    # one that ran before any of this was written: no model, no timeout to sit
+    # through, and no call on anybody's quota. ``place_relevance.rank`` checks
+    # the same setting for itself, which is belt and braces on the one property
+    # a teammate sharing this checkout is relying on.
+    ranker = place_relevance.rank if get_settings().plan_search_llm_enabled else None
     found = await find_places(
         lat=lat,
         lng=lng,
@@ -55,6 +70,8 @@ async def get_places(
         room_sen=room_sen,
         radius_km=radius_km,
         kind=kind,
+        request=request or "",
+        rank=ranker,
     )
     return {
         "room_sen": room_sen,
@@ -63,6 +80,7 @@ async def get_places(
         "nearby_count": found.nearby_count,
         "matching_count": found.matching_count,
         "kind_count": found.kind_count,
+        "ranking": found.ranking,
         "places": found.places,
         # Handed over in its own field and never appended to ``places``. It is
         # only ever non-empty when the ceiling admitted nothing at all, and a

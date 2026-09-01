@@ -97,6 +97,9 @@ const DAY_PLAN: DayPlan = {
       confidence: "high",
       note: "Fast counter service, open late.",
       halal: true,
+      // Nothing was filtered by kind, so nothing matched anything and there is
+      // no basis to state.
+      match_basis: null,
     },
   ],
   nearest_over_cap: [],

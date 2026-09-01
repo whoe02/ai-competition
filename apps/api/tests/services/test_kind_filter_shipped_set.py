@@ -80,10 +80,11 @@ class TestTheFilterNeverWidens:
         wide = await find_places(
             **SP, mode="walk", halal_only=False, cap_sen=1_000_000, room_sen=1_000_000
         )
-        # Every kind the places in range carry, not just the ones they are
-        # labelled with: a kind is absent from here only if nothing around
-        # serves it, and a search matches on any kind a place has.
-        in_range = {kind_key(k) for p in wide.places for k in p.kinds}
+        # Every kind the places in range carry and every kind they are believed
+        # to also do, not just the ones they are labelled with: a kind is absent
+        # from here only if a search for it would reach nothing, and a search
+        # matches a place's tags or the beliefs recorded about it.
+        in_range = {kind_key(k) for p in wide.places for k in (*p.kinds, *p.also_serves)}
         absent = [k for k in known_kinds() if kind_key(k) not in in_range]
         assert absent, "pick a sparser origin; every kind is in range here"
         assert wide.places, "origin must have SOME food or the test proves nothing"
@@ -116,11 +117,25 @@ class TestTheFilterNeverWidens:
 class TestTheLandscapeAgreesWithTheList:
     """Recomputed here from the places themselves, not read back off the API.
 
-    A place counts under every kind it carries, which is the choice the service
-    makes and states: the filter matches any of them, so a row that left out
-    the places whose second kind it is would promise fewer than a search for it
+    A place counts under every kind it carries and every kind it is believed to
+    also do, which is the choice the service makes and states: the filter
+    matches any of them, so a row that left out the places whose second kind it
+    is -- or whose belief it is -- would promise fewer than a search for it
     returns. The counts therefore do not sum to the length of the list.
     """
+
+    @staticmethod
+    def _searchable(place) -> list[str]:
+        """Every word a search could reach this place by, tags first.
+
+        Deduplicated on the key a filter compares, because a search returns a
+        place once however many of its words match.
+        """
+        words: list[str] = []
+        for kind in (*place.kinds, *place.also_serves):
+            if all(kind_key(kind) != kind_key(seen) for seen in words):
+                words.append(kind)
+        return words
 
     @pytest.mark.parametrize("mode", MODES)
     @pytest.mark.parametrize("halal", [True, False])
@@ -133,7 +148,7 @@ class TestTheLandscapeAgreesWithTheList:
         )
         expected: dict[str, tuple[int, int]] = {}
         for place in found.places:
-            for kind in place.kinds:
+            for kind in self._searchable(place):
                 key = kind_key(kind)
                 count, cheapest = expected.get(key, (0, place.total_sen))
                 expected[key] = (count + 1, min(cheapest, place.total_sen))
@@ -150,7 +165,7 @@ class TestTheLandscapeAgreesWithTheList:
             group = [
                 kind
                 for place in found.places
-                for kind in place.kinds
+                for kind in self._searchable(place)
                 if kind_key(kind) == kind_key(row.kind)
             ]
             assert row.kind in group
@@ -416,14 +431,16 @@ class TestWhatAModelBelievesAboutTheMenu:
         tagged = {kind for place in KL_PLACES for kind in place.kinds}
         assert set(known_kinds()) == tagged
 
-    async def test_a_search_matches_tags_and_never_beliefs(self):
+    async def test_a_search_matches_beliefs_too_and_never_confuses_the_two(self):
         """The separation, asserted where it would actually be lost.
 
         ``kinds`` is what OpenStreetMap states and ``also_serves`` is what a
-        model guessed, and the filter is on the first of them alone. A place
-        believed to serve chicken and not tagged it is a near miss, not a
-        match, and the day it silently becomes a match is the day the app can
-        no longer say which of the two it was standing on.
+        model guessed, and a kind filter now matches either -- that is the whole
+        of what a belief buys, a search for chicken reaching the burger shop
+        that fries it. What must not follow is the two becoming one thing. Every
+        place that comes back says which of them kept it, the word that says
+        ``tagged`` is always a word the map really carries, and the word that
+        says ``inferred`` is never one it carries.
         """
         in_range = FakeMaps().places_near(BB["lat"], BB["lng"], 5.0)
         believed = {
@@ -432,6 +449,8 @@ class TestWhatAModelBelievesAboutTheMenu:
             for kind in place.also_serves
             if all(kind_key(k) != kind_key(kind) for k in place.kinds)
         }
+        assert believed, "the shipped file records no beliefs about anywhere near here"
+        reached_on_a_belief = 0
         for key in sorted(believed):
             kind = next(k for k in known_kinds() if kind_key(k) == key)
             found = await find_places(
@@ -442,9 +461,23 @@ class TestWhatAModelBelievesAboutTheMenu:
                 room_sen=1_000_000,
                 kind=kind,
             )
+            inferred = 0
             for place in found.places:
                 source = next(p for p in in_range if p.id == place.id)
-                assert any(kind_key(k) == key for k in source.kinds), (place.name, kind)
+                tagged = any(kind_key(k) == key for k in source.kinds)
+                assert place.match_basis == ("tagged" if tagged else "inferred"), place.name
+                if not tagged:
+                    inferred += 1
+                    # Nothing believed is a match on nothing: the word came out
+                    # of the beliefs recorded about this very place.
+                    assert any(kind_key(k) == key for k in source.also_serves), place.name
+            # Every one of these words is believed of a place inside this
+            # radius, and nothing above the ceiling here, so each search has to
+            # have reached at least one of them on a belief. Without this the
+            # assertions above would hold over a set of tagged places alone.
+            assert inferred, kind
+            reached_on_a_belief += inferred
+        assert reached_on_a_belief
 
 
 class TestAKindWordInsideAPhrase:

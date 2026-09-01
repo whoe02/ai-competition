@@ -525,6 +525,14 @@ def _compose_places(messages: Sequence[BaseMessage], text: str) -> str:
     # that guessed from a name would be inventing a menu. So the names below
     # are the matches and nothing else, and the near misses go unmentioned
     # rather than mentioned wrongly.
+    #
+    # Some of that same world knowledge does reach here, and only because it
+    # was written down before the demo started: a place a model believed also
+    # serves the thing is a match now, and it is in ``places`` with the basis
+    # recorded on it. That is still not something this composer may assert. It
+    # reads the basis and says why the place is on the list; what the place
+    # serves is a menu, and nothing here has read one.
+
     # Said whatever came back, empty list included. What was read out of the
     # request is the same either way, and it is the half of the answer the user
     # cannot check for themselves.
@@ -644,6 +652,26 @@ def _compose_places(messages: Sequence[BaseMessage], text: str) -> str:
         rest = found - 1 - len(others)
         if rest > 0:
             head += f" {rest} more came in under {_rm(cap_sen)} as well."
+
+    # Which of the names just said are on this list on a belief rather than on a
+    # tag. Said outright, because the widened filter is the one change that can
+    # put a place in front of the user for a reason the row itself does not
+    # show, and a name given with no qualification is a name the user will read
+    # as the data's. The sentence stops where the belief does: it says why the
+    # place is here, never that it serves the food.
+    named = [best, *others]
+    believed = [str(p.get("name")) for p in named if p.get("match_basis") == "inferred"]
+    if believed:
+        asked = str(result.get("kind") or "").lower()
+        head += (
+            f" {_listed(believed)} is on this list on a belief that it also does "
+            f"{asked}, not on a tag saying so."
+            if len(believed) == 1
+            else (
+                f" {_listed(believed)} are on this list on a belief that they also do "
+                f"{asked}, not on tags saying so."
+            )
+        )
 
     # What the ceiling ruled out, in kinds of food. The list above is already
     # the answer to what it let through, so this is the part of the picture the

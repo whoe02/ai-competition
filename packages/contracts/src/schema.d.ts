@@ -977,7 +977,15 @@ export interface components {
          *     ``kind`` is the food filter this list was actually built with, echoed back.
          *     Null means none was asked for. A client reads it rather than its own state
          *     for the same reason it reads ``cap_sen``: while a newly tapped filter is in
-         *     flight, its own state describes a list that has not arrived yet.
+         *     flight, its own state describes a list that has not arrived yet. It is also
+         *     the word every row's ``match_basis`` is about — a row saying ``inferred``
+         *     is saying it was kept for this kind on a belief rather than on a tag, and
+         *     the word that belief is about is the one here.
+         *
+         *     ``kind_count`` counts both sorts of match, because both are in ``places``.
+         *     It is still the ``kind`` row of the price landscape and still the number of
+         *     places a search for that word returns; which of them rest on a tag and which
+         *     on a belief is on the rows themselves and nowhere else.
          *
          *     ``nearest_over_cap`` is the cheapest few places the ceiling turned away, and
          *     it is only ever non-empty when ``places`` is empty. It is a separate field
@@ -1324,6 +1332,16 @@ export interface components {
          *     ``straight_line`` -- which the screen has to show, because a straight-line
          *     ride fare in Kuala Lumpur can be half of the real one. The basis is
          *     per-place: one search routes some destinations and fails on others.
+         *
+         *     ``match_basis`` is the other thing a row must not be read without. A kind
+         *     filter matches what OpenStreetMap states about a place and also what a model
+         *     believes it serves beyond that, so a chicken search reaches the McDonald's
+         *     that OSM only ever calls a burger shop. The two are not the same kind of
+         *     truth and a client may not have to guess between them: ``tagged`` is the map
+         *     stating the cuisine, ``inferred`` is a belief about the menu, and null is no
+         *     kind having been asked for. A screen that drew an inferred row exactly like
+         *     a tagged one would be presenting a guess as a fact -- which is the one thing
+         *     a wider list must not buy.
          */
         PlaceResponse: {
             /** Id */
@@ -1366,6 +1384,8 @@ export interface components {
             halal: boolean;
             /** Note */
             note: string;
+            /** Match Basis */
+            match_basis: ("tagged" | "inferred") | null;
         };
         /**
          * PlanDraftRequest
