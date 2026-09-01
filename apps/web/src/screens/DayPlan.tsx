@@ -166,6 +166,24 @@ function Toast({ message }: { message: string }) {
   );
 }
 
+/**
+ * The kind word to hedge a row with, or null where there is nothing to hedge.
+ *
+ * A kind filter matches two different things. `tagged` is OpenStreetMap
+ * recording that cuisine for that shop; `inferred` is the map recording no such
+ * thing, and the place being here because a model was asked, once, when the
+ * data was built, and believed it also serves that food. The wider list is worth
+ * having — OSM calls McDonald's a burger shop and stops, so a chicken search
+ * used to walk straight past one — but only if the row says which it is. Drawn
+ * the same, a guess would arrive wearing the map's authority.
+ *
+ * Null on every row of a list nobody narrowed, and on a tagged one: there is
+ * nothing to hedge about a category the data states outright.
+ */
+function alsoDoes(place: Place, kind: string | null): string | null {
+  return place.match_basis === "inferred" && kind !== null ? kind.toLowerCase() : null;
+}
+
 type PlaceRowProps = {
   place: Place;
   /** Its position in the group it belongs to, one-based. */
@@ -173,6 +191,11 @@ type PlaceRowProps = {
   selected: boolean;
   badge: "best" | "over-cap" | null;
   nameTheBasis: boolean;
+  /**
+   * The kind this row matched on a belief rather than on a tag, or null. See
+   * `alsoDoes`.
+   */
+  believedKind: string | null;
   onSelect: () => void;
 };
 
@@ -185,7 +208,15 @@ type PlaceRowProps = {
  * on every near miss, and `over-cap` tints the row itself. A row that read
  * identically to one that fitted is the whole thing this must not do.
  */
-function PlaceRow({ place, rank, selected, badge, nameTheBasis, onSelect }: PlaceRowProps) {
+function PlaceRow({
+  place,
+  rank,
+  selected,
+  badge,
+  nameTheBasis,
+  believedKind,
+  onSelect,
+}: PlaceRowProps) {
   return (
     <button
       type="button"
@@ -204,7 +235,19 @@ function PlaceRow({ place, rank, selected, badge, nameTheBasis, onSelect }: Plac
             : place.band === "over" && <span className="badge badge-over">Over</span>}
         </span>
         <span style={{ display: "block", fontSize: 12, color: "var(--muted)", marginTop: 3 }}>
-          {place.kind} · {distanceText(place, nameTheBasis)} · {place.minutes} min
+          {/* The kind stays the data's. What put this row in a list it is not
+              tagged for is set apart from it — italic, hedged, and its own
+              clause — so the map's word and the guess beside it cannot be read
+              as one label. */}
+          {place.kind}
+          {believedKind !== null && (
+            <>
+              {" · "}
+              <em>may also do {believedKind}</em>
+            </>
+          )}
+          {" · "}
+          {distanceText(place, nameTheBasis)} · {place.minutes} min
         </span>
         <span
           style={{
@@ -243,6 +286,12 @@ type DetailSheetProps = {
   capSen: number;
   /** Whether this place came back in `nearest_over_cap` rather than in the list. */
   overCap: boolean;
+  /**
+   * The kind this place matched on a belief rather than on a tag, or null. The
+   * row above only had space to hedge; here there is room to say what the hedge
+   * rests on, which is the one thing the user needs before acting on it.
+   */
+  believedKind: string | null;
   adding: boolean;
   addFailed: boolean;
   onClose: () => void;
@@ -255,6 +304,7 @@ function DetailSheet({
   modeLabel,
   roomSen,
   capSen,
+  believedKind,
   overCap,
   adding,
   addFailed,
@@ -319,6 +369,20 @@ function DetailSheet({
       {place.address && (
         <p style={{ margin: "-8px 0 14px", fontSize: 12.5, lineHeight: 1.45, color: "rgba(233,237,233,.6)" }}>
           {place.address}
+        </p>
+      )}
+
+      {/* Said before any figure, because it is the thing that decides whether
+          the figures are about the meal the user came here for. The row hedged;
+          this says what the hedge is made of — the map's word, and the fact that
+          the rest of it is a guess nobody has checked against a menu. */}
+      {believedKind !== null && (
+        <p
+          style={{ margin: "-6px 0 14px", fontSize: 12.5, lineHeight: 1.5, color: "var(--brass)" }}
+        >
+          {place.kind} is what the map calls this place — it is not tagged {believedKind}. It is on
+          a {believedKind} list because the demo set records a guess that it does {believedKind}{" "}
+          too. Nobody here has read its menu.
         </p>
       )}
 
@@ -999,6 +1063,7 @@ export function DayPlan() {
                 selected={selectedId === place.id}
                 badge={place.id === bestFit ? "best" : null}
                 nameTheBasis={someFellBack}
+                believedKind={alsoDoes(place, shownKind)}
                 // A failure belongs to the place it happened on. Left standing,
                 // it would greet the next sheet with a complaint about a shop
                 // the user is no longer looking at.
@@ -1147,6 +1212,7 @@ export function DayPlan() {
                     selected={selectedId === place.id}
                     badge="over-cap"
                     nameTheBasis={overCapFellBack}
+                    believedKind={alsoDoes(place, shownKind)}
                     onSelect={() => {
                       addPlan.reset();
                       setSelectedId(place.id);
@@ -1173,6 +1239,7 @@ export function DayPlan() {
           roomSen={roomSen}
           capSen={data.cap_sen}
           overCap={selectedIsOverCap}
+          believedKind={alsoDoes(selected, shownKind)}
           adding={addPlan.isPending}
           addFailed={addPlan.isError}
           onClose={() => setSelectedId(null)}

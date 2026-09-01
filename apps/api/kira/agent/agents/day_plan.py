@@ -23,6 +23,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from kira.agent import place_relevance
 from kira.agent.llm import get_chat_model
 from kira.config import get_settings
 
@@ -107,6 +108,12 @@ you cannot: you have no idea what is on its menu, and a guess dressed as knowled
 sends someone across town on the strength of a name. Say nothing about the ones you
 do not know, and put nothing in `also_consider_id` unless you would stand behind it.
 
+Each row may carry a match reason. `Tagged` is what OpenStreetMap records about the
+place. `Also serves` is a build-time model belief and must be phrased as a belief,
+not as a menu fact. `The model thinks` is a relevance judgement from this search and
+must stay visibly attributed to the model. All three rows are real places at measured
+prices; only the reason they are on the list differs.
+
 `nearest_over_cap` appears only when nothing at all came in under the ceiling, and it
 is the closest few places above it. Choose the first one and say how far over it is —
 "nothing under RM10, and the closest is RM11.50" is an answer; an apology is not.
@@ -131,6 +138,7 @@ def _lines(rows: list[dict[str, Any]], currency: str) -> str:
     return "\n".join(
         f"- {row['id']}: {row['name']} · {row['kind']} · "
         f"{money_str(Money(row['total_sen'], currency))} · {row['km']:.1f} km"
+        + (f" · {row['match_reason']}" if row.get("match_reason") else "")
         for row in rows
     )
 
@@ -229,7 +237,13 @@ async def run_day_plan_agent(ctx, intent):
 
     args = PlanArgs.model_validate(intent.model_dump(exclude={"request"}))
     ctx.emit("thinking", text="Checking what is actually near you")
-    searched = await run_search(ctx.tools, args)
+    ranker = place_relevance.rank if get_settings().plan_search_llm_enabled else None
+    searched = await run_search(
+        ctx.tools,
+        args,
+        request=getattr(intent, "request", ""),
+        rank=ranker,
+    )
     payload = dict(searched.value)
     payload["request"] = getattr(intent, "request", "")
 

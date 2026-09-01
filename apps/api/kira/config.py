@@ -62,6 +62,13 @@ class Settings(BaseSettings):
     # and a slow choice is one the deterministic cheapest-first ranking can
     # stand in for without the user losing an answer.
     day_plan_choose_timeout_seconds: float = 8.0
+    # The optional relevance pass lets the planner match everyday food terms
+    # (for example, "nasi lemak") against the places actually in range. Off,
+    # the deterministic recorded-cuisine filter remains the complete path.
+    plan_search_llm_enabled: bool = False
+    # This call sits on the Plan screen's critical path, so it has a shorter
+    # timeout and falls back to the deterministic filter when it expires.
+    plan_search_llm_timeout_seconds: float = 4.0
     # Voice and camera capture. Off means the affordances stay hidden rather
     # than pretending to work; the adapters behind them are chosen in the
     # adapter registry, not here.

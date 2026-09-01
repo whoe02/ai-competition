@@ -156,6 +156,20 @@ function axisValue(place: Place, sort: SortId, bounds: Bounds): number {
   }
 }
 
+/**
+ * Tagged before inferred, as a number to sort on: 0 for a place the map really
+ * does record as this food, 1 for one a model only believes serves it.
+ *
+ * It settles ties and nothing else. Where the axis has already separated two
+ * places this never runs, so a cheap belief still beats a dear tag — re-ordering
+ * the list on something the user cannot see, beside figures they can, is exactly
+ * what a sort control must not do. Where the axis has nothing left to say, one
+ * of the two is known and the other is guessed, and the known one goes first.
+ */
+function believedLast(place: Place): number {
+  return place.match_basis === "inferred" ? 1 : 0;
+}
+
 /** The list in the chosen order. A copy — the query cache's array is not ours. */
 export function sortPlaces(places: readonly Place[], sort: SortId): Place[] {
   if (places.length === 0) return [];
@@ -163,10 +177,15 @@ export function sortPlaces(places: readonly Place[], sort: SortId): Place[] {
   return [...places].sort((a, b) => {
     const byAxis = axisValue(a, sort, bounds) - axisValue(b, sort, bounds);
     if (Math.abs(byAxis) > TIE) return byAxis;
-    // Ties break the same way on every axis — cheaper first, then by id — so
-    // the rows below the leader do not reshuffle between renders of the same
-    // list, and two identical outings always land the same way round.
-    return a.total_sen - b.total_sen || a.id.localeCompare(b.id);
+    // Ties break the same way on every axis — cheaper first, then the tag ahead
+    // of the belief, then by id — so the rows below the leader do not reshuffle
+    // between renders of the same list, and two identical outings always land
+    // the same way round.
+    return (
+      a.total_sen - b.total_sen
+      || believedLast(a) - believedLast(b)
+      || a.id.localeCompare(b.id)
+    );
   });
 }
 

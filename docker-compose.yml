@@ -28,11 +28,20 @@ services:
       # Unset means the Butler runs on its offline model: the graph, the tools,
       # the approvals and the evidence are identical, only the prose differs.
       DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
-      BUTLER_MODEL: ${BUTLER_MODEL:-qwen3.7-flash}
+      BUTLER_MODEL: ${BUTLER_MODEL:-qwen-plus}
       BUTLER_FALLBACK_MODEL: ${BUTLER_FALLBACK_MODEL:-qwen3.6-plus}
       BUTLER_TURN_BUDGET_SECONDS: ${BUTLER_TURN_BUDGET_SECONDS:-15}
       BUTLER_REASONING_TEMPERATURE: ${BUTLER_REASONING_TEMPERATURE:-0.0}
       BUTLER_COMPOSE_TEMPERATURE: ${BUTLER_COMPOSE_TEMPERATURE:-0.6}
+      # The day planner's relevance pass, on the same model as the Butler. Off,
+      # a search narrows by matching a word against the cuisines OpenStreetMap
+      # recorded — two dozen for the whole city, which is why "satay", "nasi
+      # lemak" and "beef" all come back with nothing. On, the model reads the
+      # request against the places in range and says which of them answer it,
+      # at a call per search. Off is the default because that call is somebody's
+      # quota, and because the filter underneath it still works.
+      PLAN_SEARCH_LLM_ENABLED: ${PLAN_SEARCH_LLM_ENABLED:-false}
+      PLAN_SEARCH_LLM_TIMEOUT_SECONDS: ${PLAN_SEARCH_LLM_TIMEOUT_SECONDS:-4.0}
       # Road distances for the day planner. Off, or with the router unreachable
       # from the venue, every place comes back labelled "straight line" and the
       # screen says so rather than quoting a fare it cannot stand behind.

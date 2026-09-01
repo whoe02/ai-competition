@@ -50,11 +50,26 @@ class Place:
     # either. ``kind`` above stays the single word a row is labelled with and
     # the one its estimate was banded from; this is for matching only.
     kinds: tuple[str, ...] = ()
+    # What a language model believes this place also serves, beyond the kinds
+    # above. OSM tags McDonald's ``burger`` and stops there, and that it also
+    # fries chicken is world knowledge no data refresh reaches; the generator
+    # asks a model once, at build time, and ships the answer here.
+    #
+    # Never merged into ``kinds``, and that separation is the whole point of a
+    # second field. ``kinds`` is what OpenStreetMap states about a real
+    # business, this is what a model guessed about one, and anything that acts
+    # on either has to be able to say which it leaned on. Empty is the ordinary
+    # case, and it means two different things that only the file can tell
+    # apart: nothing was asked, or a model was asked and did not know the shop.
+    also_serves: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         # Never empty, so nothing downstream has to remember a fallback: a
         # place with one cuisine carries a one-word tuple of its own kind, and
         # every caller can read ``kinds`` and be reading the whole truth.
+        # ``also_serves`` deliberately gets no such fallback: a model that was
+        # never asked believes nothing, and standing the label in for it would
+        # invent an opinion out of a tag.
         if not self.kinds:
             object.__setattr__(self, "kinds", (self.kind,))
 

@@ -1,5 +1,5 @@
 {
-  "_comment": "Curated demo set for the day planner. Names and coordinates from OpenStreetMap, (c) OpenStreetMap contributors, ODbL (https://www.openstreetmap.org/copyright). Prices are NOT from OSM: no Places API exposes menu prices, so each estimate is banded from the kind of place it is and carries its own confidence. 'kind' is the label a row is shown under and the one the estimate came from; 'kinds' is every cuisine OSM states for the place, that label first, and is what a search matches against. 'halal' is true only where OSM states it; unverified is false, and the UI filters on it rather than labelling anything 'not halal'. Regenerate with scripts/fetch-kl-places.py.",
+  "_comment": "Curated demo set for the day planner. Names and coordinates from OpenStreetMap, (c) OpenStreetMap contributors, ODbL (https://www.openstreetmap.org/copyright). Prices are NOT from OSM: no Places API exposes menu prices, so each estimate is banded from the kind of place it is and carries its own confidence. 'kind' is the label a row is shown under and the one the estimate came from; 'kinds' is every cuisine OSM states for the place, that label first, and is what a search matches against. 'also_serves' is NOT from OSM either: it is what a language model believes the place also sells, asked once at build time and never merged into 'kinds', so that what OSM states and what a model guessed stay tellable apart. It is absent from every record when the generator had no model to ask. 'halal' is true only where OSM states it; unverified is false, and the UI filters on it rather than labelling anything 'not halal'. Regenerate with scripts/fetch-kl-places.py.",
   "places": [
     {
       "id": "kl000",
@@ -7,6 +7,9 @@
       "kind": "Burgers",
       "kinds": [
         "Burgers"
+      ],
+      "also_serves": [
+        "Cafe"
       ],
       "lat": 3.143407,
       "lng": 101.735866,
@@ -24,6 +27,7 @@
         "Middle Eastern",
         "Cafe"
       ],
+      "also_serves": [],
       "lat": 3.15821,
       "lng": 101.750447,
       "estimate_sen": 2600,
@@ -39,6 +43,7 @@
       "kinds": [
         "Chicken"
       ],
+      "also_serves": [],
       "lat": 3.145132,
       "lng": 101.748435,
       "estimate_sen": 1600,
@@ -54,6 +59,7 @@
       "kinds": [
         "Malaysian"
       ],
+      "also_serves": [],
       "lat": 3.17746,
       "lng": 101.750638,
       "estimate_sen": 1400,
@@ -68,6 +74,9 @@
       "kind": "Burgers",
       "kinds": [
         "Burgers"
+      ],
+      "also_serves": [
+        "Chicken"
       ],
       "lat": 3.176664,
       "lng": 101.750285,
@@ -84,6 +93,7 @@
       "kinds": [
         "Middle Eastern"
       ],
+      "also_serves": [],
       "lat": 3.159629,
       "lng": 101.744924,
       "estimate_sen": 2600,
@@ -100,6 +110,7 @@
         "Middle Eastern",
         "Indian"
       ],
+      "also_serves": [],
       "lat": 3.147436,
       "lng": 101.737239,
       "estimate_sen": 2600,
@@ -115,6 +126,7 @@
       "kinds": [
         "Chicken"
       ],
+      "also_serves": [],
       "lat": 3.176565,
       "lng": 101.749982,
       "estimate_sen": 1600,
@@ -130,6 +142,7 @@
       "kinds": [
         "Chicken"
       ],
+      "also_serves": [],
       "lat": 3.130737,
       "lng": 101.738411,
       "estimate_sen": 1600,
@@ -147,6 +160,7 @@
         "Chicken",
         "Burgers"
       ],
+      "also_serves": [],
       "lat": 3.158959,
       "lng": 101.751659,
       "estimate_sen": 1400,
@@ -162,6 +176,7 @@
       "kinds": [
         "Chicken"
       ],
+      "also_serves": [],
       "lat": 3.176645,
       "lng": 101.750152,
       "estimate_sen": 1600,
@@ -177,6 +192,7 @@
       "kinds": [
         "Pizza"
       ],
+      "also_serves": [],
       "lat": 3.176786,
       "lng": 101.749945,
       "estimate_sen": 2800,
@@ -192,6 +208,7 @@
       "kinds": [
         "Restaurant"
       ],
+      "also_serves": [],
       "lat": 3.130767,
       "lng": 101.751689,
       "estimate_sen": 2200,
@@ -207,6 +224,7 @@
       "kinds": [
         "Chicken"
       ],
+      "also_serves": [],
       "lat": 3.157602,
       "lng": 101.750657,
       "estimate_sen": 1600,
@@ -222,6 +240,7 @@
       "kinds": [
         "Japanese"
       ],
+      "also_serves": [],
       "lat": 3.176689,
       "lng": 101.750384,
       "estimate_sen": 4200,
@@ -237,6 +256,7 @@
       "kinds": [
         "Indian"
       ],
+      "also_serves": [],
       "lat": 3.132636,
       "lng": 101.687791,
       "estimate_sen": 1300,
@@ -252,6 +272,7 @@
       "kinds": [
         "Indian"
       ],
+      "also_serves": [],
       "lat": 3.132249,
       "lng": 101.688077,
       "estimate_sen": 1300,
@@ -267,6 +288,7 @@
       "kinds": [
         "Indian"
       ],
+      "also_serves": [],
       "lat": 3.134611,
       "lng": 101.691846,
       "estimate_sen": 1300,
@@ -282,6 +304,7 @@
       "kinds": [
         "Indian"
       ],
+      "also_serves": [],
       "lat": 3.11167,
       "lng": 101.610842,
       "estimate_sen": 1300,
@@ -297,6 +320,7 @@
       "kinds": [
         "Indian"
       ],
+      "also_serves": [],
       "lat": 3.132174,
       "lng": 101.687137,
       "estimate_sen": 1300,
@@ -311,6 +335,11 @@
       "kind": "Fast food",
       "kinds": [
         "Fast food"
+      ],
+      "also_serves": [
+        "Cafe",
+        "Breakfast",
+        "Western"
       ],
       "lat": 3.118702,
       "lng": 101.651716,
@@ -327,6 +356,7 @@
       "kinds": [
         "Breakfast"
       ],
+      "also_serves": [],
       "lat": 3.124327,
       "lng": 101.674182,
       "estimate_sen": 1400,
@@ -343,6 +373,7 @@
         "Western",
         "Seafood"
       ],
+      "also_serves": [],
       "lat": 3.117645,
       "lng": 101.635681,
       "estimate_sen": 3500,
@@ -363,6 +394,7 @@
         "Steakhouse",
         "Seafood"
       ],
+      "also_serves": [],
       "lat": 3.120006,
       "lng": 101.62994,
       "estimate_sen": 2800,
@@ -379,6 +411,7 @@
         "Malaysian",
         "Western"
       ],
+      "also_serves": [],
       "lat": 3.120274,
       "lng": 101.656234,
       "estimate_sen": 1400,
@@ -394,6 +427,7 @@
       "kinds": [
         "Pizza"
       ],
+      "also_serves": [],
       "lat": 3.110073,
       "lng": 101.635927,
       "estimate_sen": 2800,
@@ -410,6 +444,7 @@
         "Steakhouse",
         "Seafood"
       ],
+      "also_serves": [],
       "lat": 3.1399,
       "lng": 101.658078,
       "estimate_sen": 8000,
@@ -426,6 +461,7 @@
         "Cafe",
         "Vietnamese"
       ],
+      "also_serves": [],
       "lat": 3.109819,
       "lng": 101.636061,
       "estimate_sen": 1500,
@@ -441,6 +477,7 @@
       "kinds": [
         "Indian"
       ],
+      "also_serves": [],
       "lat": 3.131532,
       "lng": 101.687274,
       "estimate_sen": 1300,
@@ -455,6 +492,10 @@
       "kind": "Burgers",
       "kinds": [
         "Burgers"
+      ],
+      "also_serves": [
+        "Chicken",
+        "Western"
       ],
       "lat": 3.132922,
       "lng": 101.67228,
@@ -471,6 +512,7 @@
       "kinds": [
         "Pizza"
       ],
+      "also_serves": [],
       "lat": 3.106115,
       "lng": 101.625253,
       "estimate_sen": 2800,
@@ -485,6 +527,12 @@
       "kind": "Restaurant",
       "kinds": [
         "Restaurant"
+      ],
+      "also_serves": [
+        "Bakery",
+        "Breakfast",
+        "Cafe",
+        "Dessert"
       ],
       "lat": 3.125466,
       "lng": 101.6611,
@@ -502,6 +550,10 @@
         "Indian",
         "Malaysian"
       ],
+      "also_serves": [
+        "Mamak",
+        "Noodles"
+      ],
       "lat": 3.116715,
       "lng": 101.617624,
       "estimate_sen": 1300,
@@ -516,6 +568,10 @@
       "kind": "Restaurant",
       "kinds": [
         "Restaurant"
+      ],
+      "also_serves": [
+        "Indian",
+        "Malaysian"
       ],
       "lat": 3.110453,
       "lng": 101.645408,
@@ -532,6 +588,7 @@
       "kinds": [
         "Indian"
       ],
+      "also_serves": [],
       "lat": 3.128194,
       "lng": 101.635408,
       "estimate_sen": 1300,
@@ -547,6 +604,7 @@
       "kinds": [
         "Burgers"
       ],
+      "also_serves": [],
       "lat": 3.132313,
       "lng": 101.688361,
       "estimate_sen": 1800,
@@ -562,6 +620,10 @@
       "kinds": [
         "Fast food"
       ],
+      "also_serves": [
+        "Middle Eastern",
+        "Chicken"
+      ],
       "lat": 3.125465,
       "lng": 101.66113,
       "estimate_sen": 1500,
@@ -576,6 +638,10 @@
       "kind": "Restaurant",
       "kinds": [
         "Restaurant"
+      ],
+      "also_serves": [
+        "Middle Eastern",
+        "Chicken"
       ],
       "lat": 3.138845,
       "lng": 101.721901,
@@ -598,6 +664,7 @@
         "Dessert",
         "Malaysian"
       ],
+      "also_serves": [],
       "lat": 3.146975,
       "lng": 101.718279,
       "estimate_sen": 4500,
@@ -615,6 +682,7 @@
         "Burgers",
         "Seafood"
       ],
+      "also_serves": [],
       "lat": 3.141063,
       "lng": 101.711263,
       "estimate_sen": 1500,
@@ -630,6 +698,7 @@
       "kinds": [
         "Malaysian"
       ],
+      "also_serves": [],
       "lat": 3.148392,
       "lng": 101.705971,
       "estimate_sen": 1400,
@@ -645,6 +714,7 @@
       "kinds": [
         "Italian"
       ],
+      "also_serves": [],
       "lat": 3.137995,
       "lng": 101.725503,
       "estimate_sen": 4200,
@@ -661,6 +731,7 @@
         "Pizza",
         "Seafood"
       ],
+      "also_serves": [],
       "lat": 3.147757,
       "lng": 101.707112,
       "estimate_sen": 2800,
@@ -676,6 +747,7 @@
       "kinds": [
         "Restaurant"
       ],
+      "also_serves": [],
       "lat": 3.147448,
       "lng": 101.708226,
       "estimate_sen": 2200,
@@ -691,6 +763,7 @@
       "kinds": [
         "Restaurant"
       ],
+      "also_serves": [],
       "lat": 3.1474,
       "lng": 101.707881,
       "estimate_sen": 2200,
@@ -706,6 +779,7 @@
       "kinds": [
         "Restaurant"
       ],
+      "also_serves": [],
       "lat": 3.147507,
       "lng": 101.710813,
       "estimate_sen": 2200,
@@ -723,6 +797,7 @@
         "Chicken",
         "Burgers"
       ],
+      "also_serves": [],
       "lat": 3.136766,
       "lng": 101.707891,
       "estimate_sen": 1400,
@@ -737,6 +812,9 @@
       "kind": "Burgers",
       "kinds": [
         "Burgers"
+      ],
+      "also_serves": [
+        "Chicken"
       ],
       "lat": 3.146793,
       "lng": 101.710977,
@@ -753,6 +831,9 @@
       "kinds": [
         "Chinese"
       ],
+      "also_serves": [
+        "Noodles"
+      ],
       "lat": 3.142893,
       "lng": 101.698578,
       "estimate_sen": 1800,
@@ -767,6 +848,9 @@
       "kind": "Malaysian",
       "kinds": [
         "Malaysian"
+      ],
+      "also_serves": [
+        "Chicken"
       ],
       "lat": 3.140337,
       "lng": 101.70886,
@@ -783,6 +867,7 @@
       "kinds": [
         "Dessert"
       ],
+      "also_serves": [],
       "lat": 3.050273,
       "lng": 101.671665,
       "estimate_sen": 1200,
@@ -798,6 +883,7 @@
       "kinds": [
         "Cafe"
       ],
+      "also_serves": [],
       "lat": 3.021198,
       "lng": 101.623597,
       "estimate_sen": 1500,
@@ -814,6 +900,7 @@
         "Chinese",
         "Cafe"
       ],
+      "also_serves": [],
       "lat": 3.046051,
       "lng": 101.703878,
       "estimate_sen": 1800,
@@ -829,6 +916,7 @@
       "kinds": [
         "Japanese"
       ],
+      "also_serves": [],
       "lat": 3.04541,
       "lng": 101.620908,
       "estimate_sen": 4200,
@@ -844,6 +932,7 @@
       "kinds": [
         "Chicken"
       ],
+      "also_serves": [],
       "lat": 3.036514,
       "lng": 101.706362,
       "estimate_sen": 1600,
@@ -859,6 +948,7 @@
       "kinds": [
         "Chicken"
       ],
+      "also_serves": [],
       "lat": 3.043549,
       "lng": 101.618109,
       "estimate_sen": 1600,
@@ -875,6 +965,7 @@
         "Breakfast",
         "Cafe"
       ],
+      "also_serves": [],
       "lat": 3.021926,
       "lng": 101.618089,
       "estimate_sen": 1400,
@@ -889,6 +980,9 @@
       "kind": "Noodles",
       "kinds": [
         "Noodles"
+      ],
+      "also_serves": [
+        "Chinese"
       ],
       "lat": 3.032346,
       "lng": 101.615038,
@@ -905,6 +999,9 @@
       "kinds": [
         "Noodles"
       ],
+      "also_serves": [
+        "Chinese"
+      ],
       "lat": 3.023855,
       "lng": 101.618445,
       "estimate_sen": 1400,
@@ -919,6 +1016,9 @@
       "kind": "Malaysian",
       "kinds": [
         "Malaysian"
+      ],
+      "also_serves": [
+        "Chicken"
       ],
       "lat": 3.044849,
       "lng": 101.618396,
@@ -935,6 +1035,7 @@
       "kinds": [
         "Burgers"
       ],
+      "also_serves": [],
       "lat": 3.045743,
       "lng": 101.740527,
       "estimate_sen": 1800,
@@ -950,6 +1051,7 @@
       "kinds": [
         "Steakhouse"
       ],
+      "also_serves": [],
       "lat": 3.088608,
       "lng": 101.743648,
       "estimate_sen": 8000,
@@ -965,6 +1067,7 @@
       "kinds": [
         "Western"
       ],
+      "also_serves": [],
       "lat": 3.100859,
       "lng": 101.717582,
       "estimate_sen": 3500,
@@ -980,6 +1083,7 @@
       "kinds": [
         "Malaysian"
       ],
+      "also_serves": [],
       "lat": 3.058291,
       "lng": 101.748484,
       "estimate_sen": 1400,
@@ -995,6 +1099,7 @@
       "kinds": [
         "Thai"
       ],
+      "also_serves": [],
       "lat": 3.080836,
       "lng": 101.732555,
       "estimate_sen": 2200,
@@ -1010,6 +1115,9 @@
       "kinds": [
         "Burgers"
       ],
+      "also_serves": [
+        "Chicken"
+      ],
       "lat": 3.090107,
       "lng": 101.741591,
       "estimate_sen": 1800,
@@ -1024,6 +1132,9 @@
       "kind": "Burgers",
       "kinds": [
         "Burgers"
+      ],
+      "also_serves": [
+        "Chicken"
       ],
       "lat": 3.104772,
       "lng": 101.732852,
@@ -1042,6 +1153,7 @@
         "Thai",
         "Vietnamese"
       ],
+      "also_serves": [],
       "lat": 3.096323,
       "lng": 101.745178,
       "estimate_sen": 1800,
@@ -1057,6 +1169,7 @@
       "kinds": [
         "Burgers"
       ],
+      "also_serves": [],
       "lat": 3.159515,
       "lng": 101.699951,
       "estimate_sen": 1800,
@@ -1072,6 +1185,7 @@
       "kinds": [
         "Cafe"
       ],
+      "also_serves": [],
       "lat": 3.157666,
       "lng": 101.700282,
       "estimate_sen": 1600,
@@ -1086,6 +1200,9 @@
       "kind": "Burgers",
       "kinds": [
         "Burgers"
+      ],
+      "also_serves": [
+        "Chicken"
       ],
       "lat": 3.156462,
       "lng": 101.695635,
@@ -1102,6 +1219,7 @@
       "kinds": [
         "Restaurant"
       ],
+      "also_serves": [],
       "lat": 3.157364,
       "lng": 101.700583,
       "estimate_sen": 2200,
@@ -1117,6 +1235,7 @@
       "kinds": [
         "Noodles"
       ],
+      "also_serves": [],
       "lat": 3.16102,
       "lng": 101.698188,
       "estimate_sen": 1400,
@@ -1131,6 +1250,10 @@
       "kind": "Malaysian",
       "kinds": [
         "Malaysian"
+      ],
+      "also_serves": [
+        "Chicken",
+        "Dessert"
       ],
       "lat": 3.166383,
       "lng": 101.691979,
@@ -1147,6 +1270,7 @@
       "kinds": [
         "Restaurant"
       ],
+      "also_serves": [],
       "lat": 3.157459,
       "lng": 101.699565,
       "estimate_sen": 2200,
@@ -1162,6 +1286,7 @@
       "kinds": [
         "Chinese"
       ],
+      "also_serves": [],
       "lat": 3.156483,
       "lng": 101.700302,
       "estimate_sen": 1800,
@@ -1177,6 +1302,7 @@
       "kinds": [
         "Cafe"
       ],
+      "also_serves": [],
       "lat": 3.152038,
       "lng": 101.713075,
       "estimate_sen": 1500,
@@ -1192,6 +1318,7 @@
       "kinds": [
         "Malaysian"
       ],
+      "also_serves": [],
       "lat": 3.154719,
       "lng": 101.718505,
       "estimate_sen": 1400,
@@ -1210,6 +1337,9 @@
         "Pizza",
         "Sandwiches"
       ],
+      "also_serves": [
+        "Bakery"
+      ],
       "lat": 3.159722,
       "lng": 101.728699,
       "estimate_sen": 1400,
@@ -1225,6 +1355,7 @@
       "kinds": [
         "Cafe"
       ],
+      "also_serves": [],
       "lat": 3.158742,
       "lng": 101.717475,
       "estimate_sen": 1600,
@@ -1240,6 +1371,7 @@
       "kinds": [
         "Restaurant"
       ],
+      "also_serves": [],
       "lat": 3.175121,
       "lng": 101.734714,
       "estimate_sen": 2200,
@@ -1255,6 +1387,7 @@
       "kinds": [
         "Italian"
       ],
+      "also_serves": [],
       "lat": 3.163737,
       "lng": 101.714165,
       "estimate_sen": 4200,
@@ -1270,6 +1403,7 @@
       "kinds": [
         "Middle Eastern"
       ],
+      "also_serves": [],
       "lat": 3.166882,
       "lng": 101.7126,
       "estimate_sen": 2600,
@@ -1285,6 +1419,7 @@
       "kinds": [
         "Cafe"
       ],
+      "also_serves": [],
       "lat": 3.216804,
       "lng": 101.627344,
       "estimate_sen": 1600,
@@ -1301,6 +1436,7 @@
         "Seafood",
         "Chinese"
       ],
+      "also_serves": [],
       "lat": 3.240846,
       "lng": 101.642392,
       "estimate_sen": 4500,
@@ -1317,6 +1453,7 @@
         "Dessert",
         "Chinese"
       ],
+      "also_serves": [],
       "lat": 3.219343,
       "lng": 101.64603,
       "estimate_sen": 1200,
@@ -1332,6 +1469,10 @@
       "kinds": [
         "Chinese",
         "Western"
+      ],
+      "also_serves": [
+        "Breakfast",
+        "Cafe"
       ],
       "lat": 3.224877,
       "lng": 101.650944,
@@ -1349,6 +1490,7 @@
         "Chinese",
         "Malaysian"
       ],
+      "also_serves": [],
       "lat": 3.197501,
       "lng": 101.611667,
       "estimate_sen": 1800,
@@ -1366,6 +1508,9 @@
         "Chicken",
         "Burgers"
       ],
+      "also_serves": [
+        "Western"
+      ],
       "lat": 3.21233,
       "lng": 101.647706,
       "estimate_sen": 1400,
@@ -1380,6 +1525,10 @@
       "kind": "Burgers",
       "kinds": [
         "Burgers"
+      ],
+      "also_serves": [
+        "Chicken",
+        "Western"
       ],
       "lat": 3.187565,
       "lng": 101.627172,
@@ -1402,6 +1551,7 @@
         "Indian",
         "Malaysian"
       ],
+      "also_serves": [],
       "lat": 3.214749,
       "lng": 101.63687,
       "estimate_sen": 1600,
@@ -1419,6 +1569,9 @@
         "Pizza",
         "Dessert"
       ],
+      "also_serves": [
+        "Bakery"
+      ],
       "lat": 3.194174,
       "lng": 101.630889,
       "estimate_sen": 1500,
@@ -1433,6 +1586,10 @@
       "kind": "Malaysian",
       "kinds": [
         "Malaysian"
+      ],
+      "also_serves": [
+        "Chicken",
+        "Noodles"
       ],
       "lat": 3.213074,
       "lng": 101.638745,
@@ -1449,6 +1606,9 @@
       "kinds": [
         "Restaurant"
       ],
+      "also_serves": [
+        "Indian"
+      ],
       "lat": 3.127716,
       "lng": 101.687585,
       "estimate_sen": 2200,
@@ -1463,6 +1623,9 @@
       "kind": "Dessert",
       "kinds": [
         "Dessert"
+      ],
+      "also_serves": [
+        "Cafe"
       ],
       "lat": 3.118733,
       "lng": 101.677236,
@@ -1483,6 +1646,10 @@
         "Chinese",
         "Chicken"
       ],
+      "also_serves": [
+        "Bakery",
+        "Breakfast"
+      ],
       "lat": 3.110678,
       "lng": 101.68554,
       "estimate_sen": 1000,
@@ -1497,6 +1664,10 @@
       "kind": "Cafe",
       "kinds": [
         "Cafe"
+      ],
+      "also_serves": [
+        "Breakfast",
+        "Dessert"
       ],
       "lat": 3.110666,
       "lng": 101.684689,
@@ -1513,6 +1684,9 @@
       "kinds": [
         "Malaysian"
       ],
+      "also_serves": [
+        "Seafood"
+      ],
       "lat": 3.130533,
       "lng": 101.694929,
       "estimate_sen": 1400,
@@ -1527,6 +1701,11 @@
       "kind": "Restaurant",
       "kinds": [
         "Restaurant"
+      ],
+      "also_serves": [
+        "Malaysian",
+        "Breakfast",
+        "Mamak"
       ],
       "lat": 3.106938,
       "lng": 101.669573,
@@ -1543,6 +1722,10 @@
       "kinds": [
         "Malaysian"
       ],
+      "also_serves": [
+        "Chicken",
+        "Noodles"
+      ],
       "lat": 3.112965,
       "lng": 101.66262,
       "estimate_sen": 1400,
@@ -1558,6 +1741,7 @@
       "kinds": [
         "Burgers"
       ],
+      "also_serves": [],
       "lat": 3.158829,
       "lng": 101.612614,
       "estimate_sen": 1800,
@@ -1572,6 +1756,9 @@
       "kind": "Chinese",
       "kinds": [
         "Chinese"
+      ],
+      "also_serves": [
+        "Malaysian"
       ],
       "lat": 3.175517,
       "lng": 101.659341,
@@ -1592,6 +1779,7 @@
         "Sandwiches",
         "Korean"
       ],
+      "also_serves": [],
       "lat": 3.1888,
       "lng": 101.637869,
       "estimate_sen": 1800,
@@ -1607,6 +1795,9 @@
       "kinds": [
         "Italian",
         "Malaysian"
+      ],
+      "also_serves": [
+        "Cafe"
       ],
       "lat": 3.172329,
       "lng": 101.653106,
@@ -1625,6 +1816,7 @@
         "Chicken",
         "Burgers"
       ],
+      "also_serves": [],
       "lat": 3.158775,
       "lng": 101.613131,
       "estimate_sen": 1400,
@@ -1640,6 +1832,7 @@
       "kinds": [
         "Restaurant"
       ],
+      "also_serves": [],
       "lat": 3.175749,
       "lng": 101.659805,
       "estimate_sen": 2200,
@@ -1657,6 +1850,7 @@
         "Pizza",
         "Dessert"
       ],
+      "also_serves": [],
       "lat": 3.172216,
       "lng": 101.653109,
       "estimate_sen": 4200,
@@ -1671,6 +1865,10 @@
       "kind": "Cafe",
       "kinds": [
         "Cafe"
+      ],
+      "also_serves": [
+        "Breakfast",
+        "Dessert"
       ],
       "lat": 3.166814,
       "lng": 101.613215,
@@ -1687,6 +1885,9 @@
       "kinds": [
         "Chinese"
       ],
+      "also_serves": [
+        "Malaysian"
+      ],
       "lat": 3.089153,
       "lng": 101.615566,
       "estimate_sen": 1800,
@@ -1701,6 +1902,10 @@
       "kind": "Mamak",
       "kinds": [
         "Mamak"
+      ],
+      "also_serves": [
+        "Indian",
+        "Malaysian"
       ],
       "lat": 3.098902,
       "lng": 101.646573,
@@ -1717,6 +1922,10 @@
       "kinds": [
         "Cafe"
       ],
+      "also_serves": [
+        "Breakfast",
+        "Dessert"
+      ],
       "lat": 3.100333,
       "lng": 101.687082,
       "estimate_sen": 1500,
@@ -1732,6 +1941,7 @@
       "kinds": [
         "Thai"
       ],
+      "also_serves": [],
       "lat": 3.092515,
       "lng": 101.684764,
       "estimate_sen": 2200,
@@ -1747,6 +1957,7 @@
       "kinds": [
         "Western"
       ],
+      "also_serves": [],
       "lat": 3.076287,
       "lng": 101.631814,
       "estimate_sen": 3500,
@@ -1762,6 +1973,7 @@
       "kinds": [
         "Chinese"
       ],
+      "also_serves": [],
       "lat": 3.1023,
       "lng": 101.685124,
       "estimate_sen": 1800,
@@ -1776,6 +1988,9 @@
       "kind": "Burgers",
       "kinds": [
         "Burgers"
+      ],
+      "also_serves": [
+        "Chicken"
       ],
       "lat": 3.086696,
       "lng": 101.646858,
@@ -1792,6 +2007,10 @@
       "kinds": [
         "Chinese"
       ],
+      "also_serves": [
+        "Chicken",
+        "Malaysian"
+      ],
       "lat": 3.095396,
       "lng": 101.675218,
       "estimate_sen": 1800,
@@ -1806,6 +2025,11 @@
       "kind": "Restaurant",
       "kinds": [
         "Restaurant"
+      ],
+      "also_serves": [
+        "Mamak",
+        "Malaysian",
+        "Indian"
       ],
       "lat": 3.077765,
       "lng": 101.610611,
@@ -1822,6 +2046,10 @@
       "kinds": [
         "Restaurant"
       ],
+      "also_serves": [
+        "Malaysian",
+        "Indian"
+      ],
       "lat": 3.105023,
       "lng": 101.677294,
       "estimate_sen": 2200,
@@ -1836,6 +2064,11 @@
       "kind": "Restaurant",
       "kinds": [
         "Restaurant"
+      ],
+      "also_serves": [
+        "Malaysian",
+        "Chinese",
+        "Breakfast"
       ],
       "lat": 3.100167,
       "lng": 101.686496,
@@ -1852,6 +2085,7 @@
       "kinds": [
         "Chicken"
       ],
+      "also_serves": [],
       "lat": 3.193734,
       "lng": 101.673994,
       "estimate_sen": 1600,
@@ -1867,6 +2101,7 @@
       "kinds": [
         "Korean"
       ],
+      "also_serves": [],
       "lat": 3.193266,
       "lng": 101.673208,
       "estimate_sen": 4000,
@@ -1882,6 +2117,7 @@
       "kinds": [
         "Restaurant"
       ],
+      "also_serves": [],
       "lat": 3.197306,
       "lng": 101.677996,
       "estimate_sen": 2200,
@@ -1899,6 +2135,11 @@
         "Malaysian",
         "Indian"
       ],
+      "also_serves": [
+        "Cafe",
+        "Dessert",
+        "Bakery"
+      ],
       "lat": 3.193441,
       "lng": 101.673526,
       "estimate_sen": 3500,
@@ -1914,6 +2155,7 @@
       "kinds": [
         "Chinese"
       ],
+      "also_serves": [],
       "lat": 3.200175,
       "lng": 101.677302,
       "estimate_sen": 1800,
@@ -1928,6 +2170,10 @@
       "kind": "Malaysian",
       "kinds": [
         "Malaysian"
+      ],
+      "also_serves": [
+        "Mamak",
+        "Cafe"
       ],
       "lat": 3.215327,
       "lng": 101.6696,
@@ -1945,6 +2191,9 @@
         "Malaysian",
         "Chicken",
         "Burgers"
+      ],
+      "also_serves": [
+        "Western"
       ],
       "lat": 3.204656,
       "lng": 101.667499,
@@ -1965,6 +2214,7 @@
         "Korean",
         "Chicken"
       ],
+      "also_serves": [],
       "lat": 3.188532,
       "lng": 101.653241,
       "estimate_sen": 1400,
@@ -1980,6 +2230,7 @@
       "kinds": [
         "Thai"
       ],
+      "also_serves": [],
       "lat": 3.193184,
       "lng": 101.673513,
       "estimate_sen": 2200,
@@ -1995,6 +2246,7 @@
       "kinds": [
         "Restaurant"
       ],
+      "also_serves": [],
       "lat": 3.193817,
       "lng": 101.67468,
       "estimate_sen": 2200,
@@ -2010,6 +2262,7 @@
       "kinds": [
         "Chinese"
       ],
+      "also_serves": [],
       "lat": 3.200325,
       "lng": 101.677226,
       "estimate_sen": 1800,
@@ -2025,6 +2278,7 @@
       "kinds": [
         "Indian"
       ],
+      "also_serves": [],
       "lat": 3.195918,
       "lng": 101.679004,
       "estimate_sen": 1300,
@@ -2041,6 +2295,10 @@
         "Cafe",
         "Sandwiches"
       ],
+      "also_serves": [
+        "Breakfast",
+        "Bakery"
+      ],
       "lat": 3.181166,
       "lng": 101.691824,
       "estimate_sen": 1500,
@@ -2056,6 +2314,7 @@
       "kinds": [
         "Indian"
       ],
+      "also_serves": [],
       "lat": 3.182904,
       "lng": 101.691643,
       "estimate_sen": 1300,
@@ -2073,6 +2332,7 @@
         "Italian",
         "Malaysian"
       ],
+      "also_serves": [],
       "lat": 3.185699,
       "lng": 101.693147,
       "estimate_sen": 1500,
@@ -2087,6 +2347,10 @@
       "kind": "Chicken",
       "kinds": [
         "Chicken"
+      ],
+      "also_serves": [
+        "Western",
+        "Burgers"
       ],
       "lat": 3.180163,
       "lng": 101.683586,
@@ -2106,6 +2370,11 @@
         "Pizza",
         "Sandwiches"
       ],
+      "also_serves": [
+        "Bakery",
+        "Cafe",
+        "Dessert"
+      ],
       "lat": 3.174334,
       "lng": 101.679293,
       "estimate_sen": 1400,
@@ -2121,6 +2390,7 @@
       "kinds": [
         "Malaysian"
       ],
+      "also_serves": [],
       "lat": 3.17631,
       "lng": 101.688485,
       "estimate_sen": 1400,
@@ -2136,6 +2406,7 @@
       "kinds": [
         "Chinese"
       ],
+      "also_serves": [],
       "lat": 3.180581,
       "lng": 101.68305,
       "estimate_sen": 1800,
@@ -2150,6 +2421,10 @@
       "kind": "Chinese",
       "kinds": [
         "Chinese"
+      ],
+      "also_serves": [
+        "Chicken",
+        "Malaysian"
       ],
       "lat": 3.195433,
       "lng": 101.679854,
@@ -2166,6 +2441,7 @@
       "kinds": [
         "Chicken"
       ],
+      "also_serves": [],
       "lat": 3.175368,
       "lng": 101.735021,
       "estimate_sen": 1600,
@@ -2180,6 +2456,9 @@
       "kind": "Burgers",
       "kinds": [
         "Burgers"
+      ],
+      "also_serves": [
+        "Chicken"
       ],
       "lat": 3.23735,
       "lng": 101.697493,
@@ -2196,6 +2475,7 @@
       "kinds": [
         "Cafe"
       ],
+      "also_serves": [],
       "lat": 3.200493,
       "lng": 101.717558,
       "estimate_sen": 1600,
@@ -2211,6 +2491,7 @@
       "kinds": [
         "Chinese"
       ],
+      "also_serves": [],
       "lat": 3.207037,
       "lng": 101.709761,
       "estimate_sen": 1800,
@@ -2226,6 +2507,7 @@
       "kinds": [
         "Cafe"
       ],
+      "also_serves": [],
       "lat": 3.207944,
       "lng": 101.71819,
       "estimate_sen": 1500,
@@ -2241,6 +2523,7 @@
       "kinds": [
         "Chinese"
       ],
+      "also_serves": [],
       "lat": 3.239559,
       "lng": 101.69974,
       "estimate_sen": 1800,
@@ -2256,6 +2539,7 @@
       "kinds": [
         "Chinese"
       ],
+      "also_serves": [],
       "lat": 3.205386,
       "lng": 101.719714,
       "estimate_sen": 1800,
@@ -2273,6 +2557,7 @@
         "Chicken",
         "Burgers"
       ],
+      "also_serves": [],
       "lat": 3.212665,
       "lng": 101.711562,
       "estimate_sen": 1400,
@@ -2289,6 +2574,9 @@
         "Malaysian",
         "Indian"
       ],
+      "also_serves": [
+        "Mamak"
+      ],
       "lat": 3.235964,
       "lng": 101.691406,
       "estimate_sen": 1400,
@@ -2304,6 +2592,7 @@
       "kinds": [
         "Mamak"
       ],
+      "also_serves": [],
       "lat": 3.213422,
       "lng": 101.712363,
       "estimate_sen": 1200,
@@ -2319,6 +2608,7 @@
       "kinds": [
         "Cafe"
       ],
+      "also_serves": [],
       "lat": 3.207141,
       "lng": 101.698994,
       "estimate_sen": 1600,
@@ -2333,6 +2623,10 @@
       "kind": "Malaysian",
       "kinds": [
         "Malaysian"
+      ],
+      "also_serves": [
+        "Chicken",
+        "Noodles"
       ],
       "lat": 3.203682,
       "lng": 101.721204,
@@ -2351,6 +2645,7 @@
         "Thai",
         "Cafe"
       ],
+      "also_serves": [],
       "lat": 3.149131,
       "lng": 101.629858,
       "estimate_sen": 1400,
@@ -2366,6 +2661,7 @@
       "kinds": [
         "Italian"
       ],
+      "also_serves": [],
       "lat": 3.155578,
       "lng": 101.622982,
       "estimate_sen": 4200,
@@ -2382,6 +2678,7 @@
         "Burgers",
         "Cafe"
       ],
+      "also_serves": [],
       "lat": 3.137482,
       "lng": 101.621382,
       "estimate_sen": 1800,
@@ -2397,6 +2694,7 @@
       "kinds": [
         "Thai"
       ],
+      "also_serves": [],
       "lat": 3.140912,
       "lng": 101.627238,
       "estimate_sen": 2200,
@@ -2412,6 +2710,7 @@
       "kinds": [
         "Malaysian"
       ],
+      "also_serves": [],
       "lat": 3.136042,
       "lng": 101.621005,
       "estimate_sen": 1400,
@@ -2431,6 +2730,7 @@
         "Seafood",
         "Steakhouse"
       ],
+      "also_serves": [],
       "lat": 3.166507,
       "lng": 101.654902,
       "estimate_sen": 2800,
@@ -2447,6 +2747,7 @@
         "Western",
         "Cafe"
       ],
+      "also_serves": [],
       "lat": 3.163152,
       "lng": 101.649379,
       "estimate_sen": 3500,
@@ -2462,6 +2763,7 @@
       "kinds": [
         "Indian"
       ],
+      "also_serves": [],
       "lat": 3.141287,
       "lng": 101.629301,
       "estimate_sen": 1300,
@@ -2477,6 +2779,7 @@
       "kinds": [
         "Japanese"
       ],
+      "also_serves": [],
       "lat": 3.149447,
       "lng": 101.654042,
       "estimate_sen": 4200,
@@ -2492,6 +2795,7 @@
       "kinds": [
         "Malaysian"
       ],
+      "also_serves": [],
       "lat": 3.139244,
       "lng": 101.629818,
       "estimate_sen": 1400,
@@ -2506,6 +2810,10 @@
       "kind": "Bakery",
       "kinds": [
         "Bakery"
+      ],
+      "also_serves": [
+        "Cafe",
+        "Dessert"
       ],
       "lat": 3.138436,
       "lng": 101.630098,
@@ -2524,6 +2832,7 @@
         "Italian",
         "Seafood"
       ],
+      "also_serves": [],
       "lat": 3.171685,
       "lng": 101.664577,
       "estimate_sen": 1500,
@@ -2538,6 +2847,9 @@
       "kind": "Indian",
       "kinds": [
         "Indian"
+      ],
+      "also_serves": [
+        "Mamak"
       ],
       "lat": 3.137026,
       "lng": 101.623868,
@@ -2554,6 +2866,9 @@
       "kinds": [
         "Indian"
       ],
+      "also_serves": [
+        "Mamak"
+      ],
       "lat": 3.083172,
       "lng": 101.703861,
       "estimate_sen": 1300,
@@ -2568,6 +2883,9 @@
       "kind": "Indian",
       "kinds": [
         "Indian"
+      ],
+      "also_serves": [
+        "Mamak"
       ],
       "lat": 3.068732,
       "lng": 101.692236,
@@ -2585,6 +2903,9 @@
         "Thai",
         "Malaysian"
       ],
+      "also_serves": [
+        "Noodles"
+      ],
       "lat": 3.063572,
       "lng": 101.711751,
       "estimate_sen": 2200,
@@ -2600,6 +2921,7 @@
       "kinds": [
         "Chinese"
       ],
+      "also_serves": [],
       "lat": 3.067106,
       "lng": 101.690729,
       "estimate_sen": 1800,
@@ -2615,6 +2937,10 @@
       "kinds": [
         "Burgers"
       ],
+      "also_serves": [
+        "Chicken",
+        "Western"
+      ],
       "lat": 3.068761,
       "lng": 101.691741,
       "estimate_sen": 1800,
@@ -2629,6 +2955,9 @@
       "kind": "Malaysian",
       "kinds": [
         "Malaysian"
+      ],
+      "also_serves": [
+        "Breakfast"
       ],
       "lat": 3.083578,
       "lng": 101.711948,
@@ -2646,6 +2975,7 @@
         "Cafe",
         "Breakfast"
       ],
+      "also_serves": [],
       "lat": 3.071007,
       "lng": 101.677107,
       "estimate_sen": 1500,
@@ -2660,6 +2990,9 @@
       "kind": "Malaysian",
       "kinds": [
         "Malaysian"
+      ],
+      "also_serves": [
+        "Noodles"
       ],
       "lat": 3.176436,
       "lng": 101.699365,
@@ -2676,6 +3009,7 @@
       "kinds": [
         "Malaysian"
       ],
+      "also_serves": [],
       "lat": 3.176436,
       "lng": 101.699224,
       "estimate_sen": 1400,
@@ -2690,6 +3024,9 @@
       "kind": "Malaysian",
       "kinds": [
         "Malaysian"
+      ],
+      "also_serves": [
+        "Mamak"
       ],
       "lat": 3.167739,
       "lng": 101.706368,
@@ -2706,6 +3043,7 @@
       "kinds": [
         "Chinese"
       ],
+      "also_serves": [],
       "lat": 3.185152,
       "lng": 101.702172,
       "estimate_sen": 1800,
@@ -2720,6 +3058,10 @@
       "kind": "Burgers",
       "kinds": [
         "Burgers"
+      ],
+      "also_serves": [
+        "Chicken",
+        "Western"
       ],
       "lat": 3.166504,
       "lng": 101.708054,
@@ -2736,6 +3078,7 @@
       "kinds": [
         "Malaysian"
       ],
+      "also_serves": [],
       "lat": 3.166443,
       "lng": 101.707911,
       "estimate_sen": 1400,
@@ -2751,6 +3094,7 @@
       "kinds": [
         "Chicken"
       ],
+      "also_serves": [],
       "lat": 3.177738,
       "lng": 101.742752,
       "estimate_sen": 1600,
@@ -2765,6 +3109,9 @@
       "kind": "Malaysian",
       "kinds": [
         "Malaysian"
+      ],
+      "also_serves": [
+        "Mamak"
       ],
       "lat": 3.198305,
       "lng": 101.740987,
@@ -2781,6 +3128,10 @@
       "kinds": [
         "Burgers"
       ],
+      "also_serves": [
+        "Chicken",
+        "Western"
+      ],
       "lat": 3.212195,
       "lng": 101.746238,
       "estimate_sen": 1800,
@@ -2795,6 +3146,10 @@
       "kind": "Cafe",
       "kinds": [
         "Cafe"
+      ],
+      "also_serves": [
+        "Breakfast",
+        "Dessert"
       ],
       "lat": 3.214009,
       "lng": 101.726823,
@@ -2812,6 +3167,7 @@
         "Chinese",
         "Dessert"
       ],
+      "also_serves": [],
       "lat": 3.198,
       "lng": 101.742033,
       "estimate_sen": 1800,
@@ -2826,6 +3182,9 @@
       "kind": "Western",
       "kinds": [
         "Western"
+      ],
+      "also_serves": [
+        "Steakhouse"
       ],
       "lat": 3.22628,
       "lng": 101.728729,
@@ -2842,6 +3201,11 @@
       "kinds": [
         "Restaurant"
       ],
+      "also_serves": [
+        "Malaysian",
+        "Chicken",
+        "Noodles"
+      ],
       "lat": 3.194685,
       "lng": 101.732075,
       "estimate_sen": 2200,
@@ -2856,6 +3220,10 @@
       "kind": "Burgers",
       "kinds": [
         "Burgers"
+      ],
+      "also_serves": [
+        "Chicken",
+        "Western"
       ],
       "lat": 3.195757,
       "lng": 101.742937,
@@ -2872,6 +3240,11 @@
       "kinds": [
         "Mamak"
       ],
+      "also_serves": [
+        "Indian",
+        "Malaysian",
+        "Middle Eastern"
+      ],
       "lat": 3.197128,
       "lng": 101.741526,
       "estimate_sen": 1200,
@@ -2887,6 +3260,7 @@
       "kinds": [
         "Restaurant"
       ],
+      "also_serves": [],
       "lat": 3.198946,
       "lng": 101.743994,
       "estimate_sen": 2200,
@@ -2901,6 +3275,9 @@
       "kind": "Chinese",
       "kinds": [
         "Chinese"
+      ],
+      "also_serves": [
+        "Noodles"
       ],
       "lat": 3.19811,
       "lng": 101.742201,
@@ -2918,6 +3295,10 @@
         "Chinese",
         "Indian",
         "Dessert"
+      ],
+      "also_serves": [
+        "Malaysian",
+        "Mamak"
       ],
       "lat": 3.216197,
       "lng": 101.72779,

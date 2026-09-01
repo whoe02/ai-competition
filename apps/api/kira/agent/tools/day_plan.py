@@ -122,7 +122,13 @@ class AddPlaceArgs(BaseModel):
     )
 
 
-async def run_search(ctx: ToolContext, args: PlanArgs) -> ToolResult:
+async def run_search(
+    ctx: ToolContext,
+    args: PlanArgs,
+    *,
+    request: str = "",
+    rank: day_plan_service.PlaceRanker | None = None,
+) -> ToolResult:
     """The deterministic half of the planner: measured, ranked, no model.
 
     Public because the Planner agent calls it. It is the same call the Plan
@@ -139,6 +145,8 @@ async def run_search(ctx: ToolContext, args: PlanArgs) -> ToolResult:
         cap_sen=cap_sen,
         room_sen=room_sen,
         kind=args.kind,
+        request=request,
+        rank=rank,
     )
     # Sorted by total cost by the service, and handed over in that order: these
     # are the cheapest twelve, cheapest first, and the model is told as much
@@ -168,6 +176,9 @@ async def run_search(ctx: ToolContext, args: PlanArgs) -> ToolResult:
             "confidence": place.confidence,
             "halal": place.halal,
             "note": place.note,
+            "match_basis": place.match_basis,
+            "match_strength": place.match_strength,
+            "match_reason": place.match_reason,
         }
 
     # The room is stated rather than left in the shares: on a day already spent
@@ -239,6 +250,13 @@ async def run_search(ctx: ToolContext, args: PlanArgs) -> ToolResult:
             ),
             EvidenceRow("Fits today's room", best.band),
         )
+        if best.match_basis is not None:
+            matched_on = {
+                "tagged": f"{args.kind} — tagged",
+                "inferred": f"{args.kind} — believed, not tagged",
+                "judged": best.match_reason,
+            }[best.match_basis]
+            evidence += (EvidenceRow("Matched on", matched_on),)
     elif found.nearby_count == 0:
         evidence = (room_row, EvidenceRow("Nearby places", "none within range"))
     elif found.matching_count == 0:
