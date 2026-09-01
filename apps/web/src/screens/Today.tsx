@@ -1,8 +1,9 @@
 import { useState } from "react";
 
-import type { DashboardToday } from "@kira/contracts";
+import type { BriefingInboxResponse, DashboardToday } from "@kira/contracts";
 
 import type { Tab } from "../App";
+import type { PlanView } from "./Plan";
 import { ClaimLine, type Band } from "../components/ClaimLine";
 import { IcArrow, IcBell, IcChev, IcLock } from "../components/Icons";
 import { Odometer } from "../components/Odometer";
@@ -29,10 +30,11 @@ type TodayProps = {
   data: DashboardToday | undefined;
   isLoading: boolean;
   isError: boolean;
-  go: (tab: Tab) => void;
+  briefing?: BriefingInboxResponse | null;
+  go: (tab: Tab, planView?: PlanView) => void;
 };
 
-export function Today({ data, isLoading, isError, go }: TodayProps) {
+export function Today({ data, isLoading, isError, briefing, go }: TodayProps) {
   const [picked, setPicked] = useState<Band | null>(null);
   const [maths, setMaths] = useState(false);
 
@@ -142,6 +144,52 @@ export function Today({ data, isLoading, isError, go }: TodayProps) {
           </div>
         </Reveal>
 
+        {briefing && (
+          <Reveal delay={30} style={{ marginTop: 16 }}>
+            <button
+              className="card tapp"
+              style={{ display: "flex", gap: 13, alignItems: "center", width: "100%", textAlign: "left" }}
+              onClick={() => go("butler")}
+              aria-label="Open Kira's morning briefing"
+            >
+              <span
+                style={{
+                  width: 38,
+                  height: 38,
+                  borderRadius: 13,
+                  background: "rgba(78,143,121,.14)",
+                  color: "var(--sage)",
+                  display: "grid",
+                  placeItems: "center",
+                  flex: "none",
+                }}
+              >
+                <IcBell size={19} />
+              </span>
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <b style={{ fontSize: 14.5, display: "block", letterSpacing: "-.01em" }}>
+                  Kira did {briefing.proposal_count + 1} thing{briefing.proposal_count === 0 ? "" : "s"} last night
+                </b>
+                <span
+                  style={{
+                    display: "block",
+                    fontSize: 12.5,
+                    color: "var(--muted)",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {briefing.pending_proposal_count > 0
+                    ? `${briefing.pending_proposal_count} decision${briefing.pending_proposal_count === 1 ? "" : "s"} ready for you.`
+                    : briefing.summary}
+                </span>
+              </span>
+              <IcChev size={17} />
+            </button>
+          </Reveal>
+        )}
+
         {data.drafts_waiting > 0 && (
           <Reveal delay={40} style={{ marginTop: 16 }}>
             <button
@@ -202,7 +250,7 @@ export function Today({ data, isLoading, isError, go }: TodayProps) {
         )}
 
         <Reveal delay={40} style={{ marginTop: 16 }}>
-          <button className="card tapp" style={{ width: "100%", textAlign: "left" }} onClick={() => go("plan")}>
+          <button className="card tapp" style={{ width: "100%", textAlign: "left" }} onClick={() => go("plan", "goals")}>
             <div
               style={{
                 display: "flex",

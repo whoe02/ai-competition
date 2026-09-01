@@ -17,11 +17,14 @@ from kira.db.models import (
     TXN_DRAFT,
     Account,
     Commitment,
+    DailyAdvice,
     Goal,
     Transaction,
     User,
 )
 from kira.money import Money
+from kira.seed.advice import backfill_advice
+from kira.seed.history import history_entries
 from kira.services.auth import hash_password
 
 DEMO_EMAIL = "demo@kira.app"
@@ -29,6 +32,13 @@ DEMO_PASSWORD = "demo-money-butler"
 DEMO_TODAY = date(2026, 9, 3)
 DEMO_PAYDAY = date(2026, 9, 25)
 DEMO_CYCLE_START = date(2026, 8, 26)
+# Ninety days back from DEMO_TODAY: enough history for a behaviour profile to
+# be a pattern rather than a rumour.
+DEMO_HISTORY_START = date(2026, 6, 5)
+# RM5,200. The prototype's person is tight — RM52.97 a day — and this is what
+# their own ledger costs: RM2,003 of commitments and RM2,719 of spending a
+# month, leaving barely enough for the goals they have set themselves.
+DEMO_MONTHLY_INCOME = 520000
 
 COMMITMENTS = (
     ("Rent", 120000, date(2026, 9, 5), True),
@@ -45,6 +55,7 @@ GOALS = (
         250000,
         115000,
         27000,
+        date(2027, 2, 15),
         "Three weeks of expenses, kept separate from the buffer.",
     ),
     (
@@ -53,6 +64,7 @@ GOALS = (
         800000,
         329000,
         52500,
+        date(2027, 6, 30),
         "Deposit and banquet, split with Aida.",
     ),
 )
@@ -79,8 +91,13 @@ CONFIRMED = (
     ("Masjid Wilayah donation", 2000, "charity", SOURCE_MANUAL, date(2026, 8, 26)),
 )
 
-SPENT_THIS_CYCLE = sum(sen for _, sen, _, _, _ in CONFIRMED)
-OPENING_BALANCE = 418040 + SPENT_THIS_CYCLE
+# The ninety days before the current cycle. Together with CONFIRMED this is
+# every confirmed row the demo user owns.
+HISTORY = history_entries(DEMO_HISTORY_START, CONFIRMED[-1][4])
+ALL_CONFIRMED = HISTORY + CONFIRMED
+
+SPENT_ALL_TIME = sum(sen for _, sen, _, _, _ in ALL_CONFIRMED)
+OPENING_BALANCE = 418040 + SPENT_ALL_TIME
 
 DRAFTS = (
     (
@@ -115,6 +132,7 @@ async def seed_demo_user(session: AsyncSession) -> User:
             display_name="Floyd",
             currency="MYR",
             buffer=Money(80000),
+            monthly_income=Money(DEMO_MONTHLY_INCOME),
             next_payday=DEMO_PAYDAY,
             cycle_start=DEMO_CYCLE_START,
             cycle_days=30,
@@ -126,10 +144,11 @@ async def seed_demo_user(session: AsyncSession) -> User:
         user.display_name = "Floyd"
         user.currency = "MYR"
         user.buffer = Money(80000)
+        user.monthly_income = Money(DEMO_MONTHLY_INCOME)
         user.next_payday = DEMO_PAYDAY
         user.cycle_start = DEMO_CYCLE_START
         user.cycle_days = 30
-        for model in (Transaction, Goal, Commitment, Account):
+        for model in (DailyAdvice, Transaction, Goal, Commitment, Account):
             await session.execute(delete(model).where(model.user_id == user.id))
 
     session.add(
@@ -152,7 +171,7 @@ async def seed_demo_user(session: AsyncSession) -> User:
             )
         )
 
-    for name, horizon, target, saved, monthly, note in GOALS:
+    for name, horizon, target, saved, monthly, target_date, note in GOALS:
         session.add(
             Goal(
                 user_id=user.id,
@@ -161,12 +180,13 @@ async def seed_demo_user(session: AsyncSession) -> User:
                 target=Money(target),
                 saved=Money(saved),
                 monthly=Money(monthly),
+                target_date=target_date,
                 note=note,
             )
         )
 
     # Oldest first, so created_at rises with the day it happened.
-    for merchant, sen, category, source, occurred_on in reversed(CONFIRMED):
+    for merchant, sen, category, source, occurred_on in reversed(ALL_CONFIRMED):
         session.add(
             Transaction(
                 user_id=user.id,
@@ -195,5 +215,7 @@ async def seed_demo_user(session: AsyncSession) -> User:
             )
         )
 
+    await session.flush()
+    await backfill_advice(session, user, DEMO_HISTORY_START, DEMO_TODAY)
     await session.flush()
     return user

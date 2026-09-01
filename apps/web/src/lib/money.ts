@@ -27,6 +27,15 @@ export function parseSen(input: string): number | null {
   return sen > 0 ? sen : null;
 }
 
+/** Like parseSen, but for fields such as already-saved money where zero is valid. */
+export function parseNonNegativeSen(input: string): number | null {
+  const typed = input.trim().replace(/^RM\s*/i, "").replace(/,/g, "");
+  const match = RINGGIT.exec(typed);
+  if (!match) return null;
+  const sen = Number(match[1]) * 100 + Number((match[2] ?? "").padEnd(2, "0"));
+  return Number.isSafeInteger(sen) && sen >= 0 ? sen : null;
+}
+
 /** The plain editable form of an amount: no grouping, always two decimals. */
 export function toRinggitInput(sen: number): string {
   const sign = sen < 0 ? "-" : "";

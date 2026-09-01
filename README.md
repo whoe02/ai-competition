@@ -9,6 +9,10 @@ integer sen, the day planner knows KL.
 docker compose up --build
 ```
 
+That starts both the API and a separate KL-time nightly briefing worker. You
+can run the same idempotent briefing manually with `POST /v1/briefings/run`
+after signing in.
+
 Then open <http://localhost:8001> and sign in as `demo@kira.app` /
 `demo-money-butler`. Today should read **RM52.97**.
 
@@ -37,6 +41,7 @@ npm --workspace apps/web run test
 
 - `apps/api/kira/engine` — pure finance math. No I/O, no clock, no float.
 - `apps/api/kira/services` — the only layer that writes.
+- `apps/api/kira/agent` — the Butler graph and its typed Goal-planning subgraph.
 - `apps/api/kira/adapters` — every external service, behind a Protocol with a fake.
 - `apps/web` — the PWA, decomposed from `kira-prototype.jsx`.
 - `packages/contracts` — TypeScript types generated from the OpenAPI schema.

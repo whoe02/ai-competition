@@ -2,14 +2,20 @@
 
 from __future__ import annotations
 
+import json
 from datetime import date
 from functools import lru_cache
 
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    # `enable_decoding=False` stops the env sources from JSON-parsing list
+    # fields before validation, so CORS_ORIGINS can be written plainly.
+    model_config = SettingsConfigDict(
+        env_file=".env", extra="ignore", enable_decoding=False
+    )
 
     database_url: str = "postgresql+asyncpg://kira:kira@localhost:5432/kira"
     jwt_secret: str = "development-only-replace-with-a-secure-jwt-secret"
@@ -60,6 +66,13 @@ class Settings(BaseSettings):
     capture_voice_enabled: bool = True
     capture_max_bytes: int = 8 * 1024 * 1024
 
+    # The scheduler is a separate process and stores its job metadata in the
+    # same Postgres database. Asia/Kuala_Lumpur is explicit: daily financial
+    # advice must not shift with the server's timezone.
+    worker_timezone: str = "Asia/Kuala_Lumpur"
+    worker_hour: int = Field(default=5, ge=0, le=23)
+    worker_minute: int = Field(default=0, ge=0, le=59)
+
     # ── Routing ───────────────────────────────────────────────────────────────
     # A Grab fare is charged on the road, not on the great circle: Bangsar to a
     # shop 3.7 km away in a straight line is 8.1 km of driving, and quoting the
@@ -72,6 +85,22 @@ class Settings(BaseSettings):
     # and a page that states today's money must not hang waiting on it.
     routing_timeout_seconds: float = 2.5
 
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def _split_origins(cls, value: object) -> object:
+        """Accept the comma-separated list an operator would actually write.
+
+        pydantic-settings parses a list field from the environment as JSON, so
+        `CORS_ORIGINS=http://localhost:5173` — the form the example file
+        documents — would otherwise fail at startup rather than at review.
+        """
+        if not isinstance(value, str):
+            return value
+        text = value.strip()
+        if text.startswith("["):
+            return json.loads(text)
+        return [origin.strip() for origin in text.split(",") if origin.strip()]
+
     @property
     def checkpointer_dsn(self) -> str:
         """LangGraph's Postgres checkpointer runs on psycopg3, not asyncpg.
@@ -79,6 +108,11 @@ class Settings(BaseSettings):
         Same database, second driver: the SQLAlchemy dialect suffix has to go.
         """
         return self.database_url.replace("+asyncpg", "").replace("+psycopg", "")
+
+    @property
+    def scheduler_database_url(self) -> str:
+        """A synchronous SQLAlchemy URL for APScheduler's persistent job store."""
+        return self.database_url.replace("+asyncpg", "+psycopg")
 
 
 @lru_cache

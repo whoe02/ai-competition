@@ -404,6 +404,114 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/categories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Categories */
+        get: operations["list_categories_v1_categories_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/foresight": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Foresight */
+        get: operations["get_foresight_v1_foresight_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/foresight/scenarios": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post Scenarios */
+        post: operations["post_scenarios_v1_foresight_scenarios_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/hindsight": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Hindsight */
+        get: operations["get_hindsight_v1_hindsight_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/briefings/today": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Today Briefing
+         * @description The prepared morning inbox, if the nightly worker has run already.
+         */
+        get: operations["get_today_briefing_v1_briefings_today_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/briefings/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run Briefing
+         * @description Run today's worker path now. A retry returns the original briefing.
+         */
+        post: operations["run_briefing_v1_briefings_run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/day-plan/places": {
         parameters: {
             query?: never;
@@ -500,6 +608,26 @@ export interface paths {
         put?: never;
         /** Create Goal */
         post: operations["create_goal_v1_goals_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/goals/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run Goal Graph
+         * @description Run natural-language intake or a structured zero-intake trigger.
+         */
+        post: operations["run_goal_graph_v1_goals_runs_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -603,6 +731,18 @@ export interface components {
             /** Categories */
             categories: components["schemas"]["CategorySummaryResponse"][];
         };
+        /** AdviceDayOut */
+        AdviceDayOut: {
+            /**
+             * On
+             * Format: date
+             */
+            on: string;
+            advised: components["schemas"]["MoneyOut"];
+            actual: components["schemas"]["MoneyOut"];
+            /** Followed */
+            followed: boolean;
+        };
         /** ApprovalDecisionRequest */
         ApprovalDecisionRequest: {
             /**
@@ -624,6 +764,44 @@ export interface components {
         Body_read_voice_v1_capture_voice_post: {
             /** Audio */
             audio: string;
+        };
+        /** BriefingInboxResponse */
+        BriefingInboxResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * On Date
+             * Format: date
+             */
+            on_date: string;
+            /** Summary */
+            summary: string;
+            /** Proposal Count */
+            proposal_count: number;
+            /** Pending Proposal Count */
+            pending_proposal_count: number;
+        };
+        /** BriefingRunResponse */
+        BriefingRunResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * On Date
+             * Format: date
+             */
+            on_date: string;
+            /** Summary */
+            summary: string;
+            /** Proposal Count */
+            proposal_count: number;
+            /** Created */
+            created: boolean;
         };
         /** ButlerApprovalResponse */
         ButlerApprovalResponse: {
@@ -756,6 +934,13 @@ export interface components {
             transcript: string;
             /** Fields */
             fields: components["schemas"]["CaptureFieldResponse"][];
+        };
+        /** CategoryResponse */
+        CategoryResponse: {
+            /** Slug */
+            slug: string;
+            /** Label */
+            label: string;
         };
         /** CategorySummaryResponse */
         CategorySummaryResponse: {
@@ -1015,6 +1200,37 @@ export interface components {
             /** Nearest Over Cap */
             nearest_over_cap: components["schemas"]["PlaceResponse"][];
         };
+        /** DriverOut */
+        DriverOut: {
+            lever: components["schemas"]["LeverOut"];
+            /** Probability Bp Before */
+            probability_bp_before: number;
+            /** Probability Bp After */
+            probability_bp_after: number;
+            /** Bp Per Ringgit */
+            bp_per_ringgit: number;
+        };
+        /** ForesightResponse */
+        ForesightResponse: {
+            /** Horizon Days */
+            horizon_days: number;
+            /** Dates */
+            dates: string[];
+            /** P10 */
+            p10: components["schemas"]["MoneyOut"][];
+            /** P50 */
+            p50: components["schemas"]["MoneyOut"][];
+            /** P90 */
+            p90: components["schemas"]["MoneyOut"][];
+            /** Outlooks */
+            outlooks: components["schemas"]["GoalOutlookOut"][];
+            /** Drivers */
+            drivers: components["schemas"]["DriverOut"][];
+            /** Profile Days */
+            profile_days: number;
+            /** Assumption */
+            assumption: string;
+        };
         /** GoalCreateRequest */
         GoalCreateRequest: {
             /**
@@ -1097,6 +1313,91 @@ export interface components {
             /** Current Plan Version */
             current_plan_version?: number | null;
         };
+        /**
+         * GoalGraphIntentRequest
+         * @description Structured form/event input that bypasses the intake model.
+         */
+        GoalGraphIntentRequest: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "create" | "replan" | "impact" | "select_scenario" | "recalculate";
+            /** Goal Id */
+            goal_id?: string | null;
+            /** Goal Reference */
+            goal_reference?: string | null;
+            /** Goal Type */
+            goal_type?: ("emergency_starter_fund" | "upcoming_bill_annual_expense" | "travel" | "big_purchase" | "wedding_event_deposit" | "house_down_payment" | "car_down_payment" | "wedding_fund" | "full_emergency_fund" | "education_family_goal" | "custom_goal") | null;
+            /** Name */
+            name?: string | null;
+            /** Target Amount Sen */
+            target_amount_sen?: number | null;
+            /** Current Saved Sen */
+            current_saved_sen?: number | null;
+            /** Target Date */
+            target_date?: string | null;
+            /** Contribution Per Payday Sen */
+            contribution_per_payday_sen?: number | null;
+            /** Priority */
+            priority?: ("protected" | "important" | "flexible") | null;
+            /** Funding Account Ids */
+            funding_account_ids?: string[];
+            /** Proposed Spend Sen */
+            proposed_spend_sen?: number | null;
+            /** Scenario Id */
+            scenario_id?: string | null;
+            /** Scenario Label */
+            scenario_label?: string | null;
+            /**
+             * Wants Scenarios
+             * @default false
+             */
+            wants_scenarios: boolean;
+        };
+        /** GoalGraphRunRequest */
+        GoalGraphRunRequest: {
+            /**
+             * Text
+             * @default
+             */
+            text: string;
+            /** Thread Id */
+            thread_id?: string | null;
+            intent?: components["schemas"]["GoalGraphIntentRequest"] | null;
+            /**
+             * Explain
+             * @default true
+             */
+            explain: boolean;
+        };
+        /** GoalGraphRunResponse */
+        GoalGraphRunResponse: {
+            /**
+             * Request Id
+             * Format: uuid
+             */
+            request_id: string;
+            /**
+             * Thread Id
+             * Format: uuid
+             */
+            thread_id: string;
+            /** Final Response */
+            final_response: string;
+            /** Llm Calls */
+            llm_calls: number;
+            /** Goal Id */
+            goal_id?: string | null;
+            /** Feasible */
+            feasible?: boolean | null;
+            /** Approval */
+            approval?: {
+                [key: string]: unknown;
+            } | null;
+            /** Errors */
+            errors?: string[];
+        };
         /** GoalImpactRequest */
         GoalImpactRequest: {
             /** Proposed Spend Sen */
@@ -1143,6 +1444,19 @@ export interface components {
              * Format: date
              */
             projected_date: string;
+        };
+        /** GoalOutlookOut */
+        GoalOutlookOut: {
+            /** Goal Id */
+            goal_id: string;
+            /**
+             * Target Date
+             * Format: date
+             */
+            target_date: string;
+            /** Probability Bp */
+            probability_bp: number;
+            median_shortfall: components["schemas"]["MoneyOut"];
         };
         /** GoalPlanResponse */
         GoalPlanResponse: {
@@ -1261,6 +1575,49 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /** HindsightResponse */
+        HindsightResponse: {
+            /** Window Days */
+            window_days: number;
+            /** Days */
+            days: number;
+            /** Followed */
+            followed: number;
+            /** Follow Rate Bp */
+            follow_rate_bp: number;
+            mean_abs_deviation: components["schemas"]["MoneyOut"];
+            counterfactual_gain: components["schemas"]["MoneyOut"];
+            /** Goal Id */
+            goal_id: string | null;
+            /** Probability Bp Now */
+            probability_bp_now: number | null;
+            /** Probability Bp If Followed */
+            probability_bp_if_followed: number | null;
+            /** Recent */
+            recent: components["schemas"]["AdviceDayOut"][];
+            /** Assumption */
+            assumption: string;
+        };
+        /** LeverIn */
+        LeverIn: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "goal_monthly" | "commitment_amount" | "daily_spend";
+            /** Target Id */
+            target_id: string;
+            /** Delta Sen */
+            delta_sen: number;
+        };
+        /** LeverOut */
+        LeverOut: {
+            /** Kind */
+            kind: string;
+            /** Target Id */
+            target_id: string;
+            delta: components["schemas"]["MoneyOut"];
+        };
         /** LoginRequest */
         LoginRequest: {
             /**
@@ -1300,6 +1657,13 @@ export interface components {
             created_at: string;
             /** Last Used At */
             last_used_at: string | null;
+        };
+        /** MoneyOut */
+        MoneyOut: {
+            /** Sen */
+            sen: number;
+            /** Currency */
+            currency: string;
         };
         /** NextCommitmentResponse */
         NextCommitmentResponse: {
@@ -1421,6 +1785,28 @@ export interface components {
             password: string;
             /** Display Name */
             display_name: string;
+        };
+        /** ScenarioComparisonResponse */
+        ScenarioComparisonResponse: {
+            /** Results */
+            results: components["schemas"]["ScenarioResultOut"][];
+        };
+        /** ScenarioRequest */
+        ScenarioRequest: {
+            /**
+             * Horizon Days
+             * @default 180
+             */
+            horizon_days: number;
+            /** Levers */
+            levers: components["schemas"]["LeverIn"][];
+        };
+        /** ScenarioResultOut */
+        ScenarioResultOut: {
+            lever: components["schemas"]["LeverOut"];
+            /** Outlooks */
+            outlooks: components["schemas"]["GoalOutlookOut"][];
+            safe_today_after: components["schemas"]["MoneyOut"];
         };
         /** TokenResponse */
         TokenResponse: {
@@ -2196,6 +2582,161 @@ export interface operations {
             };
         };
     };
+    list_categories_v1_categories_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CategoryResponse"][];
+                };
+            };
+        };
+    };
+    get_foresight_v1_foresight_get: {
+        parameters: {
+            query?: {
+                horizon?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ForesightResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_scenarios_v1_foresight_scenarios_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScenarioRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScenarioComparisonResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_hindsight_v1_hindsight_get: {
+        parameters: {
+            query?: {
+                window?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HindsightResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_today_briefing_v1_briefings_today_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BriefingInboxResponse"] | null;
+                };
+            };
+        };
+    };
+    run_briefing_v1_briefings_run_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BriefingRunResponse"];
+                };
+            };
+        };
+    };
     get_places_v1_day_plan_places_get: {
         parameters: {
             query: {
@@ -2319,6 +2860,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GoalCreateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_goal_graph_v1_goals_runs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GoalGraphRunRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoalGraphRunResponse"];
                 };
             };
             /** @description Validation Error */

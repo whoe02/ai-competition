@@ -61,6 +61,9 @@ class User(Base):
     display_name: Mapped[str] = mapped_column(String(80))
     currency: Mapped[str] = mapped_column(String(3), default="MYR")
     buffer: Mapped[Money] = mapped_column(MoneyType(), default=lambda: Money(0))
+    # What lands on payday. Zero until a user says otherwise: safe_to_spend never
+    # needed it, because it never looks past the next payday. A projection does.
+    monthly_income: Mapped[Money] = mapped_column(MoneyType(), default=lambda: Money(0))
     next_payday: Mapped[date] = mapped_column(Date)
     cycle_start: Mapped[date] = mapped_column(Date)
     cycle_days: Mapped[int] = mapped_column(Integer, default=30)
@@ -125,6 +128,9 @@ class Goal(Base):
     target: Mapped[Money] = mapped_column(MoneyType())
     saved: Mapped[Money] = mapped_column(MoneyType())
     monthly: Mapped[Money] = mapped_column(MoneyType())
+    # A goal without a date is projected but carries no probability: "will I make
+    # it" is not a question until there is a "by when".
+    target_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     note: Mapped[str] = mapped_column(Text, default="")
     # The legacy horizon/monthly fields above remain the dashboard projection.
     # Planning uses the actual target date and a versioned GoalPlanRecord.
@@ -353,4 +359,46 @@ class AuditEvent(Base):
     actor: Mapped[str] = mapped_column(String(16))  # user | butler
     action: Mapped[str] = mapped_column(String(60), index=True)
     detail: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+ADVICE_SOURCE_WORKER = "worker"
+ADVICE_SOURCE_SEED = "seed"
+
+
+class DailyAdvice(Base):
+    """What Kira advised on a day, and the exact snapshot she advised it from.
+
+    ``safe_today`` is computed on read and stored nowhere else, so without this
+    row a past day's advice could only be reconstructed — and a reconstruction
+    would silently use today's goals and commitments instead of that day's.
+    """
+
+    __tablename__ = "daily_advice"
+    __table_args__ = (UniqueConstraint("user_id", "on_date", name="uq_daily_advice_user_date"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=_uuid)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    on_date: Mapped[date] = mapped_column(Date, index=True)
+    safe_today: Mapped[Money] = mapped_column(MoneyType())
+    snapshot: Mapped[dict] = mapped_column(JSON, default=dict)
+    source: Mapped[str] = mapped_column(String(8), default=ADVICE_SOURCE_WORKER)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class Briefing(Base):
+    """One idempotent overnight briefing per user and local calendar day."""
+
+    __tablename__ = "briefings"
+    __table_args__ = (UniqueConstraint("user_id", "on_date", name="uq_briefings_user_date"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=_uuid)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    on_date: Mapped[date] = mapped_column(Date, index=True)
+    summary: Mapped[str] = mapped_column(Text, default="")
+    proposal_count: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)

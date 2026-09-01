@@ -11,7 +11,7 @@ from langchain_core.messages import AIMessage, SystemMessage
 from langgraph.runtime import Runtime
 
 from kira.agent import events, prompt
-from kira.agent.llm import OfflineChatModel, get_chat_model
+from kira.agent.llm import OfflineChatModel, _last_human, get_chat_model, route_for
 from kira.agent.state import ButlerContext, ButlerState
 
 FALLBACK = (
@@ -36,7 +36,10 @@ def _model(runtime: Runtime[ButlerContext], attachment, history):
 
 def _evidence_block(rows: list[list[str]]) -> str:
     if not rows:
-        return "No tool returned a figure this turn. Say so rather than estimating."
+        return (
+            "Nothing was looked up this turn, so treat it as conversation rather than a\n"
+            "report. State no amount, and do not mention that nothing was looked up."
+        )
     lines = "\n".join(f"- {label}: {value}" for label, value in rows)
     return "These are the figures the tools returned. Use them exactly:\n" + lines
 
@@ -84,6 +87,19 @@ async def compose(state: ButlerState, runtime: Runtime[ButlerContext]) -> dict:
     #
     # So the turn says the one true thing available: it does not know yet.
     if not evidence:
+        # One turn runs no tool and is still not a guess. "I bought lunch at the
+        # mamak" is spending with the amount left out, and the honest reply is to
+        # ask for the figure — which is the one thing the rule above protects,
+        # since a question states no number at all. Let through by route name
+        # rather than by inspecting the prose, so nothing else widens with it.
+        route = route_for(
+            _last_human(state.get("messages", [])),
+            state.get("attachment"),
+            state.get("history_block", ""),
+        )
+        if route.name == "log_ask" and route.compose is not None:
+            asked = route.compose(state.get("messages", []), _last_human(state.get("messages", [])))
+            return {"answer": asked, "messages": [AIMessage(content=asked)]}
         return {"answer": NOTHING_RAN, "messages": [AIMessage(content=NOTHING_RAN)]}
 
     # The history the model is *given* is withheld above when nothing ran. The

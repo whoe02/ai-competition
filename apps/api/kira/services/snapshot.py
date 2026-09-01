@@ -53,9 +53,19 @@ async def load_snapshot(session: AsyncSession, user: User, today: date) -> Snaps
             CommitmentInput(str(commitment.id), commitment.amount, commitment.due_date)
             for commitment in commitments
         ),
-        goals=tuple(GoalInput(str(goal.id), goal.monthly) for goal in goals),
+        goals=tuple(
+            GoalInput(
+                str(goal.id),
+                goal.monthly,
+                goal.target,
+                goal.saved,
+                goal.target_date,
+            )
+            for goal in goals
+        ),
         today=today,
         next_payday=user.next_payday,
         cycle_start=user.cycle_start,
         cycle_days=user.cycle_days,
+        income=user.monthly_income,
     )

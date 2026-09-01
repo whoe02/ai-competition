@@ -86,6 +86,7 @@ export const IcImg = (p: IconProps) => (
     }
   />
 );
+export const IcPlus = (p: IconProps) => <Svg {...p} w={2} d={<path d="M12 5.5v13M5.5 12h13" />} />;
 export const IcX = (p: IconProps) => <Svg {...p} d={<path d="m6.5 6.5 11 11m0-11-11 11" />} />;
 export const IcStop = (p: IconProps) => (
   <Svg {...p} d={<rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor" />} />

@@ -7,9 +7,9 @@ from collections.abc import AsyncGenerator
 
 os.environ.setdefault("DEMO_TODAY", "2026-09-03")
 os.environ.setdefault("JWT_SECRET", "test-secret-for-kira-auth-tests-123456")
-# A developer's .env carries a real DashScope key, which would send the Butler's
-# HTTP tests over the network to a live model and make them pass or fail on what
-# it happened to say. The offline model is the one the golden tests already pin.
+# The suite runs against the deterministic model, always. A developer with a
+# real key in their .env would otherwise send every un-stubbed turn to the
+# vendor: slow, billable, and impossible to assert prose against.
 os.environ.setdefault("BUTLER_OFFLINE", "true")
 # Same reasoning for the router: left on, every day-plan test would put a real
 # HTTP request to a volunteer-run public service on the critical path of the

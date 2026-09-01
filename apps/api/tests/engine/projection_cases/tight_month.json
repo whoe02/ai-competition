@@ -1,0 +1,62 @@
+{
+  "name": "A month with no income and a large bill: the band must go negative",
+  "horizon_days": 30,
+  "trials": 500,
+  "seed": 7,
+  "input": {
+    "currency": "MYR",
+    "balance": 60000,
+    "buffer": 0,
+    "spent_today": 0,
+    "income": 0,
+    "today": "2026-09-03",
+    "next_payday": "2026-12-25",
+    "cycle_start": "2026-08-26",
+    "cycle_days": 30,
+    "lookback_days": 90,
+    "profile": [
+      [
+        1000,
+        2000
+      ],
+      [
+        1000,
+        2000
+      ],
+      [
+        1000,
+        2000
+      ],
+      [
+        1000,
+        2000
+      ],
+      [
+        1000,
+        2000
+      ],
+      [
+        1000,
+        2000
+      ],
+      [
+        1000,
+        2000
+      ]
+    ],
+    "commitments": [
+      {
+        "id": "rent",
+        "amount": 120000,
+        "due_date": "2026-09-05"
+      }
+    ],
+    "goals": []
+  },
+  "expected": {
+    "final_p10": -109000,
+    "final_p50": -105000,
+    "final_p90": -102000,
+    "outlooks": []
+  }
+}

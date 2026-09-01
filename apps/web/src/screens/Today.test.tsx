@@ -72,6 +72,25 @@ describe("Today", () => {
     expect(screen.getByText(/Nothing enters your ledger until you confirm it/i)).toBeInTheDocument();
   });
 
+  it("opens Kira's prepared morning briefing when one exists", async () => {
+    const go = vi.fn();
+    renderToday({
+      go,
+      briefing: {
+        id: "b1",
+        on_date: "2026-09-03",
+        summary: "Your money check is complete.",
+        proposal_count: 2,
+        pending_proposal_count: 2,
+      },
+    });
+    const user = userEvent.setup();
+
+    expect(screen.getByText(/Kira did 3 things last night/i)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /open Kira's morning briefing/i }));
+    expect(go).toHaveBeenCalledWith("butler");
+  });
+
   it("shows the working on request, and it reconciles", async () => {
     renderToday();
     const user = userEvent.setup();

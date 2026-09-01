@@ -8,7 +8,7 @@ not the model's prose.
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 import pytest
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -242,6 +242,113 @@ class TestAttachments:
     async def test_without_an_attachment_it_says_so(self, session, butler, today):
         result = await ask(session, butler, today, "What did that receipt say?")
         assert dict(result.evidence)["Attachment"] == "none on this message"
+
+
+class TestLoggingSpending:
+    """A sentence about money already spent is a proposal to log it.
+
+    People do not speak in fields. "Grabbed lunch at the mamak, twelve fifty" has
+    to reach the same approval card as a structured request, and reach it without
+    touching the ledger on the way.
+    """
+
+    async def test_it_proposes_the_transaction_it_heard(self, session, butler, today):
+        result = await ask(session, butler, today, "I spent RM12.50 at the mamak on lunch")
+        assert result.approval is not None
+        assert result.approval["tool"] == "add_transaction"
+        assert result.approval["args"]["amount_sen"] == 1250
+
+    async def test_it_hears_an_amount_that_was_spoken_rather_than_typed(
+        self, session, butler, today
+    ):
+        result = await ask(session, butler, today, "Grabbed lunch at the mamak, twelve fifty")
+        assert result.approval["args"]["amount_sen"] == 1250
+
+    async def test_it_reads_the_merchant_out_of_the_sentence(self, session, butler, today):
+        result = await ask(session, butler, today, "I paid RM45 at Village Grocer")
+        assert result.approval["args"]["merchant"] == "Village Grocer"
+
+    async def test_it_infers_the_category_rather_than_hardcoding_one(
+        self, session, butler, today
+    ):
+        result = await ask(session, butler, today, "Topped up petrol, RM60")
+        assert result.approval["args"]["category"] == "transport"
+
+    async def test_it_dates_it_today_unless_told_otherwise(self, session, butler, today):
+        result = await ask(session, butler, today, "Bought roti canai for RM4")
+        assert result.approval["args"]["occurred_on"] == today.isoformat()
+
+    async def test_yesterday_means_yesterday(self, session, butler, today):
+        result = await ask(session, butler, today, "I spent RM30 on groceries yesterday")
+        expected = today.fromordinal(today.toordinal() - 1)
+        assert result.approval["args"]["occurred_on"] == expected.isoformat()
+
+    async def test_without_an_amount_it_asks_instead_of_inventing_one(
+        self, session, butler, today
+    ):
+        result = await ask(session, butler, today, "I bought lunch at the mamak")
+        assert result.approval is None
+        assert "how much" in result.answer.lower()
+
+    async def test_nothing_reaches_the_ledger_before_the_user_approves(
+        self, session, butler, today
+    ):
+        from sqlalchemy import func, select
+
+        async def rows() -> int:
+            return (
+                await session.execute(select(func.count()).select_from(Transaction))
+            ).scalar_one()
+
+        before = await rows()
+        result = await ask(session, butler, today, "I spent RM12.50 at the mamak on lunch")
+        assert result.approval is not None
+        assert await rows() == before
+
+    async def test_the_summary_says_what_will_be_added(self, session, butler, today):
+        result = await ask(session, butler, today, "I spent RM12.50 at the mamak on lunch")
+        assert "RM12.50" in result.approval["summary"]
+
+
+class TestComposingWhenNoProposalWasMade:
+    """The offline model also composes as a safety net for the online one.
+
+    When the vendor returns nothing, `compose` falls back to the offline model
+    for the prose alone — with no tool having run. Its answer must describe what
+    actually happened, not what the route would have done.
+    """
+
+    async def test_it_does_not_claim_a_draft_that_was_never_proposed(self):
+        from langchain_core.messages import HumanMessage
+
+        from kira.agent.llm import OfflineChatModel
+
+        reply = await OfflineChatModel().ainvoke(
+            [HumanMessage("grabbed lunch at the mamak, twelve fifty")]
+        )
+        assert "draft" not in str(reply.content).lower()
+
+    async def test_it_still_says_so_once_the_draft_is_real(self, session, butler, today):
+        from sqlalchemy import select
+
+        from kira.agent.run import resume_approval
+        from kira.db.models import ButlerApproval
+
+        user, thread = butler
+        first = await ask(session, butler, today, "I spent RM12.50 at the mamak on lunch")
+        assert first.approval is not None
+        approval = (await session.execute(select(ButlerApproval).limit(1))).scalar_one()
+
+        result = await resume_approval(
+            session,
+            user,
+            thread,
+            graph_thread=approval.graph_thread_id,
+            decision={"action": "accept"},
+            today=today,
+            model_factory=offline_factory,
+        )
+        assert "draft" in result.answer.lower()
 
 
 class TestWhereToEat:
@@ -773,7 +880,10 @@ class TestAFollowUpThatNamesOnlyAKindOfFood:
         assert warm.name == "places"
         # In the curated set's own spelling, because a word the data does not
         # carry matches nothing and the search comes back empty behind it.
-        assert warm.arguments(text, None)["build_day_plan"]["kind"] == "Japanese"
+        assert (
+            warm.arguments(text, None, date(2026, 9, 3))["build_day_plan"]["kind"]
+            == "Japanese"
+        )
 
     async def test_it_searches_for_the_food_it_named(
         self, session, butler, today, place_world

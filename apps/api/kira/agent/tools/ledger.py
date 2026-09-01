@@ -9,10 +9,10 @@ from __future__ import annotations
 import uuid
 from datetime import date
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from kira.agent.tools.spec import EvidenceRow, ToolContext, ToolResult, ToolSpec, money_str
-from kira.categories import slugs
+from kira.categories import UNCATEGORISED, slugs
 from kira.db.models import SOURCE_MANUAL
 from kira.money import Money
 from kira.services import transactions as ledger
@@ -38,7 +38,15 @@ class AddTransactionArgs(BaseModel):
     merchant: str = Field(min_length=1, max_length=120, description="Who was paid.")
     amount_sen: int = Field(gt=0, description="The amount in sen (RM1 is 100 sen).")
     occurred_on: date = Field(description="The day it happened, as YYYY-MM-DD.")
-    category: str = Field(default="uncategorised", description="One of the known categories.")
+    category: str = Field(default=UNCATEGORISED, description="One of the known categories.")
+
+    @field_validator("category")
+    @classmethod
+    def _known(cls, value: str) -> str:
+        """An edited approval is user input, and free text fragments the ledger."""
+        if value not in slugs():
+            raise ValueError(f"category must be one of: {', '.join(slugs())}")
+        return value
     note: str = Field(default="", max_length=280, description="Anything worth recording.")
 
 

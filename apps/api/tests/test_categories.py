@@ -1,6 +1,6 @@
 import pytest
 
-from kira.categories import CATEGORIES, UNCATEGORISED, label_for, slugs
+from kira.categories import CATEGORIES, UNCATEGORISED, infer, label_for, slugs
 
 
 class TestVocabulary:
@@ -27,3 +27,32 @@ class TestLabels:
 
     def test_an_unknown_slug_still_reads_as_something(self):
         assert label_for("pet-grooming") == "Pet grooming"
+
+
+class TestInference:
+    """A read that guesses the category is better than one that hardcodes it."""
+
+    @pytest.mark.parametrize(
+        ("text", "expected"),
+        [
+            ("lunch at the mamak", "food"),
+            ("nasi lemak this morning", "food"),
+            ("grab to the office", "transport"),
+            ("topped up petrol", "transport"),
+            ("the Tesco run", "groceries"),
+            ("paid the Astro bill", "bills"),
+            ("panadol from the pharmacy", "health"),
+            ("cinema tickets", "fun"),
+        ],
+    )
+    def test_it_reads_the_category_out_of_what_was_said(self, text, expected):
+        assert infer(text) == expected
+
+    def test_it_does_not_guess_when_nothing_points_anywhere(self):
+        assert infer("that thing from the other day") == UNCATEGORISED
+
+    def test_it_is_not_fooled_by_a_word_inside_another_word(self):
+        assert infer("refunded the deposit") == UNCATEGORISED
+
+    def test_every_inferred_slug_is_one_of_the_known_ones(self):
+        assert infer("lunch") in slugs()

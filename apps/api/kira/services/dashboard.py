@@ -96,7 +96,11 @@ async def today_dashboard(
     )
 
     goals = (
-        await session.execute(select(Goal).where(Goal.user_id == user.id).order_by(Goal.name))
+        await session.execute(
+            select(Goal)
+            .where(Goal.user_id == user.id, Goal.status != "draft", Goal.status != "cancelled")
+            .order_by(Goal.name)
+        )
     ).scalars().all()
 
     return DashboardToday(

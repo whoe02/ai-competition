@@ -20,6 +20,16 @@ type ScanSheetProps = {
  * with a confidence on every field, and it stays a proposal until confirmed.
  */
 export function ScanSheet({ onClose, onAsk }: ScanSheetProps) {
+  return (
+    <Sheet label="Scan a receipt" onClose={onClose}>
+      <div className="grab" />
+      <ScanBody onClose={onClose} onAsk={onAsk} />
+    </Sheet>
+  );
+}
+
+/** The reading itself, so the entry sheet can host it beside the other ways in. */
+export function ScanBody({ onClose, onAsk }: ScanSheetProps) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const read = useReadCapture("receipt");
@@ -33,8 +43,7 @@ export function ScanSheet({ onClose, onAsk }: ScanSheetProps) {
   };
 
   return (
-    <Sheet label="Scan a receipt" onClose={onClose}>
-      <div className="grab" />
+    <>
       <div className="sheet-head">
         <div>
           <p className="eyebrow on-ink" style={{ margin: 0 }}>
@@ -154,6 +163,6 @@ export function ScanSheet({ onClose, onAsk }: ScanSheetProps) {
           </div>
         </>
       )}
-    </Sheet>
+    </>
   );
 }

@@ -11,8 +11,10 @@ from __future__ import annotations
 
 import json
 import re
+from calendar import monthrange
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import date
 from typing import Any
 
 from langchain_core.callbacks import CallbackManagerForLLMRun
@@ -20,6 +22,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 
+from kira.categories import UNCATEGORISED, infer, label_for
 from kira.config import get_settings
 from kira.services.day_plan import kind_key, known_kinds
 
@@ -40,6 +43,48 @@ _AMOUNT = re.compile(
     re.I,
 )
 
+# A bare number, used only after the marked forms above have missed.
+_BARE = re.compile(r"\b(\d{1,7}(?:\.\d{1,2})?)\b")
+
+_ONES = (
+    "zero one two three four five six seven eight nine ten eleven twelve thirteen "
+    "fourteen fifteen sixteen seventeen eighteen nineteen"
+).split()
+_TENS = {"twenty": 20, "thirty": 30, "forty": 40, "fifty": 50,
+         "sixty": 60, "seventy": 70, "eighty": 80, "ninety": 90}
+_NUMBER_WORDS = {word: value for value, word in enumerate(_ONES)} | _TENS
+_WORD = re.compile(r"[a-z]+", re.I)
+
+
+def _spoken_sen(text: str) -> int | None:
+    """"twelve fifty" is RM12.50 — the way an amount arrives when it is spoken.
+
+    Speech gives words, not digits, so the offline reader has to hear them. Two
+    numbers read as ringgit and sen; one reads as whole ringgit.
+    """
+    numbers: list[int] = []
+    pending: int | None = None
+    for token in _WORD.findall(text.lower()):
+        value = _NUMBER_WORDS.get(token)
+        if value is None:
+            if pending is not None:
+                numbers.append(pending)
+                pending = None
+            continue
+        if pending is not None and pending in _TENS.values() and value < 10:
+            numbers.append(pending + value)  # "twenty five"
+            pending = None
+        else:
+            if pending is not None:
+                numbers.append(pending)
+            pending = value
+    if pending is not None:
+        numbers.append(pending)
+    if not numbers:
+        return None
+    if len(numbers) >= 2 and numbers[1] < 100:
+        return numbers[0] * 100 + numbers[1]
+    return numbers[0] * 100
 # A comma with three digits behind it is a thousands separator and belongs to
 # the whole part; a comma with one or two is the decimal point half the world
 # writes. Told apart by what follows rather than assumed, because this app
@@ -51,11 +96,26 @@ _GROUPING = re.compile(r",(?=\d{3})")
 
 def _amount_sen(text: str) -> int | None:
     match = _AMOUNT.search(text)
-    if not match:
+    if match:
+        return _matched_amount_sen(match)
+    spoken = _spoken_sen(text)
+    if spoken is not None:
+        return spoken
+    bare = _BARE.search(text)
+    if bare is None:
         return None
+    whole, _, minor = bare.group(1).partition(".")
+    return int(whole) * 100 + int((minor + "00")[:2] or 0)
+
+
+def _matched_amount_sen(match: re.Match[str]) -> int:
     raw = _GROUPING.sub("", match.group(1) or match.group(2)).replace(",", ".")
     whole, _, minor = raw.partition(".")
     return int(whole) * 100 + int((minor + "00")[:2] or 0)
+
+
+def _amounts_sen(text: str) -> list[int]:
+    return [_matched_amount_sen(match) for match in _AMOUNT.finditer(text)]
 
 
 # ── the offline model ─────────────────────────────────────────────────────────
@@ -70,6 +130,9 @@ class Route:
     tools: tuple[str, ...]
     arguments: Any = None
     compose: Any = None
+    when: Any = None
+    """An extra condition beyond the pattern. A logging sentence with no amount
+    in it matches the words but cannot be served, so it falls to the next route."""
 
 
 def _payload(messages: Sequence[BaseMessage], tool: str) -> dict[str, Any] | list | None:
@@ -489,6 +552,20 @@ def _compose_remember(messages: Sequence[BaseMessage], text: str) -> str:
     )
 
 
+def _compose_chat(messages: Sequence[BaseMessage], text: str) -> str:
+    """Small talk, answered small. No tools ran, so no number is said."""
+    lowered = text.lower()
+    if re.search(r"what can you do|who are you|help me with|what do you do", lowered):
+        return (
+            "I keep an eye on your money — what is safe to spend, what is already "
+            "spoken for, and what you just spent.\n"
+            "Tell me what you spent, or ask whether something fits today."
+        )
+    if re.search(r"thank|thanks|cheers|nice one|got it|okay|ok\b|cool", lowered):
+        return "Any time."
+    return "Hello. Ask me anything about your money whenever you are ready."
+
+
 def _compose_overspend(messages: Sequence[BaseMessage], text: str) -> str:
     snap = _payload(messages, "get_financial_snapshot") or {}
     over = _amount_sen(text) or 0
@@ -512,6 +589,113 @@ def _stated(text: str) -> str:
     """The fact, not the request for it: "Remember that X" is kept as "X"."""
     fact = _ASKED.sub("", text.strip())
     return (fact[:1].upper() + fact[1:])[:280] if fact else text.strip()[:280]
+
+
+# ── logging what was already spent ────────────────────────────────────────────
+
+_TODAY_LINE = re.compile(r"Today is \w+ (\d{1,2}) (\w+) (\d{4})")
+_MONTHS = {
+    m: i
+    for i, m in enumerate(
+        "january february march april may june july august september october "
+        "november december".split(),
+        start=1,
+    )
+}
+
+# The verbs a statement of past spending is built on. "I spent", not "can I spend".
+_SPEND = re.compile(
+    r"\b(?:spent|paid|bought|grabbed|topped up|log|logged|add|record|"
+    r"put down|charged|cost me|blew)\b",
+    re.I,
+)
+_MERCHANT = re.compile(r"\b(?:at|from)\s+(?:the\s+)?([^,.;]{2,40})", re.I)
+_MERCHANT_STOP = re.compile(r"\s+(?:for|on|with|yesterday|today|rm\b|\d)", re.I)
+
+
+def _today_from(messages: Sequence[BaseMessage]) -> date:
+    """The date the prompt states, which is the only date this model is told.
+
+    The online model reads "Today is Thursday 3 September 2026" out of the same
+    context block; reading it the same way keeps the two implementations honest.
+    """
+    for message in messages:
+        content = message.content if isinstance(message.content, str) else ""
+        found = _TODAY_LINE.search(content)
+        if found:
+            month = _MONTHS.get(found.group(2).lower())
+            if month:
+                return date(int(found.group(3)), month, int(found.group(1)))
+    return date.today()
+
+
+def _merchant(text: str) -> str:
+    """Who was paid, as the sentence names them.
+
+    "at the mamak" is a merchant; so is "at Village Grocer". Where the sentence
+    names nobody, the category stands in rather than a blank.
+    """
+    found = _MERCHANT.search(text)
+    if found:
+        name = _MERCHANT_STOP.split(found.group(1).strip())[0].strip(" .,'\"")
+        if name:
+            return name if any(letter.isupper() for letter in name) else name.title()
+    guess = infer(text)
+    return label_for(guess) if guess != UNCATEGORISED else "Unrecorded"
+
+
+def _occurred_on(text: str, today: date) -> date:
+    if re.search(r"\byesterday\b", text, re.I):
+        return date.fromordinal(today.toordinal() - 1)
+    return today
+
+
+def _log_args(text: str, attachment: dict[str, Any] | None, today: date) -> dict[str, Any]:
+    sen = _amount_sen(text) or (attachment or {}).get("amount_sen") or 0
+    return {
+        "add_transaction": {
+            "merchant": _merchant(text),
+            "amount_sen": max(1, sen),
+            "occurred_on": _occurred_on(text, today).isoformat(),
+            "category": infer(text),
+            "note": text.strip()[:280],
+        }
+    }
+
+
+def _compose_log(messages: Sequence[BaseMessage], text: str) -> str:
+    """Say what happened to the proposal, and only what happened.
+
+    This also composes as the online model's safety net, where no tool has run
+    at all. Claiming a draft that nobody proposed would be the one lie the whole
+    approval boundary exists to prevent, so an absent result says so.
+    """
+    result = _payload(messages, "add_transaction")
+    if result is None:
+        return (
+            f"I heard {_rm(_amount_sen(text))} spent, but I have not written anything down.\n"
+            "Say it again and I will put it up as a proposal for you to approve."
+        )
+    if result.get("applied"):
+        return (
+            f"Logged {_rm(result.get('amount_sen'))} at {result.get('merchant', 'that')} "
+            "as a draft.\n"
+            "It is waiting in your Activity, not on your ledger — confirm it there and "
+            "safe-to-spend will move."
+        )
+    return (
+        "That one did not go through.\n"
+        "Nothing reached your ledger, and nothing is waiting: tell me again and I will "
+        "put it up for approval."
+    )
+
+
+def _compose_log_ask(messages: Sequence[BaseMessage], text: str) -> str:
+    return (
+        "How much was it?\n"
+        "I would rather ask than guess an amount — a number I invented would move "
+        "your safe-to-spend as convincingly as a real one."
+    )
 
 
 def _compose_places(messages: Sequence[BaseMessage], text: str) -> str:
@@ -688,12 +872,188 @@ def _compose_places(messages: Sequence[BaseMessage], text: str) -> str:
     return f"{head}\n{sub} {unread}"
 
 
+_GOAL_TYPES_BY_WORDS = (
+    (("emergency", "starter"), "emergency_starter_fund", "Emergency starter fund"),
+    (("upcoming", "bill"), "upcoming_bill_annual_expense", "Upcoming bill"),
+    (("annual", "bill"), "upcoming_bill_annual_expense", "Annual bill"),
+    (("annual", "expense"), "upcoming_bill_annual_expense", "Annual expense"),
+    (("bill",), "upcoming_bill_annual_expense", "Upcoming bill"),
+    (("trip",), "travel", "Travel"),
+    (("travel",), "travel", "Travel"),
+    (("big", "purchase"), "big_purchase", "Big purchase"),
+    (("event", "deposit"), "wedding_event_deposit", "Event deposit"),
+    (("house",), "house_down_payment", "House down payment"),
+    (("home",), "house_down_payment", "House down payment"),
+    (("car",), "car_down_payment", "Car down payment"),
+    (("education",), "education_family_goal", "Education goal"),
+    (("family",), "education_family_goal", "Family goal"),
+    (("wedding", "deposit"), "wedding_event_deposit", "Wedding deposit"),
+    (("wedding",), "wedding_fund", "Wedding fund"),
+    (("emergency",), "full_emergency_fund", "Emergency fund"),
+)
+
+_MONTHS = {
+    "jan": 1,
+    "january": 1,
+    "feb": 2,
+    "february": 2,
+    "mar": 3,
+    "march": 3,
+    "apr": 4,
+    "april": 4,
+    "may": 5,
+    "jun": 6,
+    "june": 6,
+    "jul": 7,
+    "july": 7,
+    "aug": 8,
+    "august": 8,
+    "sep": 9,
+    "sept": 9,
+    "september": 9,
+    "oct": 10,
+    "october": 10,
+    "nov": 11,
+    "november": 11,
+    "dec": 12,
+    "december": 12,
+}
+
+
+def _goal_deadline(text: str) -> str | None:
+    iso = re.search(r"\b(20\d{2})-(0[1-9]|1[0-2])-([0-2]\d|3[01])\b", text)
+    if iso:
+        try:
+            return date(*(int(value) for value in iso.groups())).isoformat()
+        except ValueError:
+            return None
+    named = re.search(
+        r"\b(" + "|".join(_MONTHS) + r")(?:\s+(\d{1,2})(?:st|nd|rd|th)?)?[,\s]+(20\d{2})\b",
+        text,
+        re.I,
+    )
+    if not named:
+        return None
+    month = _MONTHS[named.group(1).casefold()]
+    year = int(named.group(3))
+    day = int(named.group(2)) if named.group(2) else monthrange(year, month)[1]
+    try:
+        return date(year, month, day).isoformat()
+    except ValueError:
+        return None
+
+
+def _goal_identity(text: str) -> tuple[str, str, str]:
+    lowered = text.casefold()
+    for words, goal_type, name in _GOAL_TYPES_BY_WORDS:
+        if all(word in lowered for word in words):
+            return goal_type, name, " ".join(words)
+    return "custom_goal", "Savings goal", "savings goal"
+
+
+def _amount_near(text: str, marker: str) -> int | None:
+    location = text.casefold().find(marker)
+    if location < 0:
+        return None
+    return _amount_sen(text[location : location + 100])
+
+
+def _goal_workflow_args(text: str, attachment: dict[str, Any] | None) -> dict[str, Any]:
+    del attachment
+    lowered = text.casefold()
+    goal_type, name, reference = _goal_identity(text)
+    amounts = _amounts_sen(text)
+    select = any(
+        phrase in lowered
+        for phrase in ("cash-flow-safe", "cash flow safe", "accelerated", "on-time option")
+    )
+    impact = bool(
+        re.search(r"\b(?:hurt|affect|impact|delay|derail)\b.*\b(?:goal|fund)\b", lowered)
+        or re.search(r"\b(?:goal|fund)\b.*\b(?:buy|spend|purchase|afford)\b", lowered)
+    )
+    replan = bool(
+        re.search(
+            r"\b(?:change|update|increase|decrease|raise|lower|extend|move|replan|adjust)\b",
+            lowered,
+        )
+    )
+    action = (
+        "select_scenario"
+        if select
+        else "impact"
+        if impact
+        else "replan"
+        if replan
+        else "create"
+    )
+    args: dict[str, Any] = {"action": action}
+    if action == "create":
+        args.update({"goal_type": goal_type, "name": name})
+        if amounts:
+            args["target_amount_sen"] = amounts[0]
+        saved = _amount_near(text, "already saved") or _amount_near(text, "saved")
+        if saved is not None:
+            args["current_saved_sen"] = saved
+        deadline = _goal_deadline(text)
+        if deadline is not None:
+            args["target_date"] = deadline
+    else:
+        args["goal_reference"] = reference
+    if action == "impact" and amounts:
+        args["proposed_spend_sen"] = amounts[0]
+    if action == "select_scenario":
+        if "accelerated" in lowered:
+            args["scenario_label"] = "Accelerated"
+        elif "on-time" in lowered:
+            args["scenario_label"] = "On-time target"
+        else:
+            args["scenario_label"] = "Cash-flow-safe"
+    if action == "replan":
+        contribution = next(
+            (
+                _matched_amount_sen(match)
+                for match in _AMOUNT.finditer(text)
+                if "payday" in lowered[max(0, match.start() - 35) : match.end() + 35]
+                or "contribution" in lowered[max(0, match.start() - 35) : match.end() + 35]
+            ),
+            None,
+        )
+        if contribution is not None:
+            args["contribution_per_payday_sen"] = contribution
+        elif amounts and "target" in lowered:
+            args["target_amount_sen"] = amounts[0]
+        saved = _amount_near(text, "saved")
+        if saved is not None:
+            args["current_saved_sen"] = saved
+        deadline = _goal_deadline(text)
+        if deadline is not None:
+            args["target_date"] = deadline
+    return args
+
+
+_GOAL_WORKFLOW = re.compile(
+    r"\b(?:want|need|plan|save|saving|start|create|set up)\b.{0,100}"
+    r"\b(?:goal|fund|deposit|down payment|trip|travel|wedding|house|home|car|education|"
+    r"purchase|bill|annual expense)\b"
+    r"|\b(?:change|update|increase|decrease|raise|lower|extend|move|replan|adjust)\b.{0,80}"
+    r"\b(?:goal|fund|contribution|target|payday|date)\b"
+    r"|\b(?:cash[- ]flow[- ]safe|accelerated|on-time)\b.{0,30}\b(?:option|scenario)\b",
+    re.I,
+)
+
+_GOAL_IMPACT = re.compile(
+    r"\b(?:hurt|affect|impact|delay|derail)\b.*\b(?:goal|fund)\b"
+    r"|\b(?:goal|fund)\b.*\b(?:buy|spend|purchase|afford)\b",
+    re.I,
+)
+
+
 ROUTES: tuple[Route, ...] = (
     Route(
         "attachment",
         re.compile(r"receipt|scanned|photo|this bill|heard|voice note", re.I),
         ("inspect_attachment", "calculate_safe_to_spend"),
-        arguments=lambda text, attachment: {
+        arguments=lambda text, attachment, today=None: {
             "inspect_attachment": {},
             "calculate_safe_to_spend": _afford_args(text, attachment),
         },
@@ -703,7 +1063,7 @@ ROUTES: tuple[Route, ...] = (
         "remember",
         re.compile(r"\bremember\b|from now on|always tell me|never suggest", re.I),
         ("remember",),
-        arguments=lambda text, attachment: {
+        arguments=lambda text, attachment, today=None: {
             "remember": {
                 "kind": "preference",
                 "subject": "stated preference",
@@ -719,14 +1079,32 @@ ROUTES: tuple[Route, ...] = (
         ("get_financial_snapshot", "list_activity"),
         compose=_compose_overspend,
     ),
+    # Before generic affordability: "can I buy this without hurting my house
+    # goal" is a goal-impact question, not only a today-room question.
+    Route(
+        "goal_impact",
+        _GOAL_IMPACT,
+        ("start_goal_planning",),
+        arguments=lambda text, attachment, today=None: {
+            "start_goal_planning": _goal_workflow_args(text, attachment)
+        },
+    ),
     Route(
         "afford",
         re.compile(r"afford|can i (?:spend|get|buy|have)|enough for", re.I),
         ("calculate_safe_to_spend",),
-        arguments=lambda text, attachment: {
+        arguments=lambda text, attachment, today: {
             "calculate_safe_to_spend": _afford_args(text, attachment)
         },
         compose=_compose_afford,
+    ),
+    Route(
+        "goal_workflow",
+        _GOAL_WORKFLOW,
+        ("start_goal_planning",),
+        arguments=lambda text, attachment, today=None: {
+            "start_goal_planning": _goal_workflow_args(text, attachment)
+        },
     ),
     # After "afford", so a question naming an amount still gets tested against
     # today's room rather than answered with a list of restaurants.
@@ -744,8 +1122,22 @@ ROUTES: tuple[Route, ...] = (
             re.I,
         ),
         ("build_day_plan",),
-        arguments=lambda text, attachment: {"build_day_plan": _places_args(text)},
+        arguments=lambda text, attachment, today: {"build_day_plan": _places_args(text)},
         compose=_compose_places,
+    ),
+    Route(
+        "log",
+        _SPEND,
+        ("add_transaction",),
+        arguments=_log_args,
+        compose=_compose_log,
+        when=lambda text: _amount_sen(text) is not None,
+    ),
+    Route(
+        "log_ask",
+        _SPEND,
+        (),
+        compose=_compose_log_ask,
     ),
     Route(
         "drop",
@@ -764,6 +1156,18 @@ ROUTES: tuple[Route, ...] = (
         re.compile(r"bill|rent|due|commitment|instal", re.I),
         ("list_commitments",),
         compose=_compose_bills,
+    ),
+    Route(
+        "chat",
+        re.compile(
+            r"^\s*(?:hi|hey|hello|yo|hai|good (?:morning|afternoon|evening)|thanks|"
+            r"thank you|cheers|ok|okay|cool|nice|who are you|what can you do|"
+            r"what do you do|how are you)\b",
+            re.I,
+        ),
+        (),
+        compose=_compose_chat,
+        when=lambda text: _amount_sen(text) is None and len(text) <= 60,
     ),
     Route(
         "snapshot",
@@ -820,7 +1224,7 @@ def route_for(text: str, attachment: dict[str, Any] | None = None, history: str 
     if attachment:
         return ROUTES[0]
     for route in ROUTES:
-        if route.pattern.search(text):
+        if route.pattern.search(text) and (route.when is None or route.when(text)):
             return route
         # A follow-up naming only a food — "what about japanese instead" — says
         # nothing a pattern can catch, and says everything once you know the
@@ -877,7 +1281,8 @@ class OfflineChatModel(BaseChatModel):
         if any(isinstance(message, ToolMessage) for message in messages):
             return ChatResult(generations=[ChatGeneration(message=AIMessage(content=""))])
 
-        arguments = route.arguments(text, self.attachment) if route.arguments else {}
+        today = _today_from(messages)
+        arguments = route.arguments(text, self.attachment, today) if route.arguments else {}
         calls = [
             {
                 "name": name,

@@ -7,7 +7,18 @@ whole of the "controls all modules, present and future" requirement.
 
 from __future__ import annotations
 
-from kira.agent.tools import capture, commitments, dashboard, day_plan, goals, ledger, memory
+from kira.agent.tools import (
+    capture,
+    commitments,
+    dashboard,
+    day_plan,
+    foresight,
+    goal_workflow,
+    goals,
+    hindsight,
+    ledger,
+    memory,
+)
 from kira.agent.tools.spec import (
     EvidenceRow,
     ToolContext,
@@ -18,7 +29,18 @@ from kira.agent.tools.spec import (
     money_str,
 )
 
-MODULES = (dashboard, ledger, goals, commitments, memory, capture, day_plan)
+MODULES = (
+    dashboard,
+    ledger,
+    goals,
+    goal_workflow,
+    commitments,
+    memory,
+    capture,
+    foresight,
+    hindsight,
+    day_plan,
+)
 
 
 def build_registry() -> ToolRegistry:

@@ -7,6 +7,7 @@ reads a receipt. Free text would let the same spending land under "Food",
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 UNCATEGORISED = "uncategorised"
@@ -47,3 +48,44 @@ def label_for(slug: str) -> str:
     if known is not None:
         return known.label
     return slug.replace("-", " ").replace("_", " ").capitalize()
+
+
+# What the words people actually use point at. Ordered by category, matched on
+# whole words only: "refunded" must not read as a fee, and "grabbed" must not
+# read as a Grab ride.
+_HINTS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("food", ("lunch", "dinner", "breakfast", "supper", "makan", "mamak", "kopitiam",
+              "cafe", "coffee", "kopi", "teh", "nasi", "roti", "mee", "restaurant",
+              "food", "snack", "bubble tea", "starbucks", "mcd", "kfc")),
+    ("groceries", ("groceries", "grocery", "tesco", "lotus", "jaya grocer", "aeon",
+                   "giant", "mydin", "village grocer", "market", "pasar")),
+    ("transport", ("grab", "petrol", "fuel", "toll", "touch n go", "tng", "parking",
+                   "taxi", "mrt", "lrt", "ktm", "bus", "train", "flight")),
+    ("bills", ("bill", "astro", "unifi", "maxis", "celcom", "digi", "tnb", "electric",
+               "water", "internet", "subscription", "netflix", "spotify", "insurance")),
+    ("home", ("rent", "furniture", "ikea", "repair", "plumber", "cleaning")),
+    ("health", ("clinic", "doctor", "dentist", "pharmacy", "panadol", "medicine",
+                "hospital", "guardian", "watsons")),
+    ("shopping", ("shopee", "lazada", "shirt", "shoes", "clothes", "uniqlo", "zalora")),
+    ("fun", ("cinema", "movie", "gsc", "tgv", "concert", "game", "karaoke", "gym")),
+    ("family", ("gift", "present", "angpow", "birthday", "wedding")),
+    ("education", ("course", "tuition", "book", "class")),
+    ("charity", ("donation", "donate", "zakat", "sedekah")),
+    ("fees", ("fee", "charge", "interest", "stamp duty")),
+)
+
+_HINT_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
+    (slug, re.compile(r"\b(?:" + "|".join(re.escape(word) for word in words) + r")\b", re.I))
+    for slug, words in _HINTS
+)
+
+
+def infer(text: str) -> str:
+    """The category the words point at, or `uncategorised` when they point nowhere.
+
+    A guess the user can see and correct beats a hardcoded slug they cannot.
+    """
+    for slug, pattern in _HINT_PATTERNS:
+        if pattern.search(text):
+            return slug
+    return UNCATEGORISED

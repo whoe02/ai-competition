@@ -7,11 +7,15 @@ from datetime import UTC, datetime, time
 
 from fastapi import APIRouter, HTTPException, status
 
+from kira.agent.goal_graph.run import GoalRunResult, run_goal_request
+from kira.agent.goal_graph.schemas import GoalIntent
 from kira.api.deps import CurrentUser, SessionDep
 from kira.api.schemas import (
     GoalCreateRequest,
     GoalCreateResponse,
     GoalDetailResponse,
+    GoalGraphRunRequest,
+    GoalGraphRunResponse,
     GoalImpactRequest,
     GoalImpactResponse,
     GoalMilestoneResponse,
@@ -21,6 +25,7 @@ from kira.api.schemas import (
 )
 from kira.db.models import Goal, GoalPlanRecord
 from kira.engine import GoalImpact, GoalScenario
+from kira.services import butler_thread
 from kira.services.clock import today_for
 from kira.services.goal_planning import (
     GoalNotFound,
@@ -122,6 +127,21 @@ def _impact_response(impact: GoalImpact) -> GoalImpactResponse:
     )
 
 
+def _run_response(result: GoalRunResult, thread_id: uuid.UUID) -> GoalGraphRunResponse:
+    definition = result.state.get("goal_definition")
+    plan = result.state.get("current_goal_plan")
+    return GoalGraphRunResponse(
+        request_id=result.request_id,
+        thread_id=thread_id,
+        final_response=result.final_response,
+        llm_calls=result.llm_calls,
+        goal_id=uuid.UUID(definition.goal_id) if definition is not None else None,
+        feasible=plan.feasible if plan is not None else None,
+        approval=result.approval,
+        errors=result.state.get("errors") or [],
+    )
+
+
 @router.post("", status_code=status.HTTP_201_CREATED, response_model=GoalCreateResponse)
 async def create_goal(
     body: GoalCreateRequest, user: CurrentUser, session: SessionDep
@@ -142,6 +162,40 @@ async def create_goal(
     except (ValueError, TypeError, InvalidFundingAccount) as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from exc
     return GoalCreateResponse(goal=_goal_response(goal, plan.version), plan=_plan_response(plan))
+
+
+@router.post("/runs", response_model=GoalGraphRunResponse)
+async def run_goal_graph(
+    body: GoalGraphRunRequest, user: CurrentUser, session: SessionDep
+) -> GoalGraphRunResponse:
+    """Run natural-language intake or a structured zero-intake trigger."""
+    if not body.text.strip() and body.intent is None:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "Either text or structured intent is required",
+        )
+    try:
+        thread = (
+            await butler_thread.get_thread(session, user, body.thread_id)
+            if body.thread_id is not None
+            else await butler_thread.ensure_thread(session, user)
+        )
+    except butler_thread.ThreadNotFound as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Thread not found") from exc
+    await session.commit()
+    intent = (
+        GoalIntent.model_validate(body.intent.model_dump()) if body.intent is not None else None
+    )
+    result = await run_goal_request(
+        session,
+        user,
+        thread_id=thread.id,
+        message=body.text,
+        as_of_date=today_for(),
+        structured_intent=intent,
+        explain=body.explain,
+    )
+    return _run_response(result, thread.id)
 
 
 @router.get("/{goal_id}", response_model=GoalDetailResponse)

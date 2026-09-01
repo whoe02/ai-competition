@@ -1,9 +1,13 @@
 import type {
   Activity,
+  BriefingInboxResponse,
   ButlerThread,
   Capture,
   CaptureAvailability,
+  Category,
   DashboardToday,
+  ForesightResponse,
+  HindsightResponse,
   DayPlan,
   DayPlanAsk,
   DayPlanReading,
@@ -19,12 +23,42 @@ import { api } from "./client";
 
 export const dashboardTodayKey = ["dashboard", "today"] as const;
 export const activityKey = ["transactions"] as const;
+export const foresightKey = ["foresight"] as const;
+export const hindsightKey = ["hindsight"] as const;
+export const briefingTodayKey = ["briefings", "today"] as const;
 const activityKeyFor = (category: string | null) => [...activityKey, category] as const;
 
 export function useDashboardToday(enabled: boolean) {
   return useQuery({
     queryKey: dashboardTodayKey,
     queryFn: () => api.get<DashboardToday>("/v1/dashboard/today"),
+    enabled,
+  });
+}
+
+export function useForesight(enabled: boolean, horizon?: number) {
+  return useQuery({
+    queryKey: [...foresightKey, horizon ?? "default"],
+    queryFn: () =>
+      api.get<ForesightResponse>(
+        horizon === undefined ? "/v1/foresight" : `/v1/foresight?horizon=${horizon}`,
+      ),
+    enabled,
+  });
+}
+
+export function useHindsight(enabled: boolean) {
+  return useQuery({
+    queryKey: hindsightKey,
+    queryFn: () => api.get<HindsightResponse>("/v1/hindsight"),
+    enabled,
+  });
+}
+
+export function useBriefingToday(enabled: boolean) {
+  return useQuery({
+    queryKey: briefingTodayKey,
+    queryFn: () => api.get<BriefingInboxResponse | null>("/v1/briefings/today"),
     enabled,
   });
 }
@@ -222,6 +256,15 @@ export function useForgetMemory() {
 }
 
 /** Whether the camera and microphone affordances should be offered at all. */
+export function useCategories(enabled: boolean) {
+  return useQuery({
+    queryKey: ["categories"],
+    queryFn: () => api.get<Category[]>("/v1/categories"),
+    enabled,
+    staleTime: Infinity,
+  });
+}
+
 export function useCaptureAvailability(enabled: boolean) {
   return useQuery({
     queryKey: ["capture"],

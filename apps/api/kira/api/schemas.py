@@ -174,6 +174,44 @@ class GoalImpactResponse(ResponseModel):
     evidence_refs: list[str]
 
 
+class GoalGraphIntentRequest(BaseModel):
+    """Structured form/event input that bypasses the intake model."""
+
+    action: Literal["create", "replan", "impact", "select_scenario", "recalculate"]
+    goal_id: uuid.UUID | None = None
+    goal_reference: str | None = Field(default=None, max_length=80)
+    goal_type: GoalType | None = None
+    name: str | None = Field(default=None, min_length=1, max_length=80)
+    target_amount_sen: int | None = Field(default=None, strict=True, gt=0)
+    current_saved_sen: int | None = Field(default=None, strict=True, ge=0)
+    target_date: date | None = None
+    contribution_per_payday_sen: int | None = Field(default=None, strict=True, gt=0)
+    priority: GoalPriority | None = None
+    funding_account_ids: list[uuid.UUID] = Field(default_factory=list)
+    proposed_spend_sen: int | None = Field(default=None, strict=True, ge=0)
+    scenario_id: uuid.UUID | None = None
+    scenario_label: str | None = Field(default=None, max_length=60)
+    wants_scenarios: bool = False
+
+
+class GoalGraphRunRequest(BaseModel):
+    text: str = Field(default="", max_length=2000)
+    thread_id: uuid.UUID | None = None
+    intent: GoalGraphIntentRequest | None = None
+    explain: bool = True
+
+
+class GoalGraphRunResponse(ResponseModel):
+    request_id: uuid.UUID
+    thread_id: uuid.UUID
+    final_response: str
+    llm_calls: int
+    goal_id: uuid.UUID | None = None
+    feasible: bool | None = None
+    approval: dict | None = None
+    errors: list[str] = Field(default_factory=list)
+
+
 class PlaceResponse(ResponseModel):
     """One outing, priced on the distance named by ``distance_basis``.
 
@@ -477,6 +515,11 @@ class ApprovalDecisionRequest(BaseModel):
     args: dict | None = None
 
 
+class CategoryResponse(BaseModel):
+    slug: str
+    label: str
+
+
 class MemoryResponse(ResponseModel):
     id: uuid.UUID
     kind: str
@@ -531,6 +574,99 @@ class CreateTransactionRequest(BaseModel):
     note: str = Field(default="", max_length=280)
 
 
+class MoneyOut(ResponseModel):
+    sen: int
+    currency: str
+
+
+class GoalOutlookOut(ResponseModel):
+    goal_id: str
+    target_date: date
+    probability_bp: int
+    median_shortfall: MoneyOut
+
+
+class LeverIn(BaseModel):
+    kind: Literal["goal_monthly", "commitment_amount", "daily_spend"]
+    target_id: str
+    delta_sen: int
+
+
+class LeverOut(ResponseModel):
+    kind: str
+    target_id: str
+    delta: MoneyOut
+
+
+class DriverOut(ResponseModel):
+    lever: LeverOut
+    probability_bp_before: int
+    probability_bp_after: int
+    bp_per_ringgit: int
+
+
+class ForesightResponse(ResponseModel):
+    horizon_days: int
+    dates: list[date]
+    p10: list[MoneyOut]
+    p50: list[MoneyOut]
+    p90: list[MoneyOut]
+    outlooks: list[GoalOutlookOut]
+    drivers: list[DriverOut]
+    profile_days: int
+    assumption: str
+
+
+class ScenarioRequest(BaseModel):
+    horizon_days: int = Field(default=180, ge=1, le=365)
+    levers: list[LeverIn]
+
+
+class ScenarioResultOut(ResponseModel):
+    lever: LeverOut
+    outlooks: list[GoalOutlookOut]
+    safe_today_after: MoneyOut
+
+
+class ScenarioComparisonResponse(ResponseModel):
+    results: list[ScenarioResultOut]
+
+
+class AdviceDayOut(ResponseModel):
+    on: date
+    advised: MoneyOut
+    actual: MoneyOut
+    followed: bool
+
+
+class HindsightResponse(ResponseModel):
+    window_days: int
+    days: int
+    followed: int
+    follow_rate_bp: int
+    mean_abs_deviation: MoneyOut
+    counterfactual_gain: MoneyOut
+    goal_id: str | None
+    probability_bp_now: int | None
+    probability_bp_if_followed: int | None
+    recent: list[AdviceDayOut]
+    assumption: str
+
+
+class BriefingRunResponse(ResponseModel):
+    id: uuid.UUID
+    on_date: date
+    summary: str
+    proposal_count: int
+    created: bool
+
+
+class BriefingInboxResponse(ResponseModel):
+    id: uuid.UUID
+    on_date: date
+    summary: str
+    proposal_count: int
+    pending_proposal_count: int
 class CorrectTransactionRequest(BaseModel):
     """What the user says a draft should have read. Every field is optional.
 

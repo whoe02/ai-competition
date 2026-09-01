@@ -46,6 +46,24 @@ services:
       ROUTING_TIMEOUT_SECONDS: ${ROUTING_TIMEOUT_SECONDS:-2.5}
     ports:
       - "${KIRA_PORT:-8001}:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/v1/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  worker:
+    build: .
+    command: ["python", "-m", "kira.worker"]
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://kira:kira@db:5432/kira
+      DEMO_TODAY: "2026-09-03"
+      WORKER_TIMEZONE: Asia/Kuala_Lumpur
+      WORKER_HOUR: "5"
+      WORKER_MINUTE: "0"
 
 volumes:
   kira-db:

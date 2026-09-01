@@ -400,7 +400,10 @@ class TestFilteringByCategory:
         user = await demo(session)
         activity = await list_activity(session, user, category="health")
         merchants = {txn.merchant for day in activity.days for txn in day.transactions}
-        assert merchants == {"Watsons", "Guardian pharmacy"}
+        assert {"Watsons", "Guardian pharmacy"} <= merchants
+        assert all(
+            txn.category == "health" for day in activity.days for txn in day.transactions
+        )
 
     async def test_retotals_the_cycle_for_what_is_shown(self, session):
         user = await demo(session)

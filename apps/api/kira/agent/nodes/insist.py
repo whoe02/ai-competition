@@ -35,7 +35,7 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMe
 from langgraph.runtime import Runtime
 
 from kira.agent import events
-from kira.agent.llm import route_for
+from kira.agent.llm import _today_from, route_for
 from kira.agent.state import ButlerContext, ButlerState
 from kira.agent.tools import REGISTRY
 
@@ -116,7 +116,13 @@ async def insist(state: ButlerState, runtime: Runtime[ButlerContext]) -> dict:
     # Read out of the sentence by the route itself, so the ceiling, the halal
     # filter and the kind of food come from the one parser the offline path
     # already uses rather than from a second copy of it here.
-    arguments = route.arguments(text, attachment) if route.arguments else {}
+    # `arguments` also builds date-bearing calls, so it is handed the date the
+    # prompt states — the same one the offline model reads.
+    arguments = (
+        route.arguments(text, attachment, _today_from(state["messages"]))
+        if route.arguments
+        else {}
+    )
     events.emit(runtime, events.THINKING, text="Checking what is actually near you")
 
     # The model's reply is replaced rather than followed, because what it wrote

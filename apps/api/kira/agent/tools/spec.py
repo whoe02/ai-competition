@@ -22,7 +22,7 @@ from kira.engine.types import Snapshot
 from kira.money import Money
 from kira.services.dashboard import DashboardToday
 
-ToolKind = Literal["read", "write"]
+ToolKind = Literal["read", "write", "workflow"]
 
 _NAME = re.compile(r"^[a-z][a-z0-9_]{2,48}$")
 
@@ -101,7 +101,7 @@ class ToolSpec:
     def __post_init__(self) -> None:
         if not _NAME.match(self.name):
             raise ToolSpecError(f"tool name {self.name!r} is not a lower_snake_case identifier")
-        if self.kind not in ("read", "write"):
+        if self.kind not in ("read", "write", "workflow"):
             raise ToolSpecError(f"tool {self.name} has unknown kind {self.kind!r}")
         if not issubclass(self.args_model, BaseModel):
             raise ToolSpecError(f"tool {self.name} needs a pydantic args_model")
@@ -116,6 +116,10 @@ class ToolSpec:
     @property
     def is_write(self) -> bool:
         return self.kind == "write"
+
+    @property
+    def is_workflow(self) -> bool:
+        return self.kind == "workflow"
 
     def human_label(self) -> str:
         return self.label or self.name.replace("_", " ").capitalize()
@@ -163,6 +167,9 @@ class ToolRegistry:
 
     def writes(self) -> tuple[ToolSpec, ...]:
         return tuple(spec for spec in self if spec.kind == "write")
+
+    def workflows(self) -> tuple[ToolSpec, ...]:
+        return tuple(spec for spec in self if spec.kind == "workflow")
 
     def modules(self) -> tuple[str, ...]:
         return tuple(sorted({spec.module for spec in self}))

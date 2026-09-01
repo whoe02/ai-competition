@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 
 import sqlalchemy as sa
 
@@ -8,12 +8,20 @@ from kira.db.models import (
     TXN_DRAFT,
     Account,
     Commitment,
+    DailyAdvice,
     Goal,
     Transaction,
     User,
 )
+from kira.engine import safe_to_spend
 from kira.money import Money
-from kira.seed.demo import DEMO_EMAIL, DEMO_TODAY, seed_demo_user
+from kira.seed.demo import (
+    DEMO_EMAIL,
+    DEMO_HISTORY_START,
+    DEMO_TODAY,
+    seed_demo_user,
+)
+from kira.services.snapshot import load_snapshot
 
 
 class TestSeed:
@@ -28,10 +36,15 @@ class TestSeed:
 
     async def test_seeds_the_prototype_figures(self, session):
         await seed_demo_user(session)
-        balance = (
+        opening = (
             await session.execute(sa.select(sa.func.sum(Account.opening_balance)))
         ).scalar_one()
-        assert balance == Money(481175)
+        confirmed = (
+            await session.execute(
+                sa.select(Transaction).where(Transaction.status == TXN_CONFIRMED)
+            )
+        ).scalars().all()
+        assert opening - Money.sum((txn.amount for txn in confirmed), "MYR") == Money(418040)
         commitments = (await session.execute(sa.select(Commitment))).scalars().all()
         assert sum(commitment.amount.sen for commitment in commitments) == 200300
         assert {commitment.name for commitment in commitments} == {
@@ -61,7 +74,7 @@ class TestSeed:
                 sa.select(Transaction).where(Transaction.status == TXN_CONFIRMED)
             )
         ).scalars().all()
-        assert len(confirmed) == 16
+        assert len(confirmed) >= 180
         assert opening - Money.sum((txn.amount for txn in confirmed), "MYR") == Money(418040)
 
     async def test_categorises_every_transaction_from_the_vocabulary(self, session):
@@ -101,3 +114,97 @@ class TestSeed:
         assert (
             await session.execute(sa.select(sa.func.count()).select_from(Commitment))
         ).scalar_one() == 5
+
+
+class TestSeededHistory:
+    """Ninety days of it, and a record of what Kira advised on each one."""
+
+    async def test_has_ninety_days_of_confirmed_history(self, session):
+        user = await seed_demo_user(session)
+        await session.flush()
+        rows = (
+            await session.execute(
+                sa.select(Transaction).where(
+                    Transaction.user_id == user.id,
+                    Transaction.status == TXN_CONFIRMED,
+                )
+            )
+        ).scalars().all()
+
+        assert len(rows) >= 180, "a behaviour profile needs density, not a handful of rows"
+        span = max(r.occurred_on for r in rows) - min(r.occurred_on for r in rows)
+        assert span >= timedelta(days=85)
+        assert min(r.occurred_on for r in rows) == DEMO_HISTORY_START
+
+    async def test_history_has_a_weekly_rhythm(self, session):
+        user = await seed_demo_user(session)
+        await session.flush()
+        rows = (
+            await session.execute(
+                sa.select(Transaction).where(
+                    Transaction.user_id == user.id,
+                    Transaction.status == TXN_CONFIRMED,
+                    Transaction.category == "groceries",
+                )
+            )
+        ).scalars().all()
+        sundays = [r for r in rows if r.occurred_on.weekday() == 6]
+        assert len(sundays) >= 10, "Sunday groceries are the rhythm the forecast learns"
+
+    async def test_backfills_one_advice_row_per_day(self, session):
+        user = await seed_demo_user(session)
+        await session.flush()
+        count = (
+            await session.execute(
+                sa.select(sa.func.count()).select_from(DailyAdvice).where(
+                    DailyAdvice.user_id == user.id
+                )
+            )
+        ).scalar_one()
+        assert count >= 85
+
+        row = (
+            await session.execute(
+                sa.select(DailyAdvice).where(
+                    DailyAdvice.user_id == user.id,
+                    DailyAdvice.on_date == DEMO_TODAY - timedelta(days=1),
+                )
+            )
+        ).scalar_one()
+        assert row.source == "seed"
+        assert row.snapshot["balance"] != 0
+        assert row.safe_today.sen >= 0
+
+    async def test_advice_varies_because_the_engine_computed_it(self, session):
+        """A hand-written track record would be flat, and flatly false."""
+        user = await seed_demo_user(session)
+        await session.flush()
+        values = (
+            await session.execute(
+                sa.select(DailyAdvice.safe_today).where(DailyAdvice.user_id == user.id)
+            )
+        ).scalars().all()
+        assert len({value.sen for value in values}) >= 20
+
+    async def test_seeding_twice_leaves_one_advice_row_per_day(self, session):
+        user = await seed_demo_user(session)
+        await session.flush()
+        await seed_demo_user(session)
+        await session.flush()
+        days = (
+            await session.execute(
+                sa.select(DailyAdvice.on_date).where(DailyAdvice.user_id == user.id)
+            )
+        ).scalars().all()
+        assert len(days) == len(set(days))
+
+    async def test_the_headline_is_unchanged_by_the_history(self, session):
+        """RM52.97 is the demo's headline. Deepening history must not move it."""
+        user = await seed_demo_user(session)
+        await session.flush()
+        result = safe_to_spend(await load_snapshot(session, user, DEMO_TODAY))
+        assert result.safe_today.sen == 5297
+
+    async def test_the_user_has_an_income_to_project(self, session):
+        user = await seed_demo_user(session)
+        assert user.monthly_income.sen > 0

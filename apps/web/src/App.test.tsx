@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -65,6 +65,25 @@ const ACTIVITY = {
   ],
   spent_this_cycle_sen: 1620,
   categories: [{ slug: "transport", label: "Transport", spent_this_cycle_sen: 1620, count: 1 }],
+};
+
+const FORESIGHT = {
+  horizon_days: 180,
+  dates: ["2026-09-04", "2027-03-02"],
+  p10: [{ sen: 400000, currency: "MYR" }, { sen: 170000, currency: "MYR" }],
+  p50: [{ sen: 425000, currency: "MYR" }, { sen: 350000, currency: "MYR" }],
+  p90: [{ sen: 440000, currency: "MYR" }, { sen: 560000, currency: "MYR" }],
+  outlooks: [
+    {
+      goal_id: "g1",
+      target_date: "2027-02-15",
+      probability_bp: 6200,
+      median_shortfall: { sen: 30000, currency: "MYR" },
+    },
+  ],
+  drivers: [],
+  profile_days: 90,
+  assumption: "Based on your last 90 days of confirmed spending. It is a projection, not a promise.",
 };
 
 /** Typed against the contract on purpose: an untyped literal here would go on
@@ -140,9 +159,46 @@ beforeEach(() => {
           headers: { "content-type": "application/json" },
         });
       }
+      if (url.endsWith("/v1/butler/thread")) {
+        return new Response(
+          JSON.stringify({ id: "t1", title: "Butler", messages: [], pending_approvals: [] }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      if (url.endsWith("/v1/briefings/today")) {
+        return new Response(JSON.stringify(null), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (url.endsWith("/v1/categories")) {
+        return new Response(JSON.stringify([{ slug: "food", label: "Food & drink" }]), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (url.endsWith("/v1/butler/messages")) {
+        const done = {
+          type: "done",
+          answer: "I have written it up as a draft for you to check.",
+          evidence: [],
+          tools_used: [],
+          approval: null,
+        };
+        return new Response(`data: ${JSON.stringify(done)}\n\n`, {
+          status: 200,
+          headers: { "content-type": "text/event-stream" },
+        });
+      }
       if (url.endsWith("/v1/dashboard/today")) {
         dashboardReads += 1;
         return new Response(JSON.stringify(dashboard), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (url.endsWith("/v1/foresight")) {
+        return new Response(JSON.stringify(FORESIGHT), {
           status: 200,
           headers: { "content-type": "application/json" },
         });
@@ -292,8 +348,94 @@ describe("App", () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     await user.click(await screen.findByRole("button", { name: /sign in/i }));
     await user.click(await screen.findByRole("button", { name: /^Plan$/i }));
+    await user.click(await screen.findByRole("tab", { name: "Goals" }));
+    await user.click(await screen.findByRole("button", { name: /open foresight/i }));
 
-    await waitFor(() => expect(screen.getByText(/What today's money can buy/i)).toBeInTheDocument());
+    expect(await screen.findByText("The road ahead")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^Today$/i })).toBeInTheDocument();
+  });
+
+  it("keeps Daily and Goals inside the selected Plan tab", async () => {
+    renderApp();
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    await user.click(await screen.findByRole("button", { name: /sign in/i }));
+    const planNav = await screen.findByRole("button", { name: /^Plan$/i });
+    await user.click(planNav);
+
+    const daily = await screen.findByRole("tab", { name: "Daily" });
+    const goals = screen.getByRole("tab", { name: "Goals" });
+    expect(daily).toHaveAttribute("aria-selected", "true");
+    expect(await screen.findByText(/What today's money can buy/i)).toBeVisible();
+    expect(planNav).toHaveClass("active");
+
+    await user.click(goals);
+    expect(goals).toHaveAttribute("aria-selected", "true");
+    expect(await screen.findByText("Start with one goal that matters")).toBeVisible();
+    expect(screen.queryByText(/What today's money can buy/i)).not.toBeInTheDocument();
+    expect(planNav).toHaveClass("active");
+    expect(
+      within(screen.getByRole("navigation")).queryByRole("button", { name: "Goals" }),
+    ).not.toBeInTheDocument();
+
+    await user.click(daily);
+    expect(daily).toHaveAttribute("aria-selected", "true");
+    expect(await screen.findByText(/What today's money can buy/i)).toBeVisible();
+  });
+
+  it("opens the existing Today goals card in PLAN's Goals mode", async () => {
+    renderApp();
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    await user.click(await screen.findByRole("button", { name: /sign in/i }));
+    await user.click(await screen.findByRole("button", { name: /Your goals/i }));
+
+    expect(await screen.findByRole("tab", { name: "Goals" })).toHaveAttribute("aria-selected", "true");
+    expect(await screen.findByText("Start with one goal that matters")).toBeVisible();
+    expect(screen.getByRole("button", { name: /^Plan$/i })).toHaveClass("active");
+  });
+});
+
+describe("Adding spending from anywhere", () => {
+  async function signedIn() {
+    renderApp();
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    await user.click(await screen.findByRole("button", { name: /sign in/i }));
+    return user;
+  }
+
+  it("offers one way in from Today", async () => {
+    const user = await signedIn();
+    await user.click(await screen.findByRole("button", { name: "Add spending" }));
+    expect(await screen.findByRole("tab", { name: "Type" })).toBeInTheDocument();
+  });
+
+  it("offers the same way in from Activity", async () => {
+    const user = await signedIn();
+    await user.click(await screen.findByRole("button", { name: /^Activity$/i }));
+    await user.click(await screen.findByRole("button", { name: "Add spending" }));
+    expect(await screen.findByRole("tab", { name: "Show" })).toBeInTheDocument();
+  });
+
+  it("does not interrupt the Butler with a second way in", async () => {
+    const user = await signedIn();
+    await user.click(await screen.findByRole("button", { name: /^Butler$/i }));
+    expect(screen.queryByRole("button", { name: "Add spending" })).not.toBeInTheDocument();
+  });
+
+  it("carries a typed sentence to the Butler and asks it there", async () => {
+    const user = await signedIn();
+    await user.click(await screen.findByRole("button", { name: "Add spending" }));
+    await user.type(
+      await screen.findByLabelText("What did you spend?"),
+      "grabbed lunch at the mamak, twelve fifty",
+    );
+    await user.click(screen.getByRole("button", { name: /Tell Kira/ }));
+
+    expect(
+      await screen.findByText("grabbed lunch at the mamak, twelve fifty"),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByText(/I have written it up as a draft/),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 });

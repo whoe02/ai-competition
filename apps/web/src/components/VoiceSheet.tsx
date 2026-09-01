@@ -21,6 +21,16 @@ const BARS = 34;
  * microphone, the sheet says so and offers the sample instead of pretending.
  */
 export function VoiceSheet({ onClose, onAsk }: VoiceSheetProps) {
+  return (
+    <Sheet label="Voice note" onClose={onClose}>
+      <div className="grab" />
+      <VoiceBody onClose={onClose} onAsk={onAsk} />
+    </Sheet>
+  );
+}
+
+/** The listening itself, so the entry sheet can host it beside the other ways in. */
+export function VoiceBody({ onClose, onAsk }: VoiceSheetProps) {
   const [stage, setStage] = useState<"idle" | "listening" | "denied">("idle");
   const [ms, setMs] = useState(0);
   const bars = useRef<(HTMLElement | null)[]>([]);
@@ -88,8 +98,7 @@ export function VoiceSheet({ onClose, onAsk }: VoiceSheetProps) {
   const duration = `0:${String(Math.max(1, Math.round(ms / 1000))).padStart(2, "0")}`;
 
   return (
-    <Sheet label="Voice note" onClose={onClose}>
-      <div className="grab" />
+    <>
       <div className="sheet-head">
         <div>
           <p className="eyebrow on-ink" style={{ margin: 0 }}>
@@ -217,7 +226,7 @@ export function VoiceSheet({ onClose, onAsk }: VoiceSheetProps) {
           </>
         )}
       </div>
-    </Sheet>
+    </>
   );
 }
 

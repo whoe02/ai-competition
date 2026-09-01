@@ -1,25 +1,32 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 
+import type { ForesightDriver } from "@kira/contracts";
+
 import {
   useActivity,
   useButlerThread,
+  useBriefingToday,
   useConfirmDraft,
   useCorrectDraft,
   useDashboardToday,
   useDiscardDraft,
+  useCategories,
+  useForesight,
+  useHindsight,
   useMemories,
   useUnconfirm,
 } from "./api/hooks";
-import { IcActivity, IcMore, IcPlan, IcSpark, IcToday } from "./components/Icons";
+import { EntrySheet, type EntryAttachment } from "./components/EntrySheet";
+import { IcActivity, IcMore, IcPlan, IcPlus, IcSpark, IcToday } from "./components/Icons";
 import { Motes } from "./components/Motes";
 import { NavItem } from "./components/NavItem";
 import { ScrollContext } from "./components/Reveal";
 import { SheetHostContext } from "./components/Sheet";
 import { Activity } from "./screens/Activity";
 import { Butler } from "./screens/Butler";
-import { DayPlan } from "./screens/DayPlan";
 import { Login } from "./screens/Login";
 import { More } from "./screens/More";
+import { Plan, type PlanView } from "./screens/Plan";
 import { Today } from "./screens/Today";
 
 export type Tab = "today" | "activity" | "butler" | "plan" | "more";
@@ -31,15 +38,25 @@ export function App() {
   const [dir, setDir] = useState(0);
   const [boot, setBoot] = useState(true);
   const [signedIn, setSignedIn] = useState(false);
+  const [planView, setPlanView] = useState<PlanView>("daily");
+  const [entry, setEntry] = useState(false);
+  // A sentence raised from Today or Activity, handed to the Butler to ask.
+  const [pending, setPending] = useState<{ text: string; attachment?: EntryAttachment } | null>(
+    null,
+  );
   const viewRef = useRef<HTMLDivElement>(null);
   const screenRef = useRef<HTMLDivElement>(null);
   const dashboard = useDashboardToday(signedIn);
+  const briefing = useBriefingToday(signedIn);
+  const foresight = useForesight(signedIn && tab === "plan");
+  const hindsight = useHindsight(signedIn && tab === "butler");
   const [category, setCategory] = useState<string | null>(null);
   const activity = useActivity(signedIn && tab === "activity", category);
   // The thread is fetched once the user signs in, not on first open: the
   // Butler tab should already have its history when it appears.
   const butler = useButlerThread(signedIn);
   const memories = useMemories(signedIn && tab === "more");
+  const categories = useCategories(signedIn);
   const confirm = useConfirmDraft();
   const discard = useDiscardDraft();
   const unconfirm = useUnconfirm();
@@ -77,12 +94,29 @@ export function App() {
     };
   }, [tab]);
 
-  const go = (next: Tab) => {
+  const go = (next: Tab, nextPlanView: PlanView = "daily") => {
     if (next === tab) return;
+    if (next === "plan") setPlanView(nextPlanView);
     const from = TABS.indexOf(tab);
     const to = TABS.indexOf(next);
     setDir(next === "butler" || tab === "butler" ? 0 : to > from ? 1 : -1);
     setTab(next);
+  };
+
+  const proposeDriver = (driver: ForesightDriver) => {
+    const amount = `RM${(Math.abs(driver.lever.delta.sen) / 100).toFixed(2)}`;
+    const goal = dashboard.data?.goals.find((item) => item.id === driver.lever.target_id);
+    const outlook = foresight.data?.outlooks.find(
+      (item) => item.goal_id === driver.lever.target_id,
+    );
+    const text =
+      driver.lever.kind === "goal_monthly" && goal
+        ? `Please replan my ${goal.name} goal${outlook ? ` with target date ${outlook.target_date}` : ""} using the latest forecast. Calculate safe deterministic options and ask for approval before changing the active plan.`
+        : driver.lever.kind === "commitment_amount"
+          ? `Please help me propose reducing this commitment by ${amount}. Show me the approval card; do not apply anything yet.`
+          : `Help me make a plan to spend ${amount} less each day. Do not change anything yet.`;
+    setPending({ text });
+    go("butler");
   };
 
   const dark = tab === "butler";
@@ -118,11 +152,21 @@ export function App() {
             </div>
           )}
 
-          <div className="statusbar">
-            <span>12:47</span>
-            <span style={{ display: "flex", gap: 7, alignItems: "center" }}>
-              <span className="sb-dots"><i /><i /><i /><i /></span>
-              <span className="sb-batt" />
+          <div className="statusbar" aria-label="Device status">
+            <span className="status-time">12:47</span>
+            <span className="device-notch" aria-hidden="true">
+              <i className="notch-speaker" />
+              <i className="notch-camera" />
+            </span>
+            <span className="status-icons" aria-hidden="true">
+              <span className="sb-signal"><i /><i /><i /><i /></span>
+              <svg className="sb-wifi" viewBox="0 0 18 14">
+                <path d="M1.5 4.25A11.3 11.3 0 0 1 16.5 4.25" />
+                <path d="M4.1 7.2a7.4 7.4 0 0 1 9.8 0" />
+                <path d="M7 10.15a3.2 3.2 0 0 1 4 0" />
+                <circle cx="9" cy="12.25" r="1.05" />
+              </svg>
+              <span className="sb-batt"><i /></span>
             </span>
           </div>
 
@@ -136,6 +180,7 @@ export function App() {
                       data={dashboard.data}
                       isLoading={dashboard.isLoading}
                       isError={dashboard.isError}
+                      briefing={briefing.data}
                       go={go}
                     />
                   )}
@@ -160,9 +205,25 @@ export function App() {
                     />
                   )}
                   {signedIn && tab === "butler" && (
-                    <Butler thread={butler.data} isLoading={butler.isLoading} />
+                    <Butler
+                      thread={butler.data}
+                      isLoading={butler.isLoading}
+                      record={hindsight.data}
+                      categories={categories.data}
+                      pending={pending}
+                      onPendingAsked={() => setPending(null)}
+                    />
                   )}
-                  {signedIn && tab === "plan" && <DayPlan />}
+                  {signedIn && tab === "plan" && (
+                    <Plan
+                      initialView={planView}
+                      data={foresight.data}
+                      goals={dashboard.data?.goals}
+                      isLoading={foresight.isLoading}
+                      isError={foresight.isError}
+                      onDriver={proposeDriver}
+                    />
+                  )}
                   {signedIn && tab === "more" && (
                     <More memories={memories.data} isLoading={memories.isLoading} />
                   )}
@@ -170,6 +231,23 @@ export function App() {
               </div>
             </ScrollContext.Provider>
           </SheetHostContext.Provider>
+
+          {signedIn && (tab === "today" || tab === "activity") && (
+            <button className="fab" onClick={() => setEntry(true)} aria-label="Add spending">
+              <IcPlus size={21} />
+            </button>
+          )}
+
+          {entry && (
+            <EntrySheet
+              onClose={() => setEntry(false)}
+              onAsk={(text, attachment) => {
+                setEntry(false);
+                setPending({ text, attachment });
+                go("butler");
+              }}
+            />
+          )}
 
           {signedIn && (
             <nav className="nav">

@@ -209,3 +209,125 @@ class TestApprovals:
             f"/v1/butler/approvals/{approval_id}/respond", json={"action": "accept"}
         )
         assert again.status_code == 409
+
+
+class TestGoalApprovals:
+    async def test_goal_creation_runs_through_butler_and_saves_an_approved_version(
+        self, butler_client
+    ):
+        created = parse(
+            (
+                await butler_client.post(
+                    "/v1/butler/messages",
+                    json={
+                        "text": (
+                            "I want RM1,000 for a Penang trip by December 2026. "
+                            "I already saved RM200."
+                        )
+                    },
+                )
+            ).text
+        )
+        proposal = next(event for event in created if event["type"] == "approval")
+
+        assert proposal["tool"] == "apply_goal_plan_change"
+        assert proposal["module"] == "goal_planning"
+        assert proposal["before"] is None
+        assert proposal["after"]["target_amount_sen"] == 100_000
+        assert created[-1]["tools_used"] == ["start_goal_planning"]
+        assert created[-1]["llm_calls"] == 2
+        before_approval = (await butler_client.get("/v1/dashboard/today")).json()
+        assert "Travel" not in {goal["name"] for goal in before_approval["goals"]}
+
+        response = await butler_client.post(
+            f"/v1/butler/approvals/{proposal['approval_id']}/respond",
+            json={"action": "accept"},
+        )
+        resumed = parse(response.text)
+        done = resumed[-1]
+
+        assert response.status_code == 200
+        assert done["type"] == "done"
+        assert done["applied"]["tool"] == "apply_goal_plan_change"
+        assert done["evidence"]
+        assert "Approved" in done["answer"]
+        assert (await butler_client.get("/v1/butler/thread")).json()[
+            "pending_approvals"
+        ] == []
+
+    async def test_edit_recalculates_and_returns_a_new_before_after_card(
+        self, butler_client
+    ):
+        created = parse(
+            (
+                await butler_client.post(
+                    "/v1/butler/messages",
+                    json={
+                        "text": (
+                            "I want RM1,000 for a trip by December 2026. "
+                            "I already saved RM200."
+                        )
+                    },
+                )
+            ).text
+        )
+        first = next(event for event in created if event["type"] == "approval")
+
+        edited = parse(
+            (
+                await butler_client.post(
+                    f"/v1/butler/approvals/{first['approval_id']}/respond",
+                    json={
+                        "action": "edit",
+                        "args": {
+                            "target_amount_sen": 120_000,
+                            "contribution_per_payday_sen": 10_000,
+                            "target_date": "2026-12-31",
+                        },
+                    },
+                )
+            ).text
+        )
+        second = next(event for event in edited if event["type"] == "approval")
+
+        assert second["approval_id"] != first["approval_id"]
+        assert second["before"]["target_amount_sen"] == 100_000
+        assert second["after"]["target_amount_sen"] == 120_000
+        assert second["after"]["required_contribution_per_payday_sen"] == 10_000
+        pending = (await butler_client.get("/v1/butler/thread")).json()[
+            "pending_approvals"
+        ]
+        assert [row["id"] for row in pending] == [second["approval_id"]]
+
+    async def test_rejecting_a_new_goal_keeps_the_draft_off_the_active_dashboard(
+        self, butler_client
+    ):
+        created = parse(
+            (
+                await butler_client.post(
+                    "/v1/butler/messages",
+                    json={
+                        "text": (
+                            "I want RM1,000 for a trip by December 2026. "
+                            "I already saved RM200."
+                        )
+                    },
+                )
+            ).text
+        )
+        proposal = next(event for event in created if event["type"] == "approval")
+        pending = (await butler_client.get("/v1/butler/thread")).json()[
+            "pending_approvals"
+        ][0]
+        goal_id = pending["args"]["goal_id"]
+
+        rejected = await butler_client.post(
+            f"/v1/butler/approvals/{proposal['approval_id']}/respond",
+            json={"action": "reject"},
+        )
+
+        assert rejected.status_code == 200
+        dashboard = (await butler_client.get("/v1/dashboard/today")).json()
+        assert "Travel" not in {goal["name"] for goal in dashboard["goals"]}
+        detail = (await butler_client.get(f"/v1/goals/{goal_id}")).json()
+        assert detail["status"] == "cancelled"

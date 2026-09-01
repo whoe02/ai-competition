@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from datetime import date
 
 from kira.adapters.registry import get_adapters
-from kira.categories import label_for
+from kira.categories import infer, label_for
 from kira.db.models import SOURCE_RECEIPT, SOURCE_VOICE
 from kira.money import Money
 
@@ -77,18 +77,19 @@ def read_receipt(image: bytes, *, today: date, max_bytes: int) -> CaptureRead:
     _guard(image, max_bytes)
     result = get_adapters().ocr.read_receipt(image)
     occurred_on = result.occurred_on or today
+    category = infer(f"{result.merchant} {result.note}")
     return CaptureRead(
         kind=CAPTURE_RECEIPT,
         source=SOURCE_RECEIPT,
         merchant=result.merchant,
         amount_sen=result.amount.sen,
         occurred_on=occurred_on,
-        category="food",
+        category=category,
         confidence=result.confidence,
         note=result.note,
         transcript="",
         fields=_fields(
-            result.merchant, result.amount.sen, occurred_on, "food", result.confidence
+            result.merchant, result.amount.sen, occurred_on, category, result.confidence
         ),
     )
 
@@ -101,17 +102,18 @@ def transcribe(audio: bytes, *, today: date, max_bytes: int) -> CaptureRead:
     """
     _guard(audio, max_bytes)
     result = get_adapters().voice.transcribe(audio)
+    category = infer(f"{result.transcript} {result.merchant}")
     return CaptureRead(
         kind=CAPTURE_VOICE,
         source=SOURCE_VOICE,
         merchant=result.merchant,
         amount_sen=result.amount.sen,
         occurred_on=today,
-        category="transport",
+        category=category,
         confidence=result.confidence,
         note=result.note,
         transcript=result.transcript,
         fields=_fields(
-            result.merchant, result.amount.sen, today, "transport", result.confidence
+            result.merchant, result.amount.sen, today, category, result.confidence
         ),
     )
