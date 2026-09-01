@@ -39,10 +39,15 @@ from kira.agent.llm import _today_from, route_for
 from kira.agent.state import ButlerContext, ButlerState
 from kira.agent.tools import REGISTRY
 
-# The one tool this node may run on its own. Several other reads are skipped by
-# the online model in the same way, but each needs its own answer to "what does
-# such a turn look like", and one deterministic call is enough to reason about.
-PLANNER = "build_day_plan"
+# The one capability this node may reach for on its own. It is a workflow now
+# rather than a read, and that changes nothing here: the guard validates an
+# added call exactly as hard whichever door it goes through, and the check
+# below is against `is_write`, the property that actually matters.
+#
+# Several other capabilities are skipped by the online model in the same way,
+# but each needs its own answer to "what does such a turn look like", and one
+# deterministic call is enough to reason about.
+PLANNER = "start_day_planning"
 
 # The route whose pattern decides. Named rather than taken from whichever route
 # happens to mention the planner, so widening the offline router later cannot
@@ -51,7 +56,7 @@ PLACES = "places"
 
 # Only ever attached to a call this node added, so a transcript says plainly
 # which calls the model asked for and which one it did not.
-CALL_ID = "insisted-build_day_plan"
+CALL_ID = "insisted-start_day_planning"
 
 
 def _last_ai(messages: Sequence[BaseMessage]) -> AIMessage | None:

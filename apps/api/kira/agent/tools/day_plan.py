@@ -10,6 +10,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from kira.agent.agents.day_plan import run_day_plan_agent
 from kira.agent.tools.spec import EvidenceRow, ToolContext, ToolResult, ToolSpec, money_str
 from kira.money import Money
 from kira.services import day_plan as day_plan_service
@@ -72,12 +73,32 @@ class PlanArgs(BaseModel):
     )
 
 
+class DayPlanIntent(PlanArgs):
+    """What the Butler hands the planner: the filters, and the sentence.
+
+    Subclassed rather than restated so there is one description of what a
+    ceiling in sen is. `request` is the part the Butler cannot turn into a
+    filter — "somewhere I can sit for a while", "I'm meeting someone" — and it
+    reaches the turn that chooses between the places, which is the only turn
+    that could act on it.
+    """
+
+    request: str = Field(
+        default="",
+        max_length=200,
+        description=(
+            "What the user asked for, in their own words. Copy the sentence; do "
+            "not summarise it and do not add to it."
+        ),
+    )
+
+
 class AddPlaceArgs(BaseModel):
     place_id: str = Field(
         min_length=1,
         max_length=64,
         description=(
-            "The id of one of the places build_day_plan returned. The id, not the "
+            "The id of one of the places the planner reported. The id, not the "
             "name and not its position in the list."
         ),
     )
@@ -101,7 +122,13 @@ class AddPlaceArgs(BaseModel):
     )
 
 
-async def _build(ctx: ToolContext, args: PlanArgs) -> ToolResult:
+async def run_search(ctx: ToolContext, args: PlanArgs) -> ToolResult:
+    """The deterministic half of the planner: measured, ranked, no model.
+
+    Public because the Planner agent calls it. It is the same call the Plan
+    screen makes through `kira.services.day_plan`, so the Butler's idea of what
+    an outing costs cannot drift from the app's.
+    """
     room_sen = ctx.dashboard.safe_today_sen
     cap_sen = args.cap_sen if args.cap_sen is not None else room_sen
     found = await day_plan_service.find_places(
@@ -335,89 +362,36 @@ def _summarise_add_place(args: AddPlaceArgs) -> str:
     )
 
 
+async def _never_execute(_: ToolContext, __: DayPlanIntent) -> ToolResult:
+    """Workflow calls are consumed by the graph guard, never by the tool runner."""
+    raise RuntimeError("start_day_planning must be routed as a workflow")
+
+
 SPECS = (
     ToolSpec(
-        name="build_day_plan",
+        name="start_day_planning",
         module=MODULE,
-        kind="read",
+        kind="workflow",
         label="Finding places nearby",
+        # Short on purpose, and the point of the whole change. What used to
+        # stand here was 4,792 characters — about how to choose a place, what
+        # `near_misses` means, when world knowledge about a menu may be
+        # offered — bound to every reasoning turn the Butler took, about
+        # anything. All of it is now the planner's own prompt, read by the turn
+        # it applies to. What the Butler needs to know is when to hand over.
         description=(
-            "Find nearby curated places and rank them by total outing cost (meal "
-            "estimate plus travel) against today's safe-to-spend. Call this for "
-            "'where can I eat', 'what can I afford for lunch nearby', 'I feel like "
-            "noodles', or any question about going somewhere near a given location.\n"
-            "Recommend one place. The user asked where to go, so the answer is a "
-            "name: say which place it is, what the whole outing costs, and why that "
-            "one. A count and a price range — 'five halal options from RM13 to "
-            "RM14' — is not an answer to where to eat; it is a description of the "
-            "filter. Reading the whole list back is the same failure spread over "
-            "more words. Name one, then two others at most as alternatives, and only "
-            "ever with the names and figures this tool returned.\n"
-            "Why that one is the part worth writing. Weigh it against today's room, "
-            "against a goal the user is saving for, and against anything they have "
-            "had you remember. The places come back cheapest first and only the "
-            "cheapest dozen come back at all, so leading with the first one is "
-            "itself a choice about price: make it on purpose rather than by reading "
-            "down from the top.\n"
-            "A remembered preference acts in two places and nowhere else — on the "
-            "arguments you pass, and on which of the places that come back you "
-            "pick. 'I don't like walking far' means mode should be transit or ride, "
-            "and means the short journey wins over the cheap one; say so when it "
-            "does. The ranking itself stays cost against today's room, so the user "
-            "can always tell why the list came out the way it did.\n"
-            "Once you have recommended one, offer to put it on today: "
-            "add_place_to_today takes that place's id, name and total_sen and leaves "
-            "it waiting as a draft. Offer it in the same breath as the "
-            "recommendation, and call it when the user agrees — 'yes', 'add it', "
-            "'go on'. Nothing is written until they approve the card.\n"
-            "`price_landscape` is every kind of food in range with the cheapest whole "
-            "outing of each, whatever the ceiling and whatever kind was asked for. "
-            "Read it before apologising for an empty list, and say what the money "
-            "does reach in the user's own terms: 'RM15 will not reach the Japanese "
-            "places, which start at RM42, but it covers the mamak from RM11'. Its "
-            "rows are prices, not places — never name a shop out of one.\n"
-            "`nearest_over_cap` appears only when nothing at all came in under the "
-            "ceiling, and it is the closest few places above it. Name the first one "
-            "and say how far over it is: 'nothing under RM10 — the closest is RM11.50 "
-            "at Kopi Kaki'. Never present one as fitting, and never count them among "
-            "the places that did.\n"
-            "`near_misses` appears only when you asked for a kind of food, and it is "
-            "the closest few places that kind did NOT match — nearest first, one per "
-            "kind, each with the kind the data really gives it and the price of the "
-            "whole outing. It is there for the one thing you know and the data does "
-            "not: what a place actually serves. "
-            "The kinds come from OpenStreetMap, which records one word per place and "
-            "no menu — it calls McDonald's burgers and stops, so a search for chicken "
-            "finds KFC and says nothing about the McDonald's across the road. When you "
-            "can see a place in `near_misses` that you know serves what was asked for, "
-            "you may point at it, after the recommendation rather than instead of it.\n"
-            "Suggest it, never assert it. 'McDonald's is closer, and it does fried "
-            "chicken too' is yours to say; 'McDonald's serves fried chicken for RM12' "
-            "is a menu you have read, and you have not read one. The price you quote is "
-            "the one on the row and nothing else, and the claim about the food is yours "
-            "rather than the data's — the panel beside your answer will list that place "
-            "as Burgers, because Burgers is what was recorded about it.\n"
-            "Only reach for this where your knowledge is actually good. A global chain "
-            "— McDonald's, KFC, Starbucks, Subway — you can be confident about. "
-            "'Restoran MK Corner' you cannot: you have no idea what is on its menu, and "
-            "a guess dressed as knowledge sends someone across town on the strength of "
-            "a name. Say nothing about the ones you do not know.\n"
-            "Name only places this tool returned to you — from `places`, from "
-            "`nearest_over_cap`, or from `near_misses`. Never name a restaurant that is "
-            "not in one of those lists, however certain you are that it exists and is "
-            "nearby. Those three lists are real places at measured distances and "
-            "measured prices; anything else is a shop you invented, and the user cannot "
-            "tell the difference.\n"
-            "Every figure you say is one this tool returned. Reason about them "
-            "freely — compare two totals, call one a third of today's room, say a "
-            "place is the only one under the ceiling — but never author one. A "
-            "price, a place or a distance you supplied yourself reads to the user "
-            "exactly like a measured one, and the panel beside your answer is built "
-            "from the tool's figures alone: an invented number sits there with "
-            "nothing behind it."
+            "Hand a question about where to eat or go to the planner. It searches "
+            "the curated places near a location, prices the whole outing against "
+            "today's safe-to-spend, chooses one and reports back with the figures. "
+            "Call it for 'where can I eat', 'what can I afford for lunch nearby', "
+            "'I feel like noodles', or any question about going somewhere near a "
+            "given location. Pass the user's own sentence as `request`, and set a "
+            "filter only where they asked for one. Do not pick a place yourself and "
+            "do not quote a price — that is what it comes back with."
         ),
-        args_model=PlanArgs,
-        handler=_build,
+        args_model=DayPlanIntent,
+        handler=_never_execute,
+        agent=run_day_plan_agent,
     ),
     ToolSpec(
         name="add_place_to_today",
@@ -425,11 +399,13 @@ SPECS = (
         kind="write",
         label="Adding a place to today",
         description=(
-            "Put one of build_day_plan's places on today as a draft. Call this for "
+            "Put one of the planner's places on today as a draft. Call this for "
             "'add the second one', 'put that down for lunch', 'yes, that one', or "
             "any agreement to a place you just recommended. Pass its id and the same "
             "lat/lng the plan was built from. It waits in Activity and moves nothing "
-            "until the user confirms it."
+            "until the user confirms it.\n"
+            "Offer it in the same breath as the recommendation rather than waiting to "
+            "be asked, and call it the moment they agree."
         ),
         args_model=AddPlaceArgs,
         handler=_add_place,

@@ -120,7 +120,10 @@ def test_reads_writes_and_workflows_partition_the_registry():
         len(REGISTRY.reads()) + len(REGISTRY.writes()) + len(REGISTRY.workflows())
         == len(REGISTRY)
     )
-    assert {spec.name for spec in REGISTRY.workflows()} == {"start_goal_planning"}
+    assert {spec.name for spec in REGISTRY.workflows()} == {
+        "start_goal_planning",
+        "start_day_planning",
+    }
 
 
 class TestAddTransactionCategory:

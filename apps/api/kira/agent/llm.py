@@ -709,7 +709,7 @@ def _compose_log_ask(messages: Sequence[BaseMessage], text: str) -> str:
 
 
 def _compose_places(messages: Sequence[BaseMessage], text: str) -> str:
-    result = _payload(messages, "build_day_plan") or {}
+    result = _payload(messages, "start_day_planning") or {}
     places = result.get("places") or []
     # ``near_misses`` is in the payload and is deliberately never read here.
     # Those are the places the kind filter turned away, and the only reason to
@@ -1103,8 +1103,10 @@ ROUTES: tuple[Route, ...] = (
             rf"|{_CRAVING}",
             re.I,
         ),
-        ("build_day_plan",),
-        arguments=lambda text, attachment, today: {"build_day_plan": _places_args(text)},
+        ("start_day_planning",),
+        arguments=lambda text, attachment, today: {
+            "start_day_planning": _places_args(text) | {"request": text}
+        },
         compose=_compose_places,
     ),
     Route(

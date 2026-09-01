@@ -361,7 +361,7 @@ class TestWhereToEat:
 
     async def test_it_reaches_the_day_planner(self, session, butler, today):
         result = await ask(session, butler, today, "Where can I eat nearby today?")
-        assert result.tools_used == ["build_day_plan"]
+        assert result.tools_used == ["start_day_planning"]
 
     async def test_a_question_naming_an_amount_still_goes_to_affordability(
         self, session, butler, today
@@ -579,7 +579,7 @@ class TestTheOfflineAnswerHasNoMenuInItsHead:
 class TestTheTurnThatWritesTheAnswerIsToldTheRules:
     """Where the near-miss rules have to be, rather than where they were.
 
-    They were written into ``build_day_plan``'s description, and a tool
+    They were written into ``start_day_planning``'s description, and a tool
     description is bound to the reasoning turns and to nothing else. Compose
     binds no tools — that is what lets it stream — so the turn whose sentence
     the user actually reads was handed four places the kind filter turned away,
@@ -634,7 +634,7 @@ class TestTheAnswerChoosesInsteadOfEnumerating:
     the one that was picked."""
 
     def test_a_craving_reaches_the_planner_carrying_the_kind(self):
-        args = tool_call("I feel like noodles", "build_day_plan")
+        args = tool_call("I feel like noodles", "start_day_planning")
         # In the curated set's own spelling, because a word it does not carry
         # matches nothing and the search would come back empty behind it.
         assert args["kind"] == "Noodles"
@@ -644,7 +644,7 @@ class TestTheAnswerChoosesInsteadOfEnumerating:
         self, session, butler, today, place_world
     ):
         result = await ask(session, butler, today, "I feel like noodles")
-        assert result.tools_used == ["build_day_plan"]
+        assert result.tools_used == ["start_day_planning"]
         assert f"{place_world.noodles.name} — RM18" in result.answer
 
     async def test_it_names_one_place_and_says_why_that_one(
@@ -760,11 +760,11 @@ class TestHowPeopleActuallyAskForFood:
         # food, and named a dish rather than the data's heading for it. It was
         # answered with today's balance.
         result = await ask(session, butler, today, "i want eat fried chicken")
-        assert result.tools_used == ["build_day_plan"]
+        assert result.tools_used == ["start_day_planning"]
 
     async def test_halal_alone_is_a_question_about_food(self, session, butler, today):
         result = await ask(session, butler, today, "somewhere halal under RM15")
-        assert result.tools_used == ["build_day_plan"]
+        assert result.tools_used == ["start_day_planning"]
 
     async def test_wanting_something_that_is_not_food_is_left_alone(
         self, session, butler, today
@@ -772,7 +772,7 @@ class TestHowPeopleActuallyAskForFood:
         # The craving trigger must land on a real kind word, or "I want" turns
         # every sentence into a request for lunch.
         result = await ask(session, butler, today, "I want to save more for the wedding")
-        assert "build_day_plan" not in result.tools_used
+        assert "start_day_planning" not in result.tools_used
 
 
 def rendered(*turns: str) -> str:
@@ -818,7 +818,7 @@ class TestAFollowUpThatNamesOnlyAKindOfFood:
         # In the curated set's own spelling, because a word the data does not
         # carry matches nothing and the search comes back empty behind it.
         assert (
-            warm.arguments(text, None, date(2026, 9, 3))["build_day_plan"]["kind"]
+            warm.arguments(text, None, date(2026, 9, 3))["start_day_planning"]["kind"]
             == "Japanese"
         )
 
@@ -827,7 +827,7 @@ class TestAFollowUpThatNamesOnlyAKindOfFood:
     ):
         await say(session, butler, today, "Where can I eat nearby?")
         result = await say(session, butler, today, "what about japanese instead")
-        assert result.tools_used == ["build_day_plan"]
+        assert result.tools_used == ["start_day_planning"]
         # Omakase Empat is the only Japanese place in the fixed world, and at
         # RM50 it is the one an unfiltered list would never lead with.
         assert f"{place_world.pricey.name} — RM50" in result.answer
@@ -838,7 +838,7 @@ class TestAFollowUpThatNamesOnlyAKindOfFood:
     ):
         await say(session, butler, today, "Where can I eat nearby?")
         result = await say(session, butler, today, "korean then")
-        assert result.tools_used == ["build_day_plan"]
+        assert result.tools_used == ["start_day_planning"]
         # There is no Korean food in the fixed world, and saying so is a real
         # answer. Today's balance is not.
         assert "No korean within range of you" in result.answer
@@ -848,7 +848,7 @@ class TestAFollowUpThatNamesOnlyAKindOfFood:
         self, session, butler, today, place_world, text
     ):
         result = await say(session, butler, today, text)
-        assert "build_day_plan" not in result.tools_used
+        assert "start_day_planning" not in result.tools_used
 
     async def test_a_turn_about_something_else_ends_the_run(
         self, session, butler, today, place_world
@@ -857,7 +857,7 @@ class TestAFollowUpThatNamesOnlyAKindOfFood:
         await say(session, butler, today, "Where can I eat nearby?")
         await say(session, butler, today, "What bills are due?")
         result = await say(session, butler, today, "korean then")
-        assert "build_day_plan" not in result.tools_used
+        assert "start_day_planning" not in result.tools_used
 
     async def test_a_run_of_follow_ups_keeps_its_footing(
         self, session, butler, today, place_world
@@ -867,7 +867,7 @@ class TestAFollowUpThatNamesOnlyAKindOfFood:
         await say(session, butler, today, "I feel like japanese")
         await say(session, butler, today, "or korean")
         result = await say(session, butler, today, "noodles then")
-        assert result.tools_used == ["build_day_plan"]
+        assert result.tools_used == ["start_day_planning"]
         assert f"{place_world.noodles.name} — RM18" in result.answer
 
     async def test_a_kind_word_inside_a_sentence_about_something_else_is_not_food(
@@ -877,7 +877,7 @@ class TestAFollowUpThatNamesOnlyAKindOfFood:
         # it, and it is about a holiday: read as a craving it would reach the
         # planner, and places is tried before goals, so it would get there.
         cold = await say(session, butler, today, "I want to save for a japanese trip")
-        assert "build_day_plan" not in cold.tools_used
+        assert "start_day_planning" not in cold.tools_used
         await say(session, butler, today, "Where can I eat nearby?")
         warm = await say(session, butler, today, "I want to save for a japanese trip")
-        assert "build_day_plan" not in warm.tools_used
+        assert "start_day_planning" not in warm.tools_used

@@ -57,6 +57,11 @@ class Settings(BaseSettings):
     # and shows tokens arriving, where this one holds a screen of live figures
     # still and has nothing to show while it does.
     day_plan_interpret_timeout_seconds: float = 6.0
+    # The planner's own choosing turn. Shorter than the Butler's timeout for
+    # the same reason: it sits inside a turn that is already being waited on,
+    # and a slow choice is one the deterministic cheapest-first ranking can
+    # stand in for without the user losing an answer.
+    day_plan_choose_timeout_seconds: float = 8.0
     # Voice and camera capture. Off means the affordances stay hidden rather
     # than pretending to work; the adapters behind them are chosen in the
     # adapter registry, not here.

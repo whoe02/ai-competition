@@ -1,4 +1,4 @@
-"""What build_day_plan hands the model, which is the only thing it can quote.
+"""What start_day_planning hands the model, which is the only thing it can quote.
 
 The places come from the ``place_world`` fixture, not the shipped KL set: the
 screen and the Butler have to tell the same story about an empty list, and that
@@ -9,8 +9,9 @@ from __future__ import annotations
 
 import pytest
 
-from kira.agent.tools import REGISTRY, ToolContext
-from kira.agent.tools.day_plan import SPECS, PlanArgs, _build
+from kira.agent.agents.day_plan import SELECTION, PlaceChoice, _by_id, _named
+from kira.agent.tools import ToolContext
+from kira.agent.tools.day_plan import SPECS, PlanArgs, run_search
 from kira.db.models import TXN_CONFIRMED, Transaction
 from kira.money import Money
 from kira.services import day_plan as day_plan_service
@@ -55,7 +56,7 @@ class TestFiguresGivenToTheModel:
         self, session, user, today, place_world
     ):
         context = await context_for(session, user, today)
-        result = await _build(context, PlanArgs(**place_world.origin))
+        result = await run_search(context, PlanArgs(**place_world.origin))
 
         assert result.value["room_sen"] == context.dashboard.safe_today_sen
         assert result.value["cap_sen"] == context.dashboard.safe_today_sen
@@ -66,7 +67,7 @@ class TestFiguresGivenToTheModel:
     ):
         await spend_out(session, user, today)
         context = await context_for(session, user, today)
-        result = await _build(context, PlanArgs(cap_sen=5000, **place_world.origin))
+        result = await run_search(context, PlanArgs(cap_sen=5000, **place_world.origin))
 
         # The model is told the room is nil and given nothing that could be
         # narrated as "200% of your room" or divided back into a room.
@@ -81,7 +82,7 @@ class TestFiguresGivenToTheModel:
     ):
         await spend_out(session, user, today)
         context = await context_for(session, user, today)
-        result = await _build(context, PlanArgs(cap_sen=5000, **place_world.origin))
+        result = await run_search(context, PlanArgs(cap_sen=5000, **place_world.origin))
 
         assert dict(row.as_pair() for row in result.evidence)["Safe to spend today"] == "RM0.00"
 
@@ -89,7 +90,7 @@ class TestFiguresGivenToTheModel:
         self, session, user, today, place_world
     ):
         context = await context_for(session, user, today)
-        result = await _build(context, PlanArgs(cap_sen=1, **place_world.origin))
+        result = await run_search(context, PlanArgs(cap_sen=1, **place_world.origin))
 
         assert result.value["places"] == []
         assert dict(row.as_pair() for row in result.evidence)["Safe to spend today"] == "RM52.97"
@@ -104,7 +105,7 @@ class TestWhatTheModelIsToldAboutDistance:
         self, session, user, today, place_world
     ):
         context = await context_for(session, user, today)
-        result = await _build(
+        result = await run_search(
             context, PlanArgs(mode="ride", cap_sen=100_000, **place_world.origin)
         )
 
@@ -117,7 +118,7 @@ class TestWhatTheModelIsToldAboutDistance:
         self, session, user, today, place_world
     ):
         context = await context_for(session, user, today)
-        result = await _build(
+        result = await run_search(
             context, PlanArgs(mode="ride", cap_sen=100_000, **place_world.origin)
         )
 
@@ -133,7 +134,7 @@ class TestWhatTheModelIsToldAboutDistance:
         # the row is about it: 900 m of road, which is a fare rather than
         # "already there".
         with serving(StubRouting({"w1": 900.0})):
-            result = await _build(
+            result = await run_search(
                 context, PlanArgs(mode="ride", cap_sen=100_000, **place_world.origin)
             )
 
@@ -153,7 +154,7 @@ class TestAskingForOneKindOfFood:
 
     async def test_the_kind_reaches_the_search(self, session, user, today, place_world):
         context = await context_for(session, user, today)
-        result = await _build(
+        result = await run_search(
             context, PlanArgs(cap_sen=100_000, kind="Cafe", **place_world.origin)
         )
 
@@ -167,7 +168,7 @@ class TestAskingForOneKindOfFood:
         self, session, user, today, place_world
     ):
         context = await context_for(session, user, today)
-        result = await _build(
+        result = await run_search(
             context, PlanArgs(cap_sen=100_000, kind="Hawker", **place_world.origin)
         )
 
@@ -195,21 +196,32 @@ class TestAskingForOneKindOfFood:
 
 
 class TestWhatTheToolAsksTheModelToDoWithIt:
-    """The description is the whole of the online mechanism. Handed twelve
-    places and no instruction, a model summarises them -- "all five halal
-    options, from RM13 to RM14, fit comfortably" -- which names nobody and
-    answers nothing."""
+    """Handed twelve places and no instruction, a model summarises them -- "all
+    five halal options, from RM13 to RM14, fit comfortably" -- which names
+    nobody and answers nothing.
 
-    def test_it_asks_for_one_place_chosen_and_justified(self):
-        described = {spec.name: spec.description for spec in SPECS}["build_day_plan"]
-        assert "Recommend one place" in described
+    These rules used to be the tool's description, 4,792 characters of it,
+    bound to every reasoning turn the Butler took about anything at all. They
+    are the planner's own selection prompt now, read by the one turn that acts
+    on them. What the Butler's copy has to carry is when to hand over."""
+
+    def test_the_selection_turn_is_asked_for_one_place_chosen_and_justified(self):
+        assert "Recommend one place" in SELECTION
         # Against what: the day, a goal, and anything remembered about them.
-        assert "today's room" in described and "remember" in described
-        # And the tool that carries the recommendation through, so the offer is
-        # made in the same breath rather than waited for.
-        assert "add_place_to_today" in described
-        # The line the evidence panel rests on.
-        assert "never author one" in described
+        assert "today's room" in SELECTION and "remember" in SELECTION
+
+    def test_the_butlers_own_copy_is_short_and_says_only_when_to_hand_over(self):
+        described = {spec.name: spec.description for spec in SPECS}["start_day_planning"]
+        assert len(described) < 800
+        assert "where can I eat" in described
+        # It chooses nothing and quotes nothing; that is what it delegates for.
+        assert "Do not pick a place yourself" in described
+
+    def test_the_offer_to_add_it_lives_with_the_tool_that_does_it(self):
+        # The Butler holds this one, not the planner, because it is a write and
+        # writes are the Butler's boundary to keep.
+        described = {spec.name: spec.description for spec in SPECS}["add_place_to_today"]
+        assert "same breath as the recommendation" in described
 
 
 class TestHowMuchTheModelIsGiven:
@@ -222,7 +234,7 @@ class TestHowMuchTheModelIsGiven:
     ):
         context = await context_for(session, user, today)
         with serving(places=place_world.crowd):
-            result = await _build(context, PlanArgs(cap_sen=100_000, **place_world.origin))
+            result = await run_search(context, PlanArgs(cap_sen=100_000, **place_world.origin))
 
         places = result.value["places"]
         assert len(places) == 12
@@ -238,7 +250,7 @@ class TestHowMuchTheModelIsGiven:
         self, session, user, today, place_world
     ):
         context = await context_for(session, user, today)
-        result = await _build(context, PlanArgs(cap_sen=100_000, **place_world.origin))
+        result = await run_search(context, PlanArgs(cap_sen=100_000, **place_world.origin))
 
         assert result.value["shown_count"] == len(result.value["places"]) == 7
         assert result.value["total_under_cap"] == 7
@@ -253,7 +265,7 @@ class TestThePriceLandscape:
         self, session, user, today, place_world
     ):
         context = await context_for(session, user, today)
-        result = await _build(context, PlanArgs(cap_sen=100_000, **place_world.origin))
+        result = await run_search(context, PlanArgs(cap_sen=100_000, **place_world.origin))
 
         rows = {row["kind"]: row for row in result.value["price_landscape"]}
         assert set(rows) == {"Cafe", "Mamak", "Chinese", "Japanese", "Western", "Noodles"}
@@ -264,7 +276,7 @@ class TestThePriceLandscape:
         self, session, user, today, place_world
     ):
         context = await context_for(session, user, today)
-        result = await _build(context, PlanArgs(cap_sen=100_000, **place_world.origin))
+        result = await run_search(context, PlanArgs(cap_sen=100_000, **place_world.origin))
 
         rows = {row["kind"]: row for row in result.value["price_landscape"]}
         for place in result.value["places"]:
@@ -280,7 +292,7 @@ class TestThePriceLandscape:
         # all the model has to answer with, and without it the only honest reply
         # left is an apology.
         context = await context_for(session, user, today)
-        result = await _build(context, PlanArgs(cap_sen=500, **place_world.origin))
+        result = await run_search(context, PlanArgs(cap_sen=500, **place_world.origin))
 
         assert result.value["places"] == []
         cheapest = result.value["price_landscape"][0]
@@ -289,7 +301,7 @@ class TestThePriceLandscape:
 
     async def test_it_is_all_money_in_whole_sen(self, session, user, today, place_world):
         context = await context_for(session, user, today)
-        result = await _build(context, PlanArgs(cap_sen=100_000, **place_world.origin))
+        result = await run_search(context, PlanArgs(cap_sen=100_000, **place_world.origin))
 
         for row in result.value["price_landscape"]:
             assert isinstance(row["cheapest_total_sen"], int)
@@ -305,7 +317,7 @@ class TestWhyTheListIsEmpty:
         self, session, user, today, place_world
     ):
         context = await context_for(session, user, today)
-        result = await _build(context, PlanArgs(cap_sen=1, **place_world.origin))
+        result = await run_search(context, PlanArgs(cap_sen=1, **place_world.origin))
 
         assert result.value["places"] == []
         assert result.value["nearby_count"] > 0
@@ -315,7 +327,7 @@ class TestWhyTheListIsEmpty:
 
     async def test_out_of_range_leaves_nothing_in_range(self, session, user, today, place_world):
         context = await context_for(session, user, today)
-        result = await _build(context, PlanArgs(cap_sen=100_000, **place_world.out_of_range))
+        result = await run_search(context, PlanArgs(cap_sen=100_000, **place_world.out_of_range))
 
         assert result.value["places"] == []
         assert result.value["nearby_count"] == 0
@@ -327,7 +339,7 @@ class TestWhyTheListIsEmpty:
         self, session, user, today, place_world
     ):
         context = await context_for(session, user, today)
-        result = await _build(
+        result = await run_search(
             context,
             PlanArgs(cap_sen=100_000, halal_only=True, **place_world.lone_non_halal),
         )
@@ -356,7 +368,7 @@ class TestTheNearestPlacesAboveTheCeiling:
         self, session, user, today, place_world
     ):
         context = await context_for(session, user, today)
-        result = await _build(context, PlanArgs(cap_sen=500, **place_world.origin))
+        result = await run_search(context, PlanArgs(cap_sen=500, **place_world.origin))
 
         assert result.value["places"] == []
         assert [p["name"] for p in result.value["nearest_over_cap"]] == [
@@ -376,7 +388,7 @@ class TestTheNearestPlacesAboveTheCeiling:
         self, session, user, today, place_world
     ):
         context = await context_for(session, user, today)
-        result = await _build(context, PlanArgs(cap_sen=500, **place_world.origin))
+        result = await run_search(context, PlanArgs(cap_sen=500, **place_world.origin))
 
         evidence = dict(row.as_pair() for row in result.evidence)
         assert "none under the ceiling" in evidence["Nearby places"]
@@ -389,7 +401,7 @@ class TestTheNearestPlacesAboveTheCeiling:
         self, session, user, today, place_world
     ):
         context = await context_for(session, user, today)
-        result = await _build(context, PlanArgs(cap_sen=1000, **place_world.origin))
+        result = await run_search(context, PlanArgs(cap_sen=1000, **place_world.origin))
 
         assert [p["name"] for p in result.value["places"]] == [place_world.cheap.name]
         assert result.value["nearest_over_cap"] == []
@@ -400,10 +412,10 @@ class TestTheNearestPlacesAboveTheCeiling:
         self, session, user, today, place_world
     ):
         context = await context_for(session, user, today)
-        out_of_range = await _build(
+        out_of_range = await run_search(
             context, PlanArgs(cap_sen=100_000, **place_world.out_of_range)
         )
-        no_halal = await _build(
+        no_halal = await run_search(
             context,
             PlanArgs(cap_sen=100_000, halal_only=True, **place_world.lone_non_halal),
         )
@@ -411,10 +423,11 @@ class TestTheNearestPlacesAboveTheCeiling:
             assert result.value["places"] == []
             assert result.value["nearest_over_cap"] == []
 
-    def test_the_description_tells_the_model_never_to_present_one_as_fitting(self):
-        spec = next(spec for spec in SPECS if spec.name == "build_day_plan")
-        assert "nearest_over_cap" in spec.description
-        assert "Never present one as fitting" in spec.description
+    def test_the_selection_turn_is_told_never_to_present_one_as_fitting(self):
+        assert "nearest_over_cap" in SELECTION
+        assert "Never present one as fitting" in SELECTION
+        # And what to reach for before apologising for an empty list.
+        assert "price_landscape" in SELECTION
 
 
 class TestThePlacesTheKindFilterTurnedAway:
@@ -433,8 +446,8 @@ class TestThePlacesTheKindFilterTurnedAway:
         self, session, user, today, place_world
     ):
         context = await context_for(session, user, today)
-        wide = await _build(context, PlanArgs(cap_sen=100_000, **place_world.origin))
-        narrow = await _build(
+        wide = await run_search(context, PlanArgs(cap_sen=100_000, **place_world.origin))
+        narrow = await run_search(
             context, PlanArgs(cap_sen=100_000, kind="Noodles", **place_world.origin)
         )
 
@@ -446,7 +459,7 @@ class TestThePlacesTheKindFilterTurnedAway:
         self, session, user, today, place_world
     ):
         context = await context_for(session, user, today)
-        result = await _build(
+        result = await run_search(
             context, PlanArgs(cap_sen=100_000, kind="Noodles", **place_world.origin)
         )
 
@@ -465,7 +478,7 @@ class TestThePlacesTheKindFilterTurnedAway:
         self, session, user, today, place_world
     ):
         context = await context_for(session, user, today)
-        result = await _build(
+        result = await run_search(
             context, PlanArgs(cap_sen=100_000, kind="Cafe", **place_world.origin)
         )
 
@@ -481,7 +494,7 @@ class TestThePlacesTheKindFilterTurnedAway:
         # aside and starts reading as the answer, beside twelve matches and a
         # whole price landscape already going over.
         context = await context_for(session, user, today)
-        result = await _build(
+        result = await run_search(
             context, PlanArgs(cap_sen=100_000, kind="Cafe", **place_world.origin)
         )
 
@@ -498,7 +511,7 @@ class TestThePlacesTheKindFilterTurnedAway:
         mamak does noodles too, the panel underneath still reads Mamak.
         """
         context = await context_for(session, user, today)
-        result = await _build(
+        result = await run_search(
             context, PlanArgs(cap_sen=100_000, kind="Noodles", **place_world.origin)
         )
 
@@ -519,7 +532,7 @@ class TestThePlacesTheKindFilterTurnedAway:
         # The most useful case: no Korean food here at all, and the model is
         # handed the places that are, rather than only an apology and a count.
         context = await context_for(session, user, today)
-        result = await _build(
+        result = await run_search(
             context, PlanArgs(cap_sen=100_000, kind="Korean", **place_world.origin)
         )
 
@@ -529,35 +542,49 @@ class TestThePlacesTheKindFilterTurnedAway:
         assert ["Nearby places", "7 within range, none of them Korean"] in evidence
         assert ["Also nearby", f"{place_world.cheap.name} · Cafe · RM9.00"] in evidence
 
-    def test_the_description_says_it_may_suggest_a_menu_but_never_state_one(self):
-        described = {spec.name: spec.description for spec in SPECS}["build_day_plan"]
-        assert "near_misses" in described
-        # The distinction the whole feature turns on: the price is the tool's
-        # and the menu is the model's.
-        assert "Suggest it, never assert it" in described
-        assert "the claim about the food is yours" in described
-        # And where that knowledge is worth anything. A chain it can be sure
-        # of; a shop it has only ever seen the name of it cannot.
-        assert "global chain" in described
-        assert "Restoran MK Corner" in described
+    def test_the_selection_turn_may_suggest_a_menu_but_never_state_one(self):
+        assert "near_misses" in SELECTION
+        # Where that knowledge is worth anything. A chain it can be sure of; a
+        # shop it has only ever seen the name of it cannot.
+        assert "global chain" in SELECTION
+        assert "Restoran MK Corner" in SELECTION
 
-    def test_the_description_forbids_naming_a_place_that_was_not_returned(self):
-        """The line the whole phase rests on, pinned where the model reads it.
+    def test_the_suggestion_is_carried_as_an_id_and_a_reason_never_a_menu(self):
+        # The distinction the whole feature turns on: the price is the search's
+        # and the claim about the food is the model's. Splitting them across two
+        # fields is what stops the second borrowing the authority of the first.
+        fields = PlaceChoice.model_fields
+        assert "also_consider_id" in fields and "also_consider_reason" in fields
+        assert "no figure" in (fields["reason"].description or "")
 
-        This project has already produced "Sushi Tei (Mid Valley Megamall),
+    def test_a_place_that_was_not_returned_cannot_be_named(self):
+        """This used to be an instruction. It is now a type.
+
+        The project has already produced "Sushi Tei (Mid Valley Megamall),
         RM42" -- a restaurant that was in no tool result and, for all anyone
         knows, in no shopping mall. Reasoning over real rows and inventing a
-        shop look identical in the finished sentence, and the difference
-        between them is this instruction. Nothing else in the code can enforce
-        it: a name is a string, and no guard can tell one that came out of the
-        data from one that did not.
+        shop look identical in the finished sentence, and the difference used to
+        be one line of prose that three separate rewrites failed to enforce.
+
+        The planner now returns an id and Python looks the name up in the set
+        the search returned. An id that is not in that set resolves to nothing
+        and the cheapest place stands instead, so the failure is not discouraged
+        here, it is unsayable.
         """
-        schema = REGISTRY.get("build_day_plan").json_schema()
-        described = schema["function"]["description"]
-        assert "Name only places this tool returned to you" in described
-        assert "Never name a restaurant that is not in one of those lists" in described
-        # Naming the three lists it may name out of, so "returned to you" is not
-        # left to interpretation.
-        assert "`places`" in described
-        assert "`nearest_over_cap`" in described
-        assert "`near_misses`" in described
+        assert PlaceChoice.model_fields["place_id"].annotation is str
+        found = {"a-1": {"name": "Kopi Kaki", "total_sen": 1150, "id": "a-1"}}
+        assert _named(found, "sushi-tei-mid-valley") is None
+        assert _named(found, "a-1")["name"] == "Kopi Kaki"
+
+    def test_every_list_the_search_returned_is_one_it_may_choose_from(self):
+        # Including the ones that did not fit: naming the closest place above
+        # the ceiling is a real answer to "nothing under RM10", and it would be
+        # unreachable if only `places` were in the lookup.
+        found = _by_id(
+            {
+                "places": [{"id": "p", "name": "A"}],
+                "nearest_over_cap": [{"id": "o", "name": "B"}],
+                "near_misses": [{"id": "n", "name": "C"}],
+            }
+        )
+        assert sorted(found) == ["n", "o", "p"]

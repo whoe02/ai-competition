@@ -273,8 +273,8 @@ def composing_prompt(
     return "\n\n".join(blocks)
 
 
-# The rules about naming a place live in build_day_plan's own description, and
-# that description is bound to the reasoning turns only. This turn — the one
+# The rules about naming a place live in the planner's own selection prompt,
+# which only the planner reads. This turn — the one
 # whose words the user actually reads — is handed the tool payload and the
 # evidence rows with none of it: the names of places the kind filter turned
 # away arrive here as "Also nearby: McDonald's · Burgers · RM18.00" and nothing

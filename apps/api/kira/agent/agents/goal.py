@@ -13,10 +13,17 @@ from __future__ import annotations
 from kira.agent.goal_graph.presentation import goal_evidence
 from kira.agent.goal_graph.run import run_goal_request
 from kira.agent.goal_graph.schemas import GoalIntent
-from kira.agent.tools.spec import AgentContext, AgentReport, EvidenceRow
+
+# `kira.agent.tools.spec` is imported inside the functions below, never at the
+# top. The tool module names this agent in its spec, so importing the two the
+# other way round -- an agent module first -- would walk back into a
+# half-initialised package. Which module a test happens to import first is not
+# something this file should be able to break.
 
 
-async def run_goal_agent(ctx: AgentContext, intent: GoalIntent) -> AgentReport:
+async def run_goal_agent(ctx, intent: GoalIntent):
+    from kira.agent.tools.spec import AgentReport, EvidenceRow
+
     result = await run_goal_request(
         ctx.session,
         ctx.user,
@@ -40,7 +47,7 @@ async def run_goal_agent(ctx: AgentContext, intent: GoalIntent) -> AgentReport:
     )
 
 
-def _findings(result, rows: tuple[EvidenceRow, ...]) -> dict:
+def _findings(result, rows) -> dict:
     """The report the Butler reads -- built from the panel and nothing else.
 
     Every figure here is one `goal_evidence` already formatted for the user to

@@ -51,7 +51,7 @@ class TestAModelThatCallsNothing:
         result = await ask(
             session, butler, today, "i want eat fried chicken", declining_factory(INVENTED)
         )
-        assert result.tools_used == ["build_day_plan"]
+        assert result.tools_used == ["start_day_planning"]
         assert dict(result.evidence)["Safe to spend today"] == "RM52.97"
 
     async def test_the_answer_is_no_longer_the_refusal(
@@ -108,9 +108,9 @@ class TestWhenTheModelDoesAskForIt:
             butler,
             today,
             "Where can I eat nearby?",
-            scripted_factory(("build_day_plan", {"halal_only": True})),
+            scripted_factory(("start_day_planning", {"halal_only": True})),
         )
-        assert result.tools_used == ["build_day_plan"]
+        assert result.tools_used == ["start_day_planning"]
 
     async def test_its_own_arguments_are_the_ones_used(
         self, session, butler, today, place_world
@@ -123,7 +123,7 @@ class TestWhenTheModelDoesAskForIt:
             butler,
             today,
             "Where can I eat nearby?",
-            scripted_factory(("build_day_plan", {"halal_only": True})),
+            scripted_factory(("start_day_planning", {"halal_only": True})),
         )
         assert place_world.near_non_halal.name not in result.answer
 
@@ -165,7 +165,7 @@ class TestTurnsThatAreNotAboutPlaces:
             "Can I afford RM60 dinner tonight?",
             declining_factory(INVENTED),
         )
-        assert "build_day_plan" not in result.tools_used
+        assert "start_day_planning" not in result.tools_used
 
     async def test_wanting_something_that_is_not_food_is_left_alone(
         self, session, butler, today, place_world
@@ -177,7 +177,7 @@ class TestTurnsThatAreNotAboutPlaces:
             "I want to save more for the wedding",
             declining_factory(INVENTED),
         )
-        assert "build_day_plan" not in result.tools_used
+        assert "start_day_planning" not in result.tools_used
 
     async def test_a_receipt_turn_is_about_the_receipt(
         self, session, butler, today, place_world
@@ -200,7 +200,7 @@ class TestTurnsThatAreNotAboutPlaces:
                 "confidence": 94,
             },
         )
-        assert "build_day_plan" not in result.tools_used
+        assert "start_day_planning" not in result.tools_used
 
 
 class TestAModelWhoseOnlyCallIsRefused:
@@ -245,7 +245,7 @@ class TestAModelWhoseOnlyCallIsRefused:
     @pytest.mark.parametrize("call", REFUSED)
     async def test_the_planner_still_runs(self, session, butler, today, place_world, call):
         result = await ask(session, butler, today, self.TURN, scripted_factory(call))
-        assert result.tools_used == ["build_day_plan"]
+        assert result.tools_used == ["start_day_planning"]
         assert dict(result.evidence)["Safe to spend today"] == "RM52.97"
         assert result.answer != NOTHING_RAN
         # And on the kind the sentence asked for, not on the tool's defaults:
@@ -391,7 +391,7 @@ class TestTheOfflinePathIsUntouched:
         self, session, butler, today, place_world
     ):
         result = await ask(session, butler, today, "I feel like noodles", offline_factory)
-        assert result.tools_used == ["build_day_plan"]
+        assert result.tools_used == ["start_day_planning"]
         assert f"{place_world.noodles.name} — RM18" in result.answer
 
     async def test_a_question_about_bills_still_reads_the_commitments(
@@ -422,15 +422,22 @@ class TestWhatTheNodeItselfReturns:
         assert message.id == "a1"
         assert message.content == ""
         (call,) = message.tool_calls
-        assert call["name"] == "build_day_plan"
-        assert call["args"] == {"halal_only": True, "cap_sen": 1500}
+        assert call["name"] == "start_day_planning"
+        # The sentence goes with the filters now. The planner reads it on the
+        # turn where it chooses between the places, which is the only turn that
+        # can act on "somewhere I can sit for a while".
+        assert call["args"] == {
+            "halal_only": True,
+            "cap_sen": 1500,
+            "request": "Where can I eat somewhere halal under RM15?",
+        }
 
     async def test_it_adds_nothing_when_the_model_already_asked(self):
         reply = AIMessage(
             id="a1",
             content="",
             tool_calls=[
-                {"name": "build_day_plan", "args": {}, "id": "t1", "type": "tool_call"}
+                {"name": "start_day_planning", "args": {}, "id": "t1", "type": "tool_call"}
             ],
         )
         added = await insist_node.insist(self.state("Where can I eat?", reply), self.RUNTIME)
@@ -439,7 +446,9 @@ class TestWhatTheNodeItselfReturns:
     async def test_it_adds_nothing_once_the_planner_has_answered(self):
         # Covers the failed and the refused call as well as the successful one:
         # a result of any kind is the turn's answer about the planner.
-        ran = ToolMessage(content="{}", name="build_day_plan", tool_call_id="t1", status="error")
+        ran = ToolMessage(
+            content="{}", name="start_day_planning", tool_call_id="t1", status="error"
+        )
         added = await insist_node.insist(
             self.state("Where can I eat?", ran, AIMessage(id="a2", content="Sorry.")),
             self.RUNTIME,
