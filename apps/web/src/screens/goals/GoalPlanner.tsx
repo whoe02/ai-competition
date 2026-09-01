@@ -5,6 +5,7 @@ import type { GoalSummary } from "@kira/contracts";
 import { useGoal, useGoalPlan } from "../../api/goalHooks";
 import { useDashboardToday } from "../../api/hooks";
 import { formatGoalDate } from "../../components/GoalPlanPreview";
+import { Reveal } from "../../components/Reveal";
 import { fmt } from "../../lib/money";
 import { GoalCreate } from "./GoalCreate";
 import { GoalDetail } from "./GoalDetail";
@@ -52,54 +53,74 @@ function GoalsHome({
 
   return (
     <div className="goal-screen">
-      <div className="goal-home-head">
-        <div><p className="eyebrow">Goals</p><h1>What are you saving toward?</h1></div>
-        <button className="goal-add" onClick={onCreate} aria-label="Create goal">+</button>
-      </div>
-      <div className="goal-content">
-        <div className="goal-filter" role="group" aria-label="Filter goals">
-          {(["all", "short", "long"] as GoalFilter[]).map((value) => (
-            <button className={filter === value ? "selected" : ""} aria-pressed={filter === value} key={value} onClick={() => setFilter(value)}>
-              {value === "all" ? "All" : value === "short" ? "Short-term" : "Long-term"}
-            </button>
-          ))}
+      <Reveal>
+        <div className="goal-home-head">
+          <div><p className="eyebrow">Goals</p><h1>What are you saving toward?</h1></div>
+          <button className="goal-add" onClick={onCreate} aria-label="Create goal">+</button>
         </div>
+      </Reveal>
+      <div className="goal-content">
+        <Reveal delay={35}>
+          <div className="goal-filter" role="group" aria-label="Filter goals">
+            {(["all", "short", "long"] as GoalFilter[]).map((value) => (
+              <button className={filter === value ? "selected" : ""} aria-pressed={filter === value} key={value} onClick={() => setFilter(value)}>
+                {value === "all" ? "All" : value === "short" ? "Short-term" : "Long-term"}
+              </button>
+            ))}
+          </div>
+        </Reveal>
 
         {onOpenForesight && (
-          <button className="btn btn-line goal-full-button" onClick={onOpenForesight}>
-            Open Foresight
-          </button>
+          <Reveal delay={70}>
+            <button className="btn btn-line goal-full-button" onClick={onOpenForesight}>
+              Open Foresight
+            </button>
+          </Reveal>
         )}
 
         {dashboard.isLoading && (
-          <section className="goal-state-card"><span className="goal-loading-dot" /><h2>Loading your goals…</h2><p>Reading the latest confirmed plans.</p></section>
+          <Reveal delay={105}>
+            <section className="goal-state-card"><span className="goal-loading-dot" /><h2>Loading your goals…</h2><p>Reading the latest confirmed plans.</p></section>
+          </Reveal>
         )}
         {dashboard.isError && (
-          <section className="goal-state-card error">
-            <h2>Your goals couldn’t be loaded</h2><p>Nothing has changed. Check your connection and try again.</p>
-            <button className="btn btn-primary" onClick={() => void dashboard.refetch()}>Try again</button>
-          </section>
+          <Reveal delay={105}>
+            <section className="goal-state-card error">
+              <h2>Your goals couldn’t be loaded</h2><p>Nothing has changed. Check your connection and try again.</p>
+              <button className="btn btn-primary" onClick={() => void dashboard.refetch()}>Try again</button>
+            </section>
+          </Reveal>
         )}
         {!dashboard.isLoading && !dashboard.isError && goals.length === 0 && (
-          <section className="goal-empty">
-            <span className="goal-empty-mark">◎</span>
-            <p className="eyebrow">A destination for your money</p>
-            <h2>Start with one goal that matters</h2>
-            <p>KIRA will calculate what it takes per payday while keeping protected bills and your emergency buffer untouched.</p>
-            <button className="btn btn-primary" onClick={onCreate}>Create your first goal</button>
-          </section>
+          <Reveal delay={105}>
+            <section className="goal-empty">
+              <span className="goal-empty-mark">◎</span>
+              <p className="eyebrow">A destination for your money</p>
+              <h2>Start with one goal that matters</h2>
+              <p>KIRA will calculate what it takes per payday while keeping protected bills and your emergency buffer untouched.</p>
+              <button className="btn btn-primary" onClick={onCreate}>Create your first goal</button>
+            </section>
+          </Reveal>
         )}
         {!dashboard.isLoading && !dashboard.isError && goals.length > 0 && filtered.length === 0 && (
-          <section className="goal-state-card"><h2>No {filter}-term goals</h2><p>Try another filter or create a new goal.</p><button className="btn btn-line" onClick={onCreate}>Create goal</button></section>
+          <Reveal delay={105}>
+            <section className="goal-state-card"><h2>No {filter}-term goals</h2><p>Try another filter or create a new goal.</p><button className="btn btn-line" onClick={onCreate}>Create goal</button></section>
+          </Reveal>
         )}
         {filtered.length > 0 && (
           <div className="goal-list">
             {filtered.map((goal, index) => (
-              <GoalCard goal={goal} primary={index === 0} key={goal.id} onView={() => onView(goal.id)} />
+              <Reveal key={goal.id} delay={105 + index * 70}>
+                <GoalCard goal={goal} primary={index === 0} onView={() => onView(goal.id)} />
+              </Reveal>
             ))}
           </div>
         )}
-        {goals.length > 0 && <button className="btn btn-primary goal-full-button" onClick={onCreate}>Create another goal</button>}
+        {goals.length > 0 && (
+          <Reveal delay={105 + filtered.length * 70}>
+            <button className="btn btn-primary goal-full-button" onClick={onCreate}>Create another goal</button>
+          </Reveal>
+        )}
       </div>
     </div>
   );

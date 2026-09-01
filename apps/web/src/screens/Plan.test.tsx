@@ -100,6 +100,16 @@ describe("Plan", () => {
     expect(screen.getByText("Emergency top-up")).toBeInTheDocument();
   });
 
+  it("uses the shared reveal motion when Goals is selected", async () => {
+    renderPlan({ initialView: "daily" });
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("tab", { name: "Goals" }));
+
+    expect(screen.getByText("What are you saving toward?").closest(".rv")).not.toBeNull();
+    expect(screen.getByRole("group", { name: "Filter goals" }).closest(".rv")).not.toBeNull();
+  });
+
   it("states the assumption next to the number, not in a tooltip", async () => {
     renderPlan();
     await openForesight();
