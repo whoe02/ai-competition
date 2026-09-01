@@ -30,6 +30,9 @@ services:
       DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
       BUTLER_MODEL: ${BUTLER_MODEL:-qwen3.7-flash}
       BUTLER_FALLBACK_MODEL: ${BUTLER_FALLBACK_MODEL:-qwen3.6-plus}
+      BUTLER_TURN_BUDGET_SECONDS: ${BUTLER_TURN_BUDGET_SECONDS:-15}
+      BUTLER_REASONING_TEMPERATURE: ${BUTLER_REASONING_TEMPERATURE:-0.0}
+      BUTLER_COMPOSE_TEMPERATURE: ${BUTLER_COMPOSE_TEMPERATURE:-0.6}
       # Road distances for the day planner. Off, or with the router unreachable
       # from the venue, every place comes back labelled "straight line" and the
       # screen says so rather than quoting a fare it cannot stand behind.
