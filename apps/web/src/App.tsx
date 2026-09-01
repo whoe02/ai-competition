@@ -131,6 +131,10 @@ export function App() {
       </div>
 
       <div className="device">
+        <span className="device-control device-action" aria-hidden="true" />
+        <span className="device-control device-volume-up" aria-hidden="true" />
+        <span className="device-control device-volume-down" aria-hidden="true" />
+        <span className="device-control device-power" aria-hidden="true" />
         <div
           className={`screen ${dark ? "dim" : ""}`}
           ref={screenRef}

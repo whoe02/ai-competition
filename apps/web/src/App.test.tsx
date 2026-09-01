@@ -258,6 +258,15 @@ afterEach(() => {
 });
 
 describe("App", () => {
+  it("renders the iPhone-style hardware shell around the app", () => {
+    const { container } = renderApp();
+
+    expect(container.querySelector(".device-notch")).toBeInTheDocument();
+    expect(container.querySelector(".notch-camera")).toBeInTheDocument();
+    expect(container.querySelectorAll(".device-control")).toHaveLength(4);
+    expect(container.querySelector(".device-power")).toBeInTheDocument();
+  });
+
   it("shows the login gate before authentication", async () => {
     renderApp();
     expect(await screen.findByRole("button", { name: /sign in/i })).toBeInTheDocument();

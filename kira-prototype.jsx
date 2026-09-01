@@ -61,15 +61,24 @@ const STYLES = `
 /* ---------- device ---------- */
 .device{
   width:390px;max-width:100%;height:820px;position:relative;
-  border-radius:46px;padding:9px;
-  background:linear-gradient(150deg,#303433 0%,#080A09 30%,#000 68%,#292D2B 100%);
-  box-shadow:0 40px 90px -34px rgba(15,28,26,.65), 0 1px 0 rgba(255,255,255,.22) inset,
-    0 0 0 1px rgba(0,0,0,.78);
+  border-radius:53px;padding:7px;overflow:visible;isolation:isolate;
+  background:linear-gradient(108deg,#121B20 0%,#4D5C60 5%,#151D21 14%,#071014 48%,#1B292F 88%,#5F6B6D 100%);
+  box-shadow:0 40px 90px -34px rgba(8,17,20,.72),0 0 0 1px #05090B,0 0 0 2px rgba(139,157,158,.48),
+    0 1px 0 rgba(238,247,243,.38) inset,0 -1px 0 rgba(0,0,0,.7) inset;
   animation:deviceIn 1.1s var(--spring) both;
 }
+.device::before{content:'';position:absolute;inset:2px;border:1px solid rgba(224,237,233,.26);border-radius:51px;
+  box-shadow:0 0 0 1px rgba(5,11,13,.66) inset;pointer-events:none;z-index:5;}
+.device-control{position:absolute;display:block;z-index:6;width:5px;border-radius:4px;pointer-events:none;
+  background:linear-gradient(90deg,#080C0E 0%,#718083 45%,#1C272A 100%);box-shadow:0 0 0 1px rgba(0,0,0,.72),0 1px 1px rgba(218,233,227,.34) inset;}
+.device-action{left:-4px;top:105px;height:29px;}
+.device-volume-up{left:-4px;top:153px;height:45px;}
+.device-volume-down{left:-4px;top:207px;height:45px;}
+.device-power{right:-4px;top:151px;height:76px;}
 @keyframes deviceIn{from{opacity:0;transform:translateY(26px) scale(.965);}to{opacity:1;transform:none;}}
 
-.screen{position:relative;height:100%;width:100%;border-radius:38px;overflow:hidden;display:flex;flex-direction:column;isolation:isolate;}
+.screen{position:relative;z-index:1;height:100%;width:100%;border-radius:46px;overflow:hidden;display:flex;flex-direction:column;isolation:isolate;
+  box-shadow:0 0 0 1px rgba(0,0,0,.74),0 1px 1px rgba(255,255,255,.16) inset;}
 .screen::before,.screen::after{content:'';position:absolute;inset:0;z-index:-2;}
 .screen::before{background:var(--paper);}
 .screen::after{background:linear-gradient(178deg,#162924 0%,var(--ink) 58%);opacity:0;transition:opacity .62s var(--spring);}
@@ -87,28 +96,29 @@ const STYLES = `
   100%{transform:translate3d(0,-72px,0) scale(1);}
 }
 
-.statusbar{height:42px;flex:none;display:flex;align-items:flex-start;justify-content:space-between;padding:11px 19px 0;
-  font-size:12px;font-weight:700;color:var(--ink);position:relative;z-index:30;transition:color .5s ease;}
+.statusbar{height:49px;flex:none;display:flex;align-items:flex-start;justify-content:space-between;padding:14px 20px 0;
+  font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;font-size:13px;font-weight:650;
+  font-variant-numeric:tabular-nums;letter-spacing:.01em;color:var(--ink);position:relative;z-index:30;transition:color .5s ease;}
 .screen.dim .statusbar{color:#E9EDE9;}
 .status-time,.status-icons{position:relative;z-index:2;}
-.status-icons{display:flex;gap:6px;align-items:center;height:13px;}
-.device-notch{position:absolute;z-index:1;left:50%;top:0;width:202px;height:31px;transform:translateX(-50%);
-  display:flex;align-items:center;justify-content:center;gap:11px;background:#030403;border-radius:0 0 19px 19px;
-  box-shadow:0 1px 0 rgba(255,255,255,.04) inset,0 1px 2px rgba(0,0,0,.18);}
-.notch-speaker{width:48px;height:5px;border-radius:999px;background:#1B1E1D;
-  box-shadow:0 1px 1px rgba(255,255,255,.06) inset;}
-.notch-camera{width:8px;height:8px;border-radius:50%;background:radial-gradient(circle at 62% 38%,#22496A 0 10%,#10293D 24%,#080E12 58%,#010202 72%);
-  box-shadow:0 0 0 1px #111514,0 0 4px rgba(41,91,132,.35) inset;}
-.sb-signal{height:12px;display:flex;gap:2px;align-items:flex-end;}
-.sb-signal i{width:2.5px;border-radius:1px;background:currentColor;display:block;}
+.status-time{line-height:14px;}
+.status-icons{display:flex;gap:4px;align-items:center;height:14px;transform:translateY(1px);}
+.device-notch{position:absolute;z-index:1;left:50%;top:9px;width:109px;height:30px;transform:translateX(-50%);
+  display:flex;align-items:center;justify-content:center;gap:10px;background:linear-gradient(105deg,#050708,#12191B 58%,#050708);
+  border-radius:999px;box-shadow:0 1px 1px rgba(255,255,255,.08) inset,0 1px 3px rgba(0,0,0,.32);}
+.notch-speaker{position:absolute;left:32px;width:38px;height:4px;border-radius:999px;background:#090D0E;box-shadow:0 1px 1px rgba(255,255,255,.05) inset;}
+.notch-camera{position:absolute;right:18px;width:8px;height:8px;border-radius:50%;background:radial-gradient(circle at 62% 38%,#29567C 0 11%,#123752 26%,#0A151C 57%,#010203 73%);
+  box-shadow:0 0 0 1px #151C1E,0 0 5px rgba(41,91,132,.42) inset;}
+.sb-signal{height:12px;display:flex;gap:1.5px;align-items:flex-end;}
+.sb-signal i{width:2.4px;border-radius:1px;background:currentColor;display:block;}
 .sb-signal i:nth-child(1){height:4px}.sb-signal i:nth-child(2){height:7px}
-.sb-signal i:nth-child(3){height:10px}.sb-signal i:nth-child(4){height:12px}
-.sb-wifi{width:16px;height:13px;overflow:visible;fill:currentColor;stroke:currentColor;stroke-width:1.8;
+.sb-signal i:nth-child(3){height:9px}.sb-signal i:nth-child(4){height:12px}
+.sb-wifi{width:15px;height:13px;overflow:visible;fill:currentColor;stroke:currentColor;stroke-width:1.8;
   stroke-linecap:round;fill:none;}
 .sb-wifi circle{fill:currentColor;stroke:none;}
-.sb-batt{width:20px;height:10px;border:1.3px solid currentColor;border-radius:3px;position:relative;display:block;}
-.sb-batt::after{content:'';position:absolute;right:-3px;top:2px;width:1.5px;height:4px;border-radius:0 1px 1px 0;background:currentColor;opacity:.55;}
-.sb-batt i{position:absolute;inset:1.5px;background:currentColor;border-radius:1px;display:block;}
+.sb-batt{width:21px;height:10px;border:1.25px solid currentColor;border-radius:3px;position:relative;display:block;}
+.sb-batt::after{content:'';position:absolute;right:-3px;top:2.1px;width:1.6px;height:4px;border-radius:0 1px 1px 0;background:currentColor;opacity:.56;}
+.sb-batt i{position:absolute;inset:1.5px;background:currentColor;border-radius:1.2px;display:block;}
 
 .viewport{flex:1;overflow-y:auto;overflow-x:hidden;scrollbar-width:none;position:relative;}
 .viewport::-webkit-scrollbar{display:none;}
@@ -1115,6 +1125,10 @@ export default function Kira() {
       </div>
 
       <div className="device">
+        <span className="device-control device-action" aria-hidden="true" />
+        <span className="device-control device-volume-up" aria-hidden="true" />
+        <span className="device-control device-volume-down" aria-hidden="true" />
+        <span className="device-control device-power" aria-hidden="true" />
         <div className={`screen ${dark ? "dim" : ""}`} ref={screenRef} style={{ "--dir": dir }}>
           <Motes />
 
