@@ -545,6 +545,27 @@ class ScenarioComparisonResponse(ResponseModel):
     results: list[ScenarioResultOut]
 
 
+class AdviceDayOut(ResponseModel):
+    on: date
+    advised: MoneyOut
+    actual: MoneyOut
+    followed: bool
+
+
+class HindsightResponse(ResponseModel):
+    window_days: int
+    days: int
+    followed: int
+    follow_rate_bp: int
+    mean_abs_deviation: MoneyOut
+    counterfactual_gain: MoneyOut
+    goal_id: str | None
+    probability_bp_now: int | None
+    probability_bp_if_followed: int | None
+    recent: list[AdviceDayOut]
+    assumption: str
+
+
 class BriefingRunResponse(ResponseModel):
     id: uuid.UUID
     on_date: date

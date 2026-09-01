@@ -24,6 +24,7 @@ from kira.api.routers import (
     dashboard,
     day_plan,
     foresight,
+    hindsight,
     goals,
     transactions,
 )
@@ -101,6 +102,7 @@ def create_app(*, static_dir: Path | None = None) -> FastAPI:
     app.include_router(capture.router)
     app.include_router(categories.router)
     app.include_router(foresight.router)
+    app.include_router(hindsight.router)
     app.include_router(briefings.router)
     app.include_router(day_plan.router)
     app.include_router(goals.router)

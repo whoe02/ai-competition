@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
-import type { ButlerThread, Capture, Category } from "@kira/contracts";
+import type { ButlerThread, Capture, Category, HindsightResponse } from "@kira/contracts";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { ask, decide, type ButlerEvent, type EvidenceRow } from "../api/butler";
@@ -13,6 +13,7 @@ import {
 } from "../api/hooks";
 import { IcArrow, IcCam, IcImg, IcMic } from "../components/Icons";
 import { ScanSheet } from "../components/ScanSheet";
+import { TrackRecord } from "../components/TrackRecord";
 import { VoiceSheet } from "../components/VoiceSheet";
 import { takeButlerHandoff } from "../lib/butlerHandoff";
 
@@ -58,6 +59,8 @@ type ButlerProps = {
   thread: ButlerThread | undefined;
   isLoading: boolean;
   categories?: Category[];
+  /** Kira's own record, shown above the thread. Absent until it has one. */
+  record?: HindsightResponse;
   /** A question raised elsewhere — the entry sheet — for this screen to ask. */
   pending?: { text: string; attachment?: Attachment } | null;
   onPendingAsked?: () => void;
@@ -67,6 +70,7 @@ export function Butler({
   thread,
   isLoading,
   categories,
+  record,
   pending,
   onPendingAsked,
 }: ButlerProps) {
@@ -255,6 +259,8 @@ export function Butler({
         className="pad"
         style={{ paddingBottom: 176, display: "flex", flexDirection: "column", gap: 20 }}
       >
+        <TrackRecord data={record} />
+
         {turns.length === 0 && !isLoading && (
           <p
             className="voice"

@@ -455,6 +455,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/hindsight": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Hindsight */
+        get: operations["get_hindsight_v1_hindsight_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/briefings/today": {
         parameters: {
             query?: never;
@@ -693,6 +710,18 @@ export interface components {
             spent_this_cycle_sen: number;
             /** Categories */
             categories: components["schemas"]["CategorySummaryResponse"][];
+        };
+        /** AdviceDayOut */
+        AdviceDayOut: {
+            /**
+             * On
+             * Format: date
+             */
+            on: string;
+            advised: components["schemas"]["MoneyOut"];
+            actual: components["schemas"]["MoneyOut"];
+            /** Followed */
+            followed: boolean;
         };
         /** ApprovalDecisionRequest */
         ApprovalDecisionRequest: {
@@ -1432,6 +1461,29 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** HindsightResponse */
+        HindsightResponse: {
+            /** Window Days */
+            window_days: number;
+            /** Days */
+            days: number;
+            /** Followed */
+            followed: number;
+            /** Follow Rate Bp */
+            follow_rate_bp: number;
+            mean_abs_deviation: components["schemas"]["MoneyOut"];
+            counterfactual_gain: components["schemas"]["MoneyOut"];
+            /** Goal Id */
+            goal_id: string | null;
+            /** Probability Bp Now */
+            probability_bp_now: number | null;
+            /** Probability Bp If Followed */
+            probability_bp_if_followed: number | null;
+            /** Recent */
+            recent: components["schemas"]["AdviceDayOut"][];
+            /** Assumption */
+            assumption: string;
         };
         /** LeverIn */
         LeverIn: {
@@ -2476,6 +2528,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ScenarioComparisonResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_hindsight_v1_hindsight_get: {
+        parameters: {
+            query?: {
+                window?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HindsightResponse"];
                 };
             };
             /** @description Validation Error */

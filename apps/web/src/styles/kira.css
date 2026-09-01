@@ -270,6 +270,18 @@
 .ev-row{display:flex;justify-content:space-between;gap:12px;font-size:12px;animation:rowIn .5s var(--spring) both;}
 .ev-row span{color:rgba(233,237,233,.55);}
 .ev-row b{font-weight:700;font-variant-numeric:tabular-nums;color:#E7ECE7;}
+/* Kira's own record: on the ink surface, quiet until it is opened. */
+.record{border:1px solid rgba(201,164,92,.28);border-radius:18px;background:rgba(233,237,233,.045);overflow:hidden;}
+.record-head{width:100%;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 15px;text-align:left;}
+.record-head b{display:block;margin-top:4px;font-size:13px;line-height:1.35;letter-spacing:-.01em;color:#E7ECE7;}
+.record-head>span{font-family:'Newsreader',serif;font-style:italic;font-size:21px;color:var(--brass-lit);
+  font-variant-numeric:tabular-nums;flex:none;}
+.record-detail{padding:0 15px 14px;display:flex;flex-direction:column;gap:8px;animation:fadeUp .5s var(--spring) both;}
+.record-strip{display:flex;gap:4px;margin-top:5px;}
+.record-strip i{flex:1;height:7px;border-radius:3px;background:rgba(201,164,92,.32);}
+.record-strip i.over{background:rgba(214,122,96,.72);}
+.record-note{margin:4px 0 0;font-size:11px;line-height:1.5;color:rgba(233,237,233,.55);}
+
 .approval{margin-top:14px;background:rgba(233,237,233,.055);border:1px solid rgba(201,164,92,.34);border-radius:18px;padding:15px;
   animation:approvalIn .75s var(--spring-2) .7s both;}
 @keyframes approvalIn{from{opacity:0;transform:translateY(22px) scale(.94);}to{opacity:1;transform:none;}}

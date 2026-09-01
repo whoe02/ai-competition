@@ -12,6 +12,7 @@ import {
   useDiscardDraft,
   useCategories,
   useForesight,
+  useHindsight,
   useMemories,
   useUnconfirm,
 } from "./api/hooks";
@@ -48,6 +49,7 @@ export function App() {
   const dashboard = useDashboardToday(signedIn);
   const briefing = useBriefingToday(signedIn);
   const foresight = useForesight(signedIn && tab === "plan");
+  const hindsight = useHindsight(signedIn && tab === "butler");
   const [category, setCategory] = useState<string | null>(null);
   const activity = useActivity(signedIn && tab === "activity", category);
   // The thread is fetched once the user signs in, not on first open: the
@@ -193,6 +195,7 @@ export function App() {
                     <Butler
                       thread={butler.data}
                       isLoading={butler.isLoading}
+                      record={hindsight.data}
                       categories={categories.data}
                       pending={pending}
                       onPendingAsked={() => setPending(null)}
