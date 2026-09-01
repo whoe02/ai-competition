@@ -6,11 +6,18 @@ import { balancedScore, bestFitId, REASONABLE_MINUTES, sortPlaces } from "./plac
 
 const ROOM_SEN = 5297;
 
-function place(id: string, totalSen: number, minutes: number, over = false): Place {
+function place(
+  id: string,
+  totalSen: number,
+  minutes: number,
+  over = false,
+  matchBasis: Place["match_basis"] = null,
+): Place {
   return {
     id,
     name: id,
     kind: "Cafe",
+    match_basis: matchBasis,
     address: "Kuala Lumpur",
     lat: 3.1577,
     lng: 101.712,
@@ -81,6 +88,48 @@ describe("sortPlaces", () => {
   it("handles an empty list and a single place", () => {
     expect(sortPlaces([], "balanced")).toEqual([]);
     expect(ids(sortPlaces([FAR], "balanced"))).toEqual(["far"]);
+  });
+
+  /**
+   * A kind filter matches the map's own tags and also what a model believes a
+   * place serves beyond them, so the list holds two different sorts of claim.
+   * Where the axis has run out of things to say between two of them, the one
+   * the map records goes first.
+   */
+  describe("a tag against a belief", () => {
+    // "a" sorts ahead of "b", so the belief wins on the old id tie-break and
+    // the new rule is the only thing that can reverse it.
+    const GUESSED = place("a", 1600, 14, false, "inferred");
+    const RECORDED = place("b", 1600, 14, false, "tagged");
+
+    it("puts the tag first where the axis is level, on every sort", () => {
+      const orders = (["balanced", "cheapest", "closest"] as const).map((sort) =>
+        ids(sortPlaces([GUESSED, RECORDED], sort)),
+      );
+      expect(orders).toEqual([["b", "a"], ["b", "a"], ["b", "a"]]);
+    });
+
+    it("leaves a cheaper belief in front of a dearer tag", () => {
+      // The tie-break decides ties. A basis that outranked money would be
+      // re-ordering the list on something the user cannot see, beside figures
+      // they can.
+      const dearer = place("b", 2400, 14, false, "tagged");
+      expect(ids(sortPlaces([dearer, GUESSED], "cheapest"))).toEqual(["a", "b"]);
+    });
+
+    it("leaves a list nobody narrowed exactly as it was", () => {
+      // No kind was asked for, so nothing matched anything and every basis is
+      // null. The old ordering has to survive that untouched.
+      const flat = [place("b", 1200, 20), place("a", 1200, 20)];
+      expect(ids(sortPlaces(flat, "balanced"))).toEqual(["a", "b"]);
+    });
+
+    it("badges neither of them, because neither won", () => {
+      // The basis settles who is drawn first. It is not a victory, and "Best
+      // fit" is a claim about winning on the axis being sorted by.
+      const ordered = sortPlaces([GUESSED, RECORDED], "cheapest");
+      expect(bestFitId(ordered, "cheapest", "walk")).toBeNull();
+    });
   });
 });
 

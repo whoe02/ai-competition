@@ -558,6 +558,186 @@ class TestAPlaceWithSeveralKinds:
         assert only.kinds == ("Mamak",)
 
 
+class TestAPlaceAModelBelievesSomethingAbout:
+    """A kind filter reaches what the map states and what a model believes.
+
+    OpenStreetMap's cuisine tag is one or two words and a menu is not, so a
+    place is often findable by nothing it actually sells: McDonald's is tagged
+    burger and stops there, though it fries chicken all day. No refresh reaches
+    that, and the generator asks a model once at build time instead. A chicken
+    search has to reach that burger shop -- and the user has to go on being able
+    to tell it from the shop the map really does call chicken, because one is
+    known and the other is believed.
+
+    The world is four places, all a walk away so every total is the meal alone,
+    and the believed chicken place is listed ahead of the tagged one at the same
+    price so the ranking below has something to prove.
+    """
+
+    async def _search(self, world, kind: str | None = None, cap_sen: int = 100_000):
+        with serving(places=world.believed):
+            return await find_places(
+                **world.origin,
+                mode="walk",
+                halal_only=False,
+                cap_sen=cap_sen,
+                room_sen=100_000,
+                kind=kind,
+            )
+
+    async def test_a_belief_is_enough_to_be_found_at_all(self, place_world):
+        """The whole point: the burger shop comes back from a chicken search."""
+        found = await self._search(place_world, "Chicken")
+        assert place_world.believed_chicken.name in [p.name for p in found.places]
+        # And it is still the burger shop. A wider search does not rename it.
+        found_it = next(p for p in found.places if p.id == place_world.believed_chicken.id)
+        assert found_it.kind == "Burger"
+
+    async def test_a_believed_match_says_it_was_believed(self, place_world):
+        found = await self._search(place_world, "Chicken")
+        by_id = {p.id: p for p in found.places}
+        assert by_id[place_world.believed_chicken.id].match_basis == "inferred"
+
+    async def test_a_tagged_match_says_it_was_tagged(self, place_world):
+        found = await self._search(place_world, "Chicken")
+        by_id = {p.id: p for p in found.places}
+        assert by_id[place_world.tagged_chicken.id].match_basis == "tagged"
+
+    async def test_a_place_matching_both_ways_is_tagged_and_not_inferred(self, place_world):
+        """The stronger of the two answers, where the record gives both.
+
+        A place the map calls chicken is not made a guess by a model agreeing
+        with it, and "inferred" on a row the map really does tag would be the
+        screen apologising for something it knows.
+        """
+        found = await self._search(place_world, "Chicken")
+        by_id = {p.id: p for p in found.places}
+        assert by_id[place_world.both_ways.id].match_basis == "tagged"
+
+    async def test_a_place_can_be_tagged_for_one_word_and_believed_for_another(
+        self, place_world
+    ):
+        # The same shop, twice, under two words: the map states it is a burger
+        # place and a model believes it also does chicken.
+        by_tag = await self._search(place_world, "Burger")
+        (only,) = by_tag.places
+        assert only.id == place_world.believed_chicken.id
+        assert only.match_basis == "tagged"
+
+    async def test_a_place_believed_nothing_relevant_is_still_turned_away(self, place_world):
+        """A widened filter is not a dropped one."""
+        found = await self._search(place_world, "Chicken")
+        assert place_world.no_chicken.id not in {p.id for p in found.places}
+        # It is handed back as a near miss instead, and with no basis at all --
+        # it matched nothing, so there is nothing to say about why.
+        (near,) = found.near_misses
+        assert near.id == place_world.no_chicken.id
+        assert near.match_basis is None
+
+    async def test_no_kind_asked_for_leaves_every_place_without_a_basis(self, place_world):
+        # Nothing was matched, so nothing has a reason for having matched. A
+        # basis on an unfiltered list would be a claim about a question the user
+        # never asked.
+        found = await self._search(place_world)
+        assert len(found.places) == 4
+        assert {p.match_basis for p in found.places} == {None}
+
+    async def test_a_tag_ranks_above_a_belief_where_nothing_else_separates_them(
+        self, place_world
+    ):
+        """Both cost RM16 and both are a walk away; one is known, one is guessed.
+
+        The world hands them over belief-first, so a run that ranked on price
+        alone would leave the belief on top.
+        """
+        found = await self._search(place_world, "Chicken")
+        assert [p.id for p in found.places] == [
+            place_world.tagged_chicken.id,
+            place_world.believed_chicken.id,
+            place_world.both_ways.id,
+        ]
+        assert [p.match_basis for p in found.places] == ["tagged", "inferred", "tagged"]
+
+    async def test_it_does_not_otherwise_disturb_the_price_order(self, place_world):
+        """A cheaper belief still beats a dearer tag. The basis breaks ties only.
+
+        Ayam Dua Kali is tagged chicken and RM3 dearer than the burger shop that
+        is merely believed to do it, and it stays below it. A basis that
+        outranked money would be re-sorting the list on something the user
+        cannot see beside a figure they can.
+        """
+        found = await self._search(place_world, "Chicken")
+        assert [p.total_sen for p in found.places] == [1600, 1600, 1900]
+
+    async def test_the_counts_say_what_the_widened_filter_did(self, place_world):
+        found = await self._search(place_world, "Chicken")
+        # Nothing was dropped before the kind filter ran.
+        assert found.nearby_count == found.matching_count == 4
+        # Three of the four are chicken on one footing or the other, and the
+        # count is places rather than matches -- the one tagged and believed
+        # both is one place.
+        assert found.kind_count == 3
+        assert len(found.places) == 3
+
+    async def test_the_landscape_counts_a_belief_and_still_agrees_with_the_list(
+        self, place_world
+    ):
+        """The invariant a wider filter could quietly have broken.
+
+        A row promises a filter: this many places, none cheaper than this. Count
+        only the tags and the chicken row would say two while a search for
+        chicken hands back three -- the landscape contradicting the list under
+        it. So a belief counts, and the row says nothing about which of its
+        places rest on one; that is on the rows themselves.
+        """
+        wide = await self._search(place_world)
+        rows = {row.kind: row for row in wide.landscape}
+        assert set(rows) == {"Chicken", "Burger", "Noodles"}
+        assert (rows["Chicken"].count, rows["Chicken"].cheapest_total_sen) == (3, 1600)
+        assert (rows["Burger"].count, rows["Burger"].cheapest_total_sen) == (1, 1600)
+        assert (rows["Noodles"].count, rows["Noodles"].cheapest_total_sen) == (1, 1200)
+        for row in wide.landscape:
+            narrow = await self._search(place_world, row.kind)
+            assert narrow.kind_count == row.count, row.kind
+            assert len(narrow.places) == row.count, row.kind
+            assert min(p.total_sen for p in narrow.places) == row.cheapest_total_sen, row.kind
+
+    async def test_a_place_saying_the_same_thing_twice_is_counted_once(self, place_world):
+        # Ayam Dua Kali is tagged chicken and believed to do chicken. Counted
+        # under both, the chicken row would promise four places where a search
+        # returns three.
+        wide = await self._search(place_world)
+        chicken = next(row for row in wide.landscape if row.kind == "Chicken")
+        assert chicken.count == 3
+
+    async def test_the_basis_survives_the_ceiling_turning_everything_away(self, place_world):
+        # ``nearest_over_cap`` is the same places under a ceiling they failed,
+        # so the reason each is on it has to travel with them -- otherwise the
+        # one list a client draws as "what the money would have to stretch to"
+        # is the one list that cannot say what it is offering.
+        found = await self._search(place_world, "Chicken", cap_sen=100)
+        assert found.places == ()
+        assert [p.match_basis for p in found.nearest_over_cap] == [
+            "tagged",
+            "inferred",
+            "tagged",
+        ]
+
+    async def test_a_belief_moves_no_figure(self, place_world):
+        """A place must not read cheaper, dearer or nearer for being believed."""
+        wide = await self._search(place_world)
+        narrow = await self._search(place_world, "Chicken")
+        for place in narrow.places:
+            twin = next(p for p in wide.places if p.id == place.id)
+            assert (place.total_sen, place.travel_sen, place.minutes, place.km) == (
+                twin.total_sen,
+                twin.travel_sen,
+                twin.minutes,
+                twin.km,
+            )
+            assert (place.kind, place.kinds) == (twin.kind, twin.kinds)
+
+
 class TestWhatTheKindFilterTurnedAway:
     """The places a filter for chicken excluded, handed back on purpose.
 

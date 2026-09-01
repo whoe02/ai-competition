@@ -576,6 +576,69 @@ class TestTheOfflineAnswerHasNoMenuInItsHead:
         assert not any("Noodles" in value for value in also)
 
 
+class TestTheOfflineAnswerSaysWhichMatchesWereGuessed:
+    """The widened filter reaches the offline demo for free, and it has to.
+
+    ``also_serves`` is baked into the shipped file, so a search offline matches
+    the same beliefs an online one does and the list is the same width. What
+    offline cannot do is stand behind them: there is no model here, only a
+    handful of regexes, and "it does chicken" is a menu nothing in this process
+    has read. So the reason travels with the place and the sentence says only
+    that -- why the shop is on the list, never what it sells.
+    """
+
+    async def test_it_says_a_named_place_is_here_on_a_belief(
+        self, session, butler, today, place_world
+    ):
+        with serving(places=place_world.believed):
+            result = await ask(session, butler, today, "Where can I eat chicken nearby?")
+        # The tagged pair lead on price and the burger shop is named after them,
+        # so the sentence has to reach past the first name to qualify it.
+        assert place_world.tagged_chicken.name in result.answer
+        assert (
+            f"{place_world.believed_chicken.name} is on this list on a belief that it "
+            "also does chicken, not on a tag saying so." in result.answer
+        )
+
+    async def test_it_says_it_of_the_place_it_led_with(
+        self, session, butler, today, place_world
+    ):
+        with serving(places=(place_world.believed_chicken, place_world.no_chicken)):
+            result = await ask(session, butler, today, "Where can I eat chicken nearby?")
+        assert f"{place_world.believed_chicken.name} — RM16 " in result.answer
+        assert "is on this list on a belief that it also does chicken" in result.answer
+
+    async def test_it_claims_nothing_about_what_the_place_serves(
+        self, session, butler, today, place_world
+    ):
+        # The one sentence this composer may not write. It has read no menu, and
+        # "also does chicken" said flatly is a menu -- said of the shop rather
+        # than of the record, and unbacked by anything in this process.
+        with serving(places=(place_world.believed_chicken, place_world.no_chicken)):
+            result = await ask(session, butler, today, "Where can I eat chicken nearby?")
+        name = place_world.believed_chicken.name
+        assert f"{name} does chicken" not in result.answer
+        assert f"{name} serves chicken" not in result.answer
+        assert f"{name} also does chicken" not in result.answer
+
+    async def test_a_tagged_list_is_qualified_by_nothing(
+        self, session, butler, today, place_world
+    ):
+        # Nothing believed among the names, so nothing to say. A qualification
+        # on a list of tags would be an apology for data that is not a guess.
+        with serving(places=(place_world.tagged_chicken, place_world.both_ways)):
+            result = await ask(session, butler, today, "Where can I eat chicken nearby?")
+        assert place_world.tagged_chicken.name in result.answer
+        assert "on a belief" not in result.answer
+
+    async def test_a_list_nobody_narrowed_is_qualified_by_nothing_either(
+        self, session, butler, today, place_world
+    ):
+        with serving(places=place_world.believed):
+            result = await ask(session, butler, today, "Where can I eat nearby?")
+        assert "on a belief" not in result.answer
+
+
 class TestTheTurnThatWritesTheAnswerIsToldTheRules:
     """Where the near-miss rules have to be, rather than where they were.
 

@@ -194,6 +194,86 @@ class TestAskingForOneKindOfFood:
         assert "matches nothing" in described
 
 
+class TestWhyEachPlaceMatchedTheKind:
+    """Two different claims arrive in one list, so the rows have to keep them apart.
+
+    A kind filter matches what OpenStreetMap states about a place and what a
+    model believed about it at build time. The second is what makes a chicken
+    search reach the burger shop, and it is also the one a model must not read
+    back as though the map had said it -- so every row carries the reason it is
+    there, and the panel says it too for the one that gets named.
+    """
+
+    async def _build_it(self, session, user, today, world, **kwargs):
+        context = await context_for(session, user, today)
+        with serving(places=world.believed):
+            return await _build(context, PlanArgs(**{"cap_sen": 100_000, **world.origin, **kwargs}))
+
+    async def test_every_row_carries_the_basis_it_matched_on(
+        self, session, user, today, place_world
+    ):
+        result = await self._build_it(session, user, today, place_world, kind="Chicken")
+        assert [(p["name"], p["match_basis"]) for p in result.value["places"]] == [
+            (place_world.tagged_chicken.name, "tagged"),
+            (place_world.believed_chicken.name, "inferred"),
+            (place_world.both_ways.name, "tagged"),
+        ]
+
+    async def test_a_row_nobody_narrowed_carries_no_basis(
+        self, session, user, today, place_world
+    ):
+        result = await self._build_it(session, user, today, place_world)
+        assert all(p["match_basis"] is None for p in result.value["places"])
+
+    async def test_the_panel_says_the_leading_place_was_believed_rather_than_tagged(
+        self, session, user, today, place_world
+    ):
+        # The panel is what the user reads against the answer. A place on the
+        # list because something guessed at its menu must not sit in it looking
+        # like one the map records.
+        result = await self._build_it(
+            session, user, today, place_world, kind="Chicken", cap_sen=1700
+        )
+        # The tagged pair cost RM19; the ceiling leaves the believed one alone
+        # at the top of the list.
+        assert [p["name"] for p in result.value["places"]] == [
+            place_world.tagged_chicken.name,
+            place_world.believed_chicken.name,
+        ]
+        evidence = dict(row.as_pair() for row in result.evidence)
+        assert evidence["Matched on"] == "Chicken — tagged"
+
+    async def test_the_panel_names_the_belief_when_a_belief_is_what_leads(
+        self, session, user, today, place_world
+    ):
+        with serving(places=(place_world.believed_chicken, place_world.no_chicken)):
+            context = await context_for(session, user, today)
+            result = await _build(
+                context, PlanArgs(cap_sen=100_000, kind="Chicken", **place_world.origin)
+            )
+        assert [p["name"] for p in result.value["places"]] == [
+            place_world.believed_chicken.name
+        ]
+        evidence = dict(row.as_pair() for row in result.evidence)
+        assert evidence["Matched on"] == "Chicken — believed, not tagged"
+
+    async def test_no_kind_asked_for_leaves_the_panel_without_the_row(
+        self, session, user, today, place_world
+    ):
+        # Nothing matched anything, so there is no basis to state and a row
+        # saying so would be answering a question nobody asked.
+        result = await self._build_it(session, user, today, place_world)
+        assert "Matched on" not in dict(row.as_pair() for row in result.evidence)
+
+    def test_the_description_tells_the_model_a_belief_is_not_a_menu(self):
+        described = next(spec for spec in SPECS if spec.name == "build_day_plan").description
+        assert "match_basis" in described
+        assert "`tagged`" in described and "`inferred`" in described
+        # The line that matters: a wider list is not a licence to assert what a
+        # place serves.
+        assert "never that anyone read a menu" in described
+
+
 class TestWhatTheToolAsksTheModelToDoWithIt:
     """The description is the whole of the online mechanism. Handed twelve
     places and no instruction, a model summarises them -- "all five halal

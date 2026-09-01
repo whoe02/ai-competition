@@ -103,13 +103,15 @@ class PlaceWorld:
     ``crowd`` is a separate, larger world for the one question the seven cannot
     answer: what a caller does when there are more places than it means to hand
     back. ``multi_kind`` is a separate world for another one: a place that
-    serves two kinds of food. Nothing else uses either, so the seven stay small
-    enough to reason about.
+    serves two kinds of food. ``believed`` is a third, for what a model thinks a
+    place serves beyond its tags. Nothing else uses any of them, so the seven
+    stay small enough to reason about.
     """
 
     places: tuple[Place, ...]
     crowd: tuple[Place, ...]
     multi_kind: tuple[Place, ...]
+    believed: tuple[Place, ...]
     origin: dict[str, float]
     out_of_range: dict[str, float]
     lone_non_halal: dict[str, float]
@@ -123,6 +125,10 @@ class PlaceWorld:
     two_kinds: Place
     one_kind: Place
     other_kind: Place
+    tagged_chicken: Place
+    believed_chicken: Place
+    both_ways: Place
+    no_chicken: Place
 
 
 _CHEAP = Place(
@@ -289,10 +295,86 @@ _OTHER_KIND = Place(
     address="3 Jalan Ayam, Kuala Lumpur",
 )
 
+# A world of four for what a model believes about a menu. OpenStreetMap tags
+# McDonald's ``burger`` and stops there, and that it fries chicken all day is
+# world knowledge no tag carries -- so the generator asks a model once and ships
+# the answer in ``also_serves``. A kind filter matches either, and every place
+# it returns has to say which of the two kept it.
+#
+# All within walking distance, so the whole outing is the meal and every total
+# below is the price written here. The order matters and is not alphabetical:
+# the believed chicken place stands ahead of the tagged one at the same price,
+# so a run that had forgotten to rank a tag above a belief would hand back the
+# belief first.
+_BELIEVED_CHICKEN = Place(
+    "b1",
+    "Burger Bakar Satu",
+    # The McDonald's case exactly: tagged one thing, believed to also do
+    # another. A search for Burger finds it on a tag and a search for Chicken
+    # finds it on a belief -- the same place, and not the same claim.
+    "Burger",
+    _north(0.2),
+    _ORIGIN_LNG,
+    Money(1600),
+    "high",
+    True,
+    "Tagged a burger shop; a model believes it also does chicken.",
+    address="1 Jalan Percaya, Kuala Lumpur",
+    also_serves=("Chicken",),
+)
+_TAGGED_CHICKEN = Place(
+    "b2",
+    "Ayam Bertanda",
+    # Chicken because the map says so, and nothing is believed about it. The
+    # same price as the one above, so the two are level on everything the
+    # ranking looks at and the basis is the only thing left to separate them.
+    "Chicken",
+    _north(0.4),
+    _ORIGIN_LNG,
+    Money(1600),
+    "high",
+    True,
+    "Tagged chicken, with nothing believed about it either way.",
+    address="2 Jalan Percaya, Kuala Lumpur",
+)
+_BOTH_WAYS = Place(
+    "b3",
+    "Ayam Dua Kali",
+    # Tagged chicken and believed to do chicken: a record that says the same
+    # thing twice. The shipped generator drops a belief that restates a tag, but
+    # a maps adapter is not the generator, and a place matching on both footings
+    # has to come back as the stronger one rather than as two half-matches.
+    "Chicken",
+    _north(0.6),
+    _ORIGIN_LNG,
+    Money(1900),
+    "high",
+    True,
+    "Tagged chicken and believed to do chicken, which is the same claim twice.",
+    address="3 Jalan Percaya, Kuala Lumpur",
+    also_serves=("Chicken",),
+)
+_NO_CHICKEN = Place(
+    "b4",
+    "Mee Percaya",
+    # Neither tagged nor believed to do chicken, and the cheapest of the four --
+    # so a chicken search that quietly widened back out would put this at the
+    # top of its own list and be visible immediately.
+    "Noodles",
+    _north(0.9),
+    _ORIGIN_LNG,
+    Money(1200),
+    "high",
+    True,
+    "Nothing to do with chicken, on either footing.",
+    address="4 Jalan Percaya, Kuala Lumpur",
+)
+
 PLACE_WORLD = PlaceWorld(
     places=(_CHEAP, _MID, _NEAR_NON_HALAL, _PRICEY, _FAR_NON_HALAL, _NOODLES, _SECOND_CAFE),
     crowd=_CROWD,
     multi_kind=(_TWO_KINDS, _ONE_KIND, _OTHER_KIND),
+    believed=(_BELIEVED_CHICKEN, _TAGGED_CHICKEN, _BOTH_WAYS, _NO_CHICKEN),
     origin={"lat": _ORIGIN_LAT, "lng": _ORIGIN_LNG},
     # George Town, Penang: ~294 km from all seven.
     out_of_range={"lat": 5.4141, "lng": 100.3288},
@@ -310,6 +392,10 @@ PLACE_WORLD = PlaceWorld(
     two_kinds=_TWO_KINDS,
     one_kind=_ONE_KIND,
     other_kind=_OTHER_KIND,
+    tagged_chicken=_TAGGED_CHICKEN,
+    believed_chicken=_BELIEVED_CHICKEN,
+    both_ways=_BOTH_WAYS,
+    no_chicken=_NO_CHICKEN,
 )
 
 

@@ -24,8 +24,8 @@ from kira.api.routers import (
     dashboard,
     day_plan,
     foresight,
-    hindsight,
     goals,
+    hindsight,
     transactions,
 )
 from kira.config import get_settings
