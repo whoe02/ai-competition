@@ -20,6 +20,8 @@ from kira.agent.tools import (
     memory,
 )
 from kira.agent.tools.spec import (
+    AgentContext,
+    AgentReport,
     EvidenceRow,
     ToolContext,
     ToolRegistry,
@@ -54,6 +56,8 @@ def build_registry() -> ToolRegistry:
 REGISTRY = build_registry()
 
 __all__ = [
+    "AgentContext",
+    "AgentReport",
     "EvidenceRow",
     "MODULES",
     "REGISTRY",

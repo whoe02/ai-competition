@@ -16,6 +16,7 @@ async def main() -> int:
     settings = get_settings()
     reason = offline_reason()
     print(f"model    : {settings.butler_model}")
+    print(f"fallback : {settings.butler_fallback_model or 'none'}")
     print(f"endpoint : {settings.dashscope_base_url}")
     print(f"key      : {'set (' + settings.dashscope_api_key[:6] + '…)' if settings.dashscope_api_key else 'NOT SET'}")
 
@@ -32,7 +33,7 @@ async def main() -> int:
         )
     except Exception as exc:
         print(f"\nFAILED — {type(exc).__name__}: {exc}")
-        print("The Butler would fall back to its offline model on every turn.")
+        print("The Butler would try its fallback model, then go offline.")
         await _list_models(settings)
         return 2
 
@@ -59,7 +60,12 @@ async def _list_models(settings) -> None:
 
     print(f"\nModels this key can call ({len(ids)}):")
     for model_id in ids:
-        marker = "  ← set BUTLER_MODEL to this" if "plus" in model_id else ""
+        if model_id == settings.butler_model:
+            marker = "  ← BUTLER_MODEL"
+        elif model_id == settings.butler_fallback_model:
+            marker = "  ← BUTLER_FALLBACK_MODEL"
+        else:
+            marker = ""
         print(f"  {model_id}{marker}")
 
 

@@ -12,15 +12,25 @@ from __future__ import annotations
 import json
 import re
 from calendar import monthrange
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass
 from datetime import date
-from typing import Any
+from typing import Any, ClassVar
 
-from langchain_core.callbacks import CallbackManagerForLLMRun
+from langchain_core.callbacks import (
+    AsyncCallbackManagerForLLMRun,
+    CallbackManagerForLLMRun,
+)
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
-from langchain_core.outputs import ChatGeneration, ChatResult
+from langchain_core.messages import (
+    AIMessage,
+    AIMessageChunk,
+    BaseMessage,
+    HumanMessage,
+    ToolMessage,
+)
+from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
+from langchain_core.runnables import Runnable
 
 from kira.categories import UNCATEGORISED, infer, label_for
 from kira.config import get_settings
@@ -1270,6 +1280,117 @@ class OfflineChatModel(BaseChatModel):
         )
 
 
+# ── the main model, and the one behind it ─────────────────────────────────────
+
+
+class FallbackChatModel(BaseChatModel):
+    """The main model, with a second one behind it.
+
+    One model is named in BUTLER_MODEL and answers every turn it can. When a
+    call to it raises -- the id is not served to this key, the endpoint is
+    rate-limiting, the request timed out -- the same call is made again against
+    BUTLER_FALLBACK_MODEL rather than dropping the whole turn to the offline
+    stand-in. Only when both are unreachable does the node's own `except` reach
+    for `OfflineChatModel`, so the ladder is: main, fallback, scripted.
+
+    The two runnables are held bound: `bind_tools` binds both and rewraps, which
+    is what lets the reasoning turn keep its tools across the switch.
+    """
+
+    primary: Any
+    secondary: Any
+    # Set on the reply when the second model answered, so a turn can be read
+    # back afterwards and the swap is visible in the metadata rather than only
+    # in the logs.
+    METADATA_KEY: ClassVar[str] = "kira_model_fallback"
+
+    @property
+    def _llm_type(self) -> str:
+        return "kira-fallback"
+
+    def bind_tools(self, tools: Sequence[Any], **kwargs: Any) -> BaseChatModel:
+        return self.model_copy(
+            update={
+                "primary": self.primary.bind_tools(tools, **kwargs),
+                "secondary": self.secondary.bind_tools(tools, **kwargs),
+            }
+        )
+
+    def with_structured_output(self, schema: Any, **kwargs: Any) -> Runnable:
+        # Not a FallbackChatModel: the children stop returning messages here and
+        # start returning the schema, which is no longer a chat model at all.
+        # LangChain's own fallback wrapper is the right shape for that, and the
+        # one caller only ever invokes it.
+        return self.primary.with_structured_output(schema, **kwargs).with_fallbacks(
+            [self.secondary.with_structured_output(schema, **kwargs)]
+        )
+
+    def _generate(
+        self,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager: CallbackManagerForLLMRun | None = None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        try:
+            reply = self.primary.invoke(messages, stop=stop, **kwargs)
+        except Exception as exc:
+            reply = self.secondary.invoke(messages, stop=stop, **kwargs)
+            _mark_fallback(reply, exc)
+        return ChatResult(generations=[ChatGeneration(message=reply)])
+
+    async def _agenerate(
+        self,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager: AsyncCallbackManagerForLLMRun | None = None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        try:
+            reply = await self.primary.ainvoke(messages, stop=stop, **kwargs)
+        except Exception as exc:
+            reply = await self.secondary.ainvoke(messages, stop=stop, **kwargs)
+            _mark_fallback(reply, exc)
+        return ChatResult(generations=[ChatGeneration(message=reply)])
+
+    async def _astream(
+        self,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager: AsyncCallbackManagerForLLMRun | None = None,
+        **kwargs: Any,
+    ) -> AsyncIterator[ChatGenerationChunk]:
+        """Swap models only before the first token.
+
+        A stream that dies halfway has already put words on the screen, and
+        starting the second model there would write the answer twice. The
+        composer above catches that case and retries unstreamed, where the
+        swap works normally.
+        """
+        started = False
+        try:
+            async for chunk in self.primary.astream(messages, stop=stop, **kwargs):
+                started = True
+                yield _as_chunk(chunk)
+            return
+        except Exception:
+            if started:
+                raise
+        async for chunk in self.secondary.astream(messages, stop=stop, **kwargs):
+            yield _as_chunk(chunk)
+
+
+def _mark_fallback(reply: BaseMessage, exc: Exception) -> None:
+    if isinstance(reply, AIMessage):
+        reply.response_metadata[FallbackChatModel.METADATA_KEY] = str(exc)
+
+
+def _as_chunk(chunk: BaseMessage) -> ChatGenerationChunk:
+    if not isinstance(chunk, AIMessageChunk):
+        chunk = AIMessageChunk(content=chunk.content)
+    return ChatGenerationChunk(message=chunk)
+
+
 # ── choosing one ──────────────────────────────────────────────────────────────
 
 
@@ -1288,6 +1409,7 @@ def get_chat_model(
     streaming: bool = False,
     attachment: dict[str, Any] | None = None,
     history: str = "",
+    temperature: float | None = None,
 ) -> BaseChatModel:
     """The model for one call.
 
@@ -1298,6 +1420,12 @@ def get_chat_model(
 
     `history` reaches only the offline model, which routes on it. Online it is
     already in the system prompt, where the model reads it for itself.
+
+    `temperature` is the other half of that same distinction. Choosing a tool is
+    a classification and wants to come out the same way every time; writing the
+    answer is prose and reads as a machine when it does. Left unset the
+    endpoint's own default stands, which is what every caller outside the graph
+    still wants.
     """
     if offline_reason() is not None:
         return OfflineChatModel(attachment=attachment, history=history)
@@ -1305,11 +1433,19 @@ def get_chat_model(
     settings = get_settings()
     from langchain_openai import ChatOpenAI  # imported late; the offline path needs no SDK
 
-    return ChatOpenAI(
-        base_url=settings.dashscope_base_url,
-        api_key=settings.dashscope_api_key,
-        model=settings.butler_model,
-        streaming=streaming,
-        timeout=settings.butler_request_timeout_seconds,
-        max_retries=1,
-    )
+    def one(model: str) -> ChatOpenAI:
+        return ChatOpenAI(
+            base_url=settings.dashscope_base_url,
+            api_key=settings.dashscope_api_key,
+            model=model,
+            streaming=streaming,
+            timeout=settings.butler_request_timeout_seconds,
+            max_retries=1,
+            **({} if temperature is None else {"temperature": temperature}),
+        )
+
+    main = one(settings.butler_model)
+    spare = settings.butler_fallback_model.strip()
+    if not spare or spare == settings.butler_model:
+        return main
+    return FallbackChatModel(primary=main, secondary=one(spare))

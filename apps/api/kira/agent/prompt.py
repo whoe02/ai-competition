@@ -145,6 +145,50 @@ def attachment_block(attachment: dict[str, Any] | None) -> str:
     )
 
 
+# ── the two turns, and why they do not read the same prompt ──────────────────
+#
+# A turn either chooses what to look up or writes what to say, and until now
+# both were handed the same block. That block is mostly VOICE: two registers,
+# how to set ringgit, never say "as an AI", never name your own machinery. None
+# of it bears on which tool to call, and all of it was in front of the model at
+# the moment it was deciding. Measured against a live Qwen, more prose on the
+# tool-choosing turn pushed it out of calling tools altogether — the finding
+# `insist` exists because of — so the prose is now where it is read.
+#
+# What each turn gets is what it can act on. The reasoning turn gets the facts,
+# the tools and the rules about calling them. The composing turn gets the voice,
+# the evidence and the rules about naming things.
+
+REASONING = """You are Kira, a money butler, deciding what to find out before answering.
+
+You are not writing to the user on this turn. Nobody reads what you type here; only
+the calls you make have any effect. So do not compose an answer, do not apologise,
+and do not explain yourself — call what you need, or call nothing.
+
+Work in steps. A result may raise the next question: if what came back tells you
+something you should check, check it. You will be asked again after every result,
+and the turn ends when you call nothing.
+
+Never answer from what you happen to know. A number the user's own data could give
+you is a number you look up — their balance, a bill, a price, a distance. If no tool
+can give it to you, say nothing about it rather than supplying it yourself.
+
+Anything that changes their data is proposed, not done: the user approves it. You
+never move money, and there is no way for you to."""
+
+
+# Some capabilities are not tools that fetch; they are specialists that reason.
+# The rule is stated once here rather than inside each of their descriptions,
+# because the thing the model has to learn is the category, not the entry.
+DELEGATION = """Some of these are specialists rather than lookups. They run their own
+reasoning, gather their own figures and hand back a report you then answer from.
+
+Hand a question to a specialist when it is the whole of what was asked, not a fact
+inside it. Give it what the user actually said — copy only values they stated, never
+one you worked out — and let it do the arithmetic. Its report comes back to you like
+any other result, and the answer is still yours to write."""
+
+
 def system_prompt(
     *,
     context: str,
@@ -153,18 +197,79 @@ def system_prompt(
     attachment: str = "",
     tool_names: tuple[str, ...] = (),
 ) -> str:
+    """The whole prompt: voice, rules and facts together.
+
+    Kept because the offline model and the tests read a turn through it, and
+    because a caller that is neither reasoning nor composing — the scheduled
+    advice, a one-shot — wants all of it. The graph's two turns use the pair
+    below instead.
+    """
     blocks = [VOICE]
     logging = logging_block(tool_names)
     if logging:
         blocks.append(logging)
     if tool_names:
+        blocks.append(_tool_block(tool_names))
+    for block in (context, memory, history, attachment):
+        if block:
+            blocks.append(block)
+    return "\n\n".join(blocks)
+
+
+def _tool_block(tool_names: tuple[str, ...]) -> str:
+    return (
+        "Tools available this turn: " + ", ".join(tool_names) + ".\n"
+        "Call the ones you need before answering. Never guess a number a tool could give you."
+    )
+
+
+def reasoning_prompt(
+    *,
+    context: str,
+    memory: str,
+    history: str,
+    attachment: str = "",
+    tool_names: tuple[str, ...] = (),
+    workflow_names: tuple[str, ...] = (),
+) -> str:
+    """The turn that chooses. No voice, no register, no formatting rules."""
+    blocks = [REASONING]
+    logging = logging_block(tool_names)
+    if logging:
+        blocks.append(logging)
+    if tool_names:
+        blocks.append(_tool_block(tool_names))
+    if workflow_names:
         blocks.append(
-            "Tools available this turn: " + ", ".join(tool_names) + ".\n"
-            "Call the ones you need before answering. Never guess a number a tool could give you."
+            DELEGATION + "\n\nThe specialists this turn: " + ", ".join(workflow_names) + "."
         )
     for block in (context, memory, history, attachment):
         if block:
             blocks.append(block)
+    return "\n\n".join(blocks)
+
+
+def composing_prompt(
+    *,
+    context: str,
+    memory: str,
+    history: str,
+    attachment: str = "",
+    evidence: str = "",
+) -> str:
+    """The turn the user reads. Voice and evidence, and no tools at all.
+
+    The tool list is deliberately absent: this turn cannot call one, and naming
+    capabilities it does not have is how a composer starts writing about what it
+    is going to look up next.
+    """
+    blocks = [VOICE]
+    for block in (context, memory, history, attachment):
+        if block:
+            blocks.append(block)
+    if evidence:
+        blocks.append(evidence)
+    blocks.append(COMPOSE_INSTRUCTION)
     return "\n\n".join(blocks)
 
 

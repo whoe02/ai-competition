@@ -9,6 +9,7 @@ future" a structural property rather than a promise.
 from __future__ import annotations
 
 import re
+import uuid
 from collections.abc import Awaitable, Callable, Iterator
 from dataclasses import dataclass, field
 from datetime import date
@@ -54,6 +55,29 @@ class ToolResult:
 
 
 @dataclass(frozen=True, slots=True)
+class AgentReport:
+    """What a sub-agent hands back: the same shape as a tool, plus its prose.
+
+    `findings` is what the Butler reasons over and is delivered to it as an
+    ordinary ToolMessage, so the reasoning loop cannot tell a specialist from a
+    tool -- which is the whole of why adding an agent changes no node.
+
+    `evidence` is already formatted for the panel, and is also the only thing
+    the Butler is allowed to quote: a name or a figure that is not on one of
+    these rows is one it invented. `answer` is the child's own sentence, kept
+    for the two cases where the Butler will not be composing -- an approval
+    card raised mid-turn, and the offline rung, where there is no composer
+    worth the name.
+    """
+
+    findings: dict[str, Any] = field(default_factory=dict)
+    evidence: tuple[EvidenceRow, ...] = ()
+    answer: str = ""
+    approval: dict[str, Any] | None = None
+    llm_calls: int = 0
+
+
+@dataclass(frozen=True, slots=True)
 class ToolContext:
     """Everything a handler is allowed to assume.
 
@@ -76,7 +100,44 @@ class ToolContext:
         return self.user.currency
 
 
+@dataclass(frozen=True, slots=True)
+class AgentContext:
+    """A ToolContext, plus the run-scoped handles only an agent needs.
+
+    A deterministic handler is given the session, the user and the clock and
+    nothing else, on purpose. A child that runs its own model needs three more
+    things -- somewhere to check point against, a model factory a test can
+    swap, and a way to put its own progress on the parent's stream -- and they
+    are here rather than on ToolContext so that a plain tool still cannot reach
+    for a model.
+    """
+
+    tools: ToolContext
+    thread_id: uuid.UUID
+    request_id: uuid.UUID
+    model_factory: Callable[..., Any] | None = None
+    # emit(event_type, **data). A no-op when nobody is streaming.
+    emit: Callable[..., None] = lambda *_, **__: None
+
+    @property
+    def session(self):
+        return self.tools.session
+
+    @property
+    def user(self):
+        return self.tools.user
+
+    @property
+    def today(self) -> date:
+        return self.tools.today
+
+    @property
+    def currency(self) -> str:
+        return self.tools.currency
+
+
 Handler = Callable[[ToolContext, Any], Awaitable[ToolResult]]
+AgentRunner = Callable[[AgentContext, Any], Awaitable[AgentReport]]
 Summariser = Callable[[Any], str]
 
 
@@ -97,6 +158,10 @@ class ToolSpec:
     summarise: Summariser | None = None
     # Shown in the stream while the tool runs, e.g. "Reading your ledger".
     label: str = ""
+    # Required for workflows: the sub-agent that runs the call. A workflow is
+    # exactly a capability with a model behind it, so the field that names that
+    # model's entry point is the field that makes the kind mean anything.
+    agent: AgentRunner | None = None
 
     def __post_init__(self) -> None:
         if not _NAME.match(self.name):
@@ -107,6 +172,17 @@ class ToolSpec:
             raise ToolSpecError(f"tool {self.name} needs a pydantic args_model")
         if not self.description.strip():
             raise ToolSpecError(f"tool {self.name} needs a description; the model reads it")
+        if self.kind == "workflow" and self.agent is None:
+            raise ToolSpecError(
+                f"workflow tool {self.name} has no agent(); a workflow is a handoff to "
+                "something that reasons, and one with nothing behind it would be "
+                "routed out of the loop and never come back"
+            )
+        if self.kind != "workflow" and self.agent is not None:
+            raise ToolSpecError(
+                f"tool {self.name} is kind={self.kind!r} but declares an agent(); only "
+                "a workflow is delegated, so this one would never be called"
+            )
         if self.kind == "write" and self.summarise is None:
             raise ToolSpecError(
                 f"write tool {self.name} has no summarise(); a write the user cannot "

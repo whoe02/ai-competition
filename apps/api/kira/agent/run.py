@@ -42,7 +42,15 @@ class TurnResult:
     approval: dict[str, Any] | None = None
     applied: dict[str, Any] | None = None
     learned: list[str] = field(default_factory=list)
-    goal_llm_calls: int = 0
+    # The Butler's own reasoning passes, and the calls its specialists made.
+    # Kept apart because they answer different questions: one is how long the
+    # turn thought for, the other is what delegation cost.
+    iterations: int = 0
+    child_llm_calls: int = 0
+
+    @property
+    def llm_calls(self) -> int:
+        return self.iterations + self.child_llm_calls
 
 
 def _context(
@@ -90,7 +98,8 @@ async def _result(graph, config) -> TurnResult:
         approval=approval,
         applied=values.get("applied"),
         learned=list(values.get("learned") or []),
-        goal_llm_calls=values.get("goal_llm_calls", 0),
+        iterations=values.get("iterations", 0),
+        child_llm_calls=values.get("child_llm_calls", 0),
     )
 
 
@@ -127,7 +136,7 @@ async def stream_turn(
         "tools_used": result.tools_used,
         "approval": result.approval,
         "learned": result.learned,
-        "llm_calls": result.goal_llm_calls,
+        "llm_calls": result.llm_calls,
     }
 
 

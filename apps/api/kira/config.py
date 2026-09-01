@@ -31,11 +31,26 @@ class Settings(BaseSettings):
     # ── Butler ────────────────────────────────────────────────────────────────
     dashscope_api_key: str = ""
     dashscope_base_url: str = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
-    butler_model: str = "qwen-plus"
+    # The model every turn is asked of first.
+    butler_model: str = "qwen3.7-flash"
+    # Tried with the same call when the main model errors: an id this key is
+    # not served, a rate limit, a timeout. Only when both fail does a turn
+    # drop to the offline stand-in. Blank disables the middle rung.
+    butler_fallback_model: str = "qwen3.6-plus"
     # Forced offline; the Butler also falls back on a missing key or a failed call.
     butler_offline: bool = False
     butler_max_tool_iterations: int = 6
     butler_request_timeout_seconds: float = 30.0
+    # How long a whole turn may spend looking things up before the guard stops
+    # it and makes it answer. Every tool result now goes back to the model, so
+    # a turn can chain — and something has to bound a chain by the thing the
+    # user actually feels, which is the clock and not the number of passes.
+    butler_turn_budget_seconds: float = 15.0
+    # The turn that chooses tools, and the turn that writes the answer, want
+    # opposite things. Choosing is a classification and wants to be the same
+    # every time; writing is prose and reads as a machine when it is.
+    butler_reasoning_temperature: float = 0.0
+    butler_compose_temperature: float = 0.6
     butler_memory_limit: int = 40
     # The Plan screen's ask box. Far shorter than the Butler's own timeout above,
     # because the two are waited on differently: a conversation may take its time

@@ -28,7 +28,8 @@ services:
       # Unset means the Butler runs on its offline model: the graph, the tools,
       # the approvals and the evidence are identical, only the prose differs.
       DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
-      BUTLER_MODEL: ${BUTLER_MODEL:-qwen-plus}
+      BUTLER_MODEL: ${BUTLER_MODEL:-qwen3.7-flash}
+      BUTLER_FALLBACK_MODEL: ${BUTLER_FALLBACK_MODEL:-qwen3.6-plus}
       # Road distances for the day planner. Off, or with the router unreachable
       # from the venue, every place comes back labelled "straight line" and the
       # screen says so rather than quoting a fare it cannot stand behind.

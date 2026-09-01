@@ -13,6 +13,7 @@ from langgraph.runtime import Runtime
 from kira.agent import events, prompt
 from kira.agent.llm import OfflineChatModel, _last_human, get_chat_model, route_for
 from kira.agent.state import ButlerContext, ButlerState
+from kira.config import get_settings
 
 FALLBACK = (
     "I could not reach my language model just now.\n"
@@ -31,7 +32,12 @@ def _model(runtime: Runtime[ButlerContext], attachment, history):
     factory = runtime.context.model_factory
     if factory is not None:
         return factory(streaming=True, attachment=attachment, history=history)
-    return get_chat_model(streaming=True, attachment=attachment, history=history)
+    return get_chat_model(
+        streaming=True,
+        attachment=attachment,
+        history=history,
+        temperature=get_settings().butler_compose_temperature,
+    )
 
 
 def _evidence_block(rows: list[list[str]]) -> str:
@@ -48,7 +54,7 @@ async def compose(state: ButlerState, runtime: Runtime[ButlerContext]) -> dict:
     events.emit(runtime, events.THINKING, text="Putting it in words")
     evidence = state.get("evidence") or []
     system = SystemMessage(
-        prompt.system_prompt(
+        prompt.composing_prompt(
             context=state.get("context_block", ""),
             memory=state.get("memory_block", ""),
             # Withheld when nothing ran. Asked the same question twice, the model
@@ -62,15 +68,27 @@ async def compose(state: ButlerState, runtime: Runtime[ButlerContext]) -> dict:
             # one" still knows which one that was.
             history=state.get("history_block", "") if evidence else "",
             attachment=state.get("attachment_block", ""),
+            evidence=_evidence_block(evidence),
         )
-        + "\n\n"
-        + _evidence_block(evidence)
-        + "\n\n"
-        + prompt.COMPOSE_INSTRUCTION
     )
     # The instruction goes in the system block rather than as a trailing turn:
     # the last human message must stay the user's question, not ours.
     conversation = [system, *state.get("messages", [])]
+
+    # A specialist answered, and answered in words rather than in figures: a
+    # goal request missing its target amount comes back as the question about
+    # the target amount, and nothing was calculated because nothing could be.
+    # There is no evidence to compose from, and the child's sentence is already
+    # the honest answer — so it stands as written rather than being paraphrased
+    # by a turn that would have to invent the grounding to improve on it. This
+    # is the same rule as the one below, read the other way round: the Butler
+    # writes from the rows, and where there are no rows there is nothing of its
+    # own to add.
+    reports = state.get("reports") or []
+    if not evidence and reports:
+        spoken = "\n\n".join(reports)
+        events.emit(runtime, events.TOKEN, text=spoken)
+        return {"answer": spoken, "messages": [AIMessage(content=spoken)]}
 
     # Nothing ran, so nobody writes prose about money this turn.
     #
@@ -114,7 +132,9 @@ async def compose(state: ButlerState, runtime: Runtime[ButlerContext]) -> dict:
         offline = OfflineChatModel(attachment=state.get("attachment"), history=history)
         answer = await _stream(runtime, offline, conversation)
     if not answer.strip():
-        answer = FALLBACK
+        # A specialist's own sentence beats an apology: it was measured, and
+        # the panel beneath it already backs every figure in it.
+        answer = "\n\n".join(reports) if reports else FALLBACK
 
     return {"answer": answer, "messages": [AIMessage(content=answer)]}
 

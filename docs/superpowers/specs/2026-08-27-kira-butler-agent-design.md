@@ -275,23 +275,37 @@ The current `LlmAdapter.complete(system, messages) -> str` and its `ScriptedLlm`
 cannot express tool calling, and `ScriptedLlm` has no other consumer. Both are
 replaced.
 
-`kira/agent/llm.py` exposes `get_chat_model() -> BaseChatModel`, returning either:
+`kira/agent/llm.py` exposes `get_chat_model() -> BaseChatModel`, returning one of:
 
-- `ChatOpenAI(base_url=settings.dashscope_base_url, api_key=settings.dashscope_api_key,
-  model=settings.butler_model)` — Qwen through the OpenAI-compatible endpoint; or
+- `FallbackChatModel` — two `ChatOpenAI` clients against
+  `settings.dashscope_base_url`, the first on `settings.butler_model` and the
+  second on `settings.butler_fallback_model`. Every turn is asked of the main
+  model; when that call raises — an id this key is not served, a rate limit, a
+  timeout — the identical call is re-issued against the fallback and the reply
+  carries `kira_model_fallback` in its metadata. `bind_tools` binds both children
+  and rewraps, so the reasoning turn keeps its tools across a swap;
+  `with_structured_output` hands off to LangChain's own fallback wrapper, whose
+  children return the schema rather than a message; `_astream` swaps only before
+  the first token, since a stream that dies mid-answer has already put words on
+  the screen.
+- `ChatOpenAI` alone — when `butler_fallback_model` is blank or repeats
+  `butler_model`, there is no ladder to build.
 - `OfflineChatModel` — a deterministic `BaseChatModel` subclass that emits scripted
   tool calls and answers covering the demo-script questions.
 
-Offline is selected by `BUTLER_OFFLINE=1`, and automatically on a missing key or on
-API failure or timeout. The graph, the tools, the guard, the evidence and the approval
-flow are identical either way; only language generation differs. A dead venue network
+So the ladder is: main model, fallback model, scripted. Offline is selected by
+`BUTLER_OFFLINE=1` and on a missing key; it is also where `agent` and `compose`
+land when *both* online models fail, each node catching the raised error for
+itself. The graph, the tools, the guard, the evidence and the approval flow are
+identical at every rung; only language generation differs. A dead venue network
 degrades the Butler's prose, not its behaviour.
 
 New settings: `dashscope_api_key`, `dashscope_base_url`
 (default `https://dashscope-intl.aliyuncs.com/compatible-mode/v1`), `butler_model`
-(default `qwen-plus`), `butler_offline`, `butler_max_tool_iterations`,
-`butler_request_timeout_seconds`. `docker-compose.yml` passes `DASHSCOPE_API_KEY`
-through as an optional variable.
+(default `qwen3.7-flash`), `butler_fallback_model` (default `qwen3.6-plus`),
+`butler_offline`, `butler_max_tool_iterations`, `butler_request_timeout_seconds`.
+`docker-compose.yml` passes `DASHSCOPE_API_KEY` through as an optional variable,
+and both model ids with those defaults.
 
 ## 11. API surface
 

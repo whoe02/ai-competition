@@ -49,7 +49,18 @@ class ButlerState(TypedDict, total=False):
     pending_approval: dict[str, Any] | None
     # Set by the approval node once a write has actually run.
     applied: dict[str, Any] | None
-    goal_llm_calls: int
+    # Model calls made by sub-agents this turn, on top of the Butler's own
+    # `iterations`. Named for the relationship rather than for one child, so a
+    # second specialist does not need a second counter.
+    child_llm_calls: int
+    # What a specialist said in its own words this turn. Not evidence and never
+    # shown as a row -- it is prose, and it exists because some specialist
+    # answers carry no figure at all. See `compose`.
+    reports: list[str]
+    # Monotonic seconds at the moment the turn began, set once by load_context.
+    # The guard measures the wall-clock budget against it: a turn that may now
+    # chain reasoning passes needs a bound that counts time rather than laps.
+    started_at: float
     # Facts extract_memory kept from this turn.
     learned: list[str]
     answer: str
@@ -97,6 +108,8 @@ def initial_state(
         pending_workflow=None,
         pending_approval=None,
         applied=None,
-        goal_llm_calls=0,
+        child_llm_calls=0,
+        reports=[],
+        started_at=0.0,
         answer="",
     )

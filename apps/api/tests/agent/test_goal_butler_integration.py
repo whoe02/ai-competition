@@ -58,7 +58,7 @@ async def test_natural_goal_is_handed_to_goal_graph_without_third_llm_call(
     )
 
     assert result.tools_used == ["start_goal_planning"]
-    assert result.goal_llm_calls == 2
+    assert result.llm_calls == 2
     assert result.approval is not None
     assert result.approval["tool"] == "apply_goal_plan_change"
     assert result.approval["before"] is None

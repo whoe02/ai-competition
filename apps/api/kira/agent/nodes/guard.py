@@ -9,6 +9,7 @@ write is routed to approval rather than to execution.
 from __future__ import annotations
 
 import json
+import time
 from typing import Any
 
 from langchain_core.messages import AIMessage, ToolMessage
@@ -57,6 +58,26 @@ async def guard(state: ButlerState, runtime: Runtime[ButlerContext]) -> dict:
 
     context = runtime.context
     settings = get_settings()
+
+    # Two stops, and they answer different questions. The iteration cap bounds
+    # how many times the model may go round; the budget bounds how long the
+    # user waits. Neither implies the other: six passes over a warm cache are
+    # quick, and two over a cold routing call are not. Both are needed now that
+    # every result comes back to the model rather than straight to the answer.
+    started = state.get("started_at") or 0.0
+    if started and time.monotonic() - started > settings.butler_turn_budget_seconds:
+        events.emit(runtime, events.THINKING, text="That is long enough — answering now")
+        return {
+            "approved_reads": [],
+            "pending_write": None,
+            "pending_workflow": None,
+            "refusals": [],
+            "messages": [
+                _refusal(call, "Time is up for this turn; answer from what you already have.")
+                for call in calls
+            ],
+        }
+
     if state.get("iterations", 0) > settings.butler_max_tool_iterations:
         # Refusals cleared for the same reason as above, and here it is
         # load-bearing rather than tidy: this branch is the stop, and a stale
@@ -130,10 +151,24 @@ async def guard(state: ButlerState, runtime: Runtime[ButlerContext]) -> dict:
         else:
             reads.append(permitted)
 
+    if workflow and reads:
+        # A specialised workflow loads its own confirmed snapshot, so running
+        # unrelated reads beside it would duplicate facts the child is about to
+        # measure properly. They are turned away rather than dropped: every
+        # call the model made has to come back with a result or the next
+        # request is malformed, and the model can simply ask again next pass
+        # now that a workflow no longer ends the turn.
+        reason = (
+            "The specialist gathers its own figures. "
+            "Ask for this afterwards if you still need it."
+        )
+        for call in reads:
+            refusals.append(reason)
+            responses.append(_refusal(call, reason))
+        reads = []
+
     return {
-        # A specialised workflow loads its own confirmed snapshot. Running
-        # unrelated reads first would add a model/tool loop and duplicate facts.
-        "approved_reads": [] if workflow else reads,
+        "approved_reads": reads,
         "pending_write": write,
         "pending_workflow": workflow,
         "refusals": refusals,
@@ -177,18 +212,27 @@ def route_after_guard(state: ButlerState) -> str:
     return "compose"
 
 
-def route_after_tools(state: ButlerState) -> str:
-    """Where a turn goes once its reads have run.
+# The one route that says "stop looking". Everything else in this file decides
+# where the run goes next; this decides that it does not go anywhere.
 
-    Back to the model only when the guard refused something and it deserves a
-    second attempt with that refusal in front of it. Otherwise the reads are the
-    answer, and a second tool-bound round trip is latency the user pays for
-    nothing.
+
+def route_after_tools(state: ButlerState) -> str:
+    """Where a turn goes once its reads have run: back to the model.
+
+    It used to go to compose whenever nothing was refused, on the grounds that
+    a second tool-bound round trip is latency the user pays for nothing. That
+    was true while a turn was one question and one lookup. It is what stopped
+    the Butler ever noticing something in a result and going to check it —
+    reading that a bill lands on Thursday and never asking what is in the
+    account on Thursday — because the only pass that could have asked had
+    already been spent.
+
+    So results come back, and the cost is bounded where cost belongs: the guard
+    stops the loop on the iteration cap or the wall-clock budget, and a pass
+    with nothing left to ask proposes no call and falls through to compose.
     """
     if state.get("pending_workflow"):
         return "workflow"
     if state.get("pending_write"):
         return "approval"
-    if state.get("refusals"):
-        return "agent"
-    return "compose"
+    return "agent"

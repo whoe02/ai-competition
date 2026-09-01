@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from kira.agent.agents.goal import run_goal_agent
 from kira.agent.goal_graph.schemas import GoalIntent
 from kira.agent.tools.spec import ToolContext, ToolResult, ToolSpec
 
@@ -29,5 +30,6 @@ SPECS = (
         ),
         args_model=GoalIntent,
         handler=_never_execute,
+        agent=run_goal_agent,
     ),
 )

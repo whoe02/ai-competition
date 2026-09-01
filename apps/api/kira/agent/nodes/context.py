@@ -6,6 +6,8 @@ screen loads, so there is no second read path that could disagree with the app.
 
 from __future__ import annotations
 
+import time
+
 from langgraph.runtime import Runtime
 
 from kira.agent import events, prompt
@@ -46,4 +48,8 @@ async def load_context(
         "history_block": prompt.history_block(history[:-1] if history else ()),
         "attachment_block": prompt.attachment_block(state.get("attachment")),
         "memory_ids": [str(memory.id) for memory in remembered],
+        # Started here rather than in the guard, so the budget covers the
+        # loading as well as the thinking. It is what the user is waiting
+        # through either way.
+        "started_at": time.monotonic(),
     }

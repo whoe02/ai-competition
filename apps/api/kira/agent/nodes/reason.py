@@ -14,13 +14,22 @@ from kira.agent import events, prompt
 from kira.agent.llm import OfflineChatModel, get_chat_model
 from kira.agent.state import ButlerContext, ButlerState
 from kira.agent.tools import REGISTRY
+from kira.config import get_settings
 
 
 def _model(runtime: Runtime[ButlerContext], attachment, history):
     factory = runtime.context.model_factory
     if factory is not None:
         return factory(streaming=False, attachment=attachment, history=history)
-    return get_chat_model(streaming=False, attachment=attachment, history=history)
+    return get_chat_model(
+        streaming=False,
+        attachment=attachment,
+        history=history,
+        # Choosing is a classification. Two identical questions that pick
+        # different tools is not variety, it is the thing an eval cannot hold
+        # still long enough to measure.
+        temperature=get_settings().butler_reasoning_temperature,
+    )
 
 
 async def agent(state: ButlerState, runtime: Runtime[ButlerContext]) -> dict:
@@ -30,12 +39,13 @@ async def agent(state: ButlerState, runtime: Runtime[ButlerContext]) -> dict:
     # turn before it was about where to eat.
     history = state.get("history_block", "")
     system = SystemMessage(
-        prompt.system_prompt(
+        prompt.reasoning_prompt(
             context=state.get("context_block", ""),
             memory=state.get("memory_block", ""),
             history=history,
             attachment=state.get("attachment_block", ""),
             tool_names=tuple(spec.name for spec in REGISTRY),
+            workflow_names=tuple(spec.name for spec in REGISTRY.workflows()),
         )
     )
     conversation = [system, *state.get("messages", [])]
