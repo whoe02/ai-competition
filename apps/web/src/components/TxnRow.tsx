@@ -28,6 +28,7 @@ export function sourceLabel(source: string): string {
 }
 
 export function TxnRow({ txn, onOpen }: { txn: Transaction; onOpen: (txn: Transaction) => void }) {
+  const income = txn.direction === "income";
   return (
     <button
       type="button"
@@ -42,10 +43,12 @@ export function TxnRow({ txn, onOpen }: { txn: Transaction; onOpen: (txn: Transa
       <span style={{ flex: 1, minWidth: 0 }}>
         <b style={{ fontSize: 14, letterSpacing: "-.01em" }}>{txn.merchant}</b>
         <span style={{ display: "block", fontSize: 11.5, color: "var(--muted)" }}>
-          {txn.category_label} · {sourceLabel(txn.source)}
+          {income ? (txn.income_type === "salary" ? "Salary" : "Other income") : txn.category_label} · {sourceLabel(txn.source)}
         </span>
       </span>
-      <span className="money" style={{ fontSize: 14.5 }}>−RM{fmt(txn.amount_sen)}</span>
+      <span className="money" style={{ fontSize: 14.5, color: income ? "var(--jade)" : undefined }}>
+        {income ? "+" : "−"}RM{fmt(txn.amount_sen)}
+      </span>
     </button>
   );
 }

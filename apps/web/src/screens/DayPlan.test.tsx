@@ -43,6 +43,8 @@ const PELITA: Place = {
   halal: true,
   note: "Fast counter service, open late.",
   match_basis: null,
+  match_strength: null,
+  match_reason: "",
 };
 
 const CHEE_MENG: Place = {
@@ -66,6 +68,8 @@ const CHEE_MENG: Place = {
   halal: false,
   note: "Small shop, queue moves quickly.",
   match_basis: null,
+  match_strength: null,
+  match_reason: "",
 };
 
 const SKY_BAR: Place = {
@@ -87,6 +91,8 @@ const SKY_BAR: Place = {
   halal: true,
   note: "Way past today's room.",
   match_basis: null,
+  match_strength: null,
+  match_reason: "",
 };
 
 const PLACES: Place[] = [PELITA, CHEE_MENG, SKY_BAR];
@@ -116,6 +122,8 @@ const KENNY_HILLS: Place = {
   halal: false,
   note: "",
   match_basis: null,
+  match_strength: null,
+  match_reason: "",
 };
 
 const GERAI: Place = {
@@ -137,6 +145,8 @@ const GERAI: Place = {
   halal: true,
   note: "",
   match_basis: null,
+  match_strength: null,
+  match_reason: "",
 };
 
 const ABC_BISTRO: Place = {
@@ -158,6 +168,8 @@ const ABC_BISTRO: Place = {
   halal: true,
   note: "",
   match_basis: null,
+  match_strength: null,
+  match_reason: "",
 };
 
 const TENSION: DayPlanData = {
@@ -167,6 +179,7 @@ const TENSION: DayPlanData = {
   nearby_count: 3,
   matching_count: 3,
   kind_count: 3,
+  ranking: "deterministic",
   places: [KENNY_HILLS, GERAI, ABC_BISTRO],
   nearest_over_cap: [],
 };
@@ -185,6 +198,7 @@ const RESPONSE: DayPlanData = {
   nearby_count: PLACES.length,
   matching_count: PLACES.length,
   kind_count: PLACES.length,
+  ranking: "deterministic",
   places: PLACES,
   nearest_over_cap: [],
 };
@@ -203,6 +217,8 @@ const PLAN_DRAFT: Transaction = {
   confidence: 70,
   note: "Planned, not spent — this is an estimate from your day plan. "
     + "Nothing counts against today until you confirm it.",
+  direction: "expense",
+  goal_allocation_applied: false,
 };
 
 /**
@@ -239,6 +255,7 @@ const NOTHING_LEFT: DayPlanData = {
   nearby_count: PLACES.length,
   matching_count: PLACES.length,
   kind_count: PLACES.length,
+  ranking: "deterministic",
   places: [],
   nearest_over_cap: [],
 };

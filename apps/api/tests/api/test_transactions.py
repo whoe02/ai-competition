@@ -89,6 +89,53 @@ class TestConfirm:
         assert after["safe_today_sen"] == 3321
         assert after["drafts_waiting"] == 1
 
+    async def test_confirmed_income_increases_cash_without_becoming_spending(
+        self, client, session
+    ):
+        token = await demo_token(client, session)
+        headers = auth(token)
+        before = (await client.get("/v1/dashboard/today", headers=headers)).json()
+        draft = await client.post(
+            "/v1/transactions",
+            headers=headers,
+            json={
+                "merchant": "Salary",
+                "amount_sen": 50_000,
+                "occurred_on": "2026-09-03",
+                "category": "income",
+                "direction": "income",
+                "income_type": "salary",
+            },
+        )
+        assert draft.status_code == 201, draft.text
+        income_id = draft.json()["id"]
+        confirmed = await client.post(
+            f"/v1/transactions/{income_id}/confirm", headers=headers
+        )
+        assert confirmed.status_code == 200, confirmed.text
+        assert confirmed.json()["direction"] == "income"
+
+        after = (await client.get("/v1/dashboard/today", headers=headers)).json()
+        activity = (await client.get("/v1/transactions", headers=headers)).json()
+        assert after["balance_sen"] == before["balance_sen"] + 50_000
+        assert after["spent_today_sen"] == before["spent_today_sen"]
+        assert activity["income_this_cycle_sen"] == 50_000
+
+        preview = await client.get(
+            f"/v1/transactions/{income_id}/goal-allocation", headers=headers
+        )
+        assert preview.status_code == 200, preview.text
+        assert preview.json()["calculation_version"] == "goal-allocation-v1"
+        approved = await client.post(
+            f"/v1/transactions/{income_id}/goal-allocation/approve", headers=headers
+        )
+        assert approved.status_code == 200, approved.text
+        assert approved.json()["plan"] == preview.json()
+        again = await client.post(
+            f"/v1/transactions/{income_id}/goal-allocation/approve", headers=headers
+        )
+        assert again.status_code == 409
+
     async def test_a_confirmed_draft_joins_its_day(self, client, session):
         token = await demo_token(client, session)
         draft = (await client.get("/v1/transactions", headers=auth(token))).json()["drafts"][0]

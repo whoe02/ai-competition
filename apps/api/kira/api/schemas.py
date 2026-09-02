@@ -38,6 +38,12 @@ class UserResponse(ResponseModel):
     next_payday: date
     cycle_start: date
     cycle_days: int
+    monthly_income_sen: int = 0
+
+
+class FinancialProfileUpdateRequest(BaseModel):
+    monthly_income_sen: int | None = Field(default=None, strict=True, ge=0)
+    next_payday: date | None = None
 
 
 class NextCommitmentResponse(ResponseModel):
@@ -453,6 +459,9 @@ class TransactionResponse(ResponseModel):
     source: str
     confidence: int | None
     note: str
+    direction: Literal["expense", "income"] = "expense"
+    income_type: Literal["salary", "other"] | None = None
+    goal_allocation_applied: bool = False
 
 
 class ActivityDayResponse(ResponseModel):
@@ -473,6 +482,7 @@ class ActivityResponse(ResponseModel):
     draft_total_sen: int
     days: list[ActivityDayResponse]
     spent_this_cycle_sen: int
+    income_this_cycle_sen: int = 0
     categories: list[CategorySummaryResponse]
 
 
@@ -572,6 +582,47 @@ class CreateTransactionRequest(BaseModel):
     source: str = Field(default="manual", max_length=12)
     confidence: int | None = Field(default=None, ge=0, le=100)
     note: str = Field(default="", max_length=280)
+    direction: Literal["expense", "income"] = "expense"
+    income_type: Literal["salary", "other"] | None = None
+
+
+class GoalIncomeAllocationItemResponse(ResponseModel):
+    goal_id: uuid.UUID
+    name: str
+    priority: GoalPriority
+    amount_sen: int
+    income_share_bp: int
+    remaining_after_sen: int
+
+
+class GoalIncomeAllocationResponse(ResponseModel):
+    income_transaction_id: uuid.UUID
+    income_amount_sen: int
+    available_for_goals_sen: int
+    protected_commitments_sen: int
+    emergency_buffer_sen: int
+    allocated_sen: int
+    unallocated_income_sen: int
+    allocations: list[GoalIncomeAllocationItemResponse]
+    risk_flags: list[str]
+    assumptions: list[str]
+    calculation_version: str
+    evidence_refs: list[str]
+
+
+class AppliedGoalContributionResponse(ResponseModel):
+    contribution_id: uuid.UUID
+    goal_id: uuid.UUID
+    goal_name: str
+    amount_sen: int
+    saved_after_sen: int
+    target_amount_sen: int
+    plan_version: int
+
+
+class AppliedGoalIncomeAllocationResponse(ResponseModel):
+    plan: GoalIncomeAllocationResponse
+    contributions: list[AppliedGoalContributionResponse]
 
 
 class MoneyOut(ResponseModel):

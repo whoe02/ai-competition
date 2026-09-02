@@ -7,7 +7,16 @@ from datetime import date
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from kira.db.models import TXN_CONFIRMED, Account, Commitment, Goal, Transaction, User
+from kira.db.models import (
+    TXN_CONFIRMED,
+    TXN_EXPENSE,
+    Account,
+    Commitment,
+    Goal,
+    GoalContributionRecord,
+    Transaction,
+    User,
+)
 from kira.engine.types import CommitmentInput, GoalInput, Snapshot
 from kira.money import Money
 
@@ -28,9 +37,19 @@ async def load_snapshot(session: AsyncSession, user: User, today: date) -> Snaps
             )
         )
     ).scalars().all()
-    spent_all_time = Money.sum((txn.amount for txn in confirmed), currency)
+    spent_all_time = Money.sum(
+        (txn.amount for txn in confirmed if txn.direction == TXN_EXPENSE), currency
+    )
+    income_all_time = Money.sum(
+        (txn.amount for txn in confirmed if txn.direction != TXN_EXPENSE), currency
+    )
     spent_today = Money.sum(
-        (txn.amount for txn in confirmed if txn.occurred_on == today), currency
+        (
+            txn.amount
+            for txn in confirmed
+            if txn.direction == TXN_EXPENSE and txn.occurred_on == today
+        ),
+        currency,
     )
 
     commitments = (
@@ -44,9 +63,24 @@ async def load_snapshot(session: AsyncSession, user: User, today: date) -> Snaps
             )
         )
     ).scalars().all()
+    contributed = (
+        await session.execute(
+            select(GoalContributionRecord)
+            .join(Goal, Goal.id == GoalContributionRecord.goal_id)
+            .where(
+                GoalContributionRecord.user_id == user.id,
+                Goal.status != "cancelled",
+            )
+        )
+    ).scalars().all()
+    last_contribution_by_goal: dict = {}
+    for row in contributed:
+        previous = last_contribution_by_goal.get(row.goal_id)
+        if previous is None or row.contributed_on > previous:
+            last_contribution_by_goal[row.goal_id] = row.contributed_on
 
     return Snapshot(
-        balance=opening - spent_all_time,
+        balance=opening + income_all_time - spent_all_time,
         buffer=user.buffer,
         spent_today=spent_today,
         commitments=tuple(
@@ -60,6 +94,7 @@ async def load_snapshot(session: AsyncSession, user: User, today: date) -> Snaps
                 goal.target,
                 goal.saved,
                 goal.target_date,
+                last_contribution_by_goal.get(goal.id),
             )
             for goal in goals
         ),
@@ -68,4 +103,7 @@ async def load_snapshot(session: AsyncSession, user: User, today: date) -> Snaps
         cycle_start=user.cycle_start,
         cycle_days=user.cycle_days,
         income=user.monthly_income,
+        contributed_goal_reserve=Money.sum(
+            (row.amount for row in contributed), currency
+        ),
     )

@@ -7,7 +7,13 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from kira.api.deps import UNAUTHORISED, CurrentUser, SessionDep
-from kira.api.schemas import LoginRequest, RegisterRequest, TokenResponse, UserResponse
+from kira.api.schemas import (
+    FinancialProfileUpdateRequest,
+    LoginRequest,
+    RegisterRequest,
+    TokenResponse,
+    UserResponse,
+)
 from kira.config import get_settings
 from kira.db.models import User
 from kira.money import Money
@@ -110,4 +116,18 @@ async def me(user: CurrentUser) -> UserResponse:
         next_payday=user.next_payday,
         cycle_start=user.cycle_start,
         cycle_days=user.cycle_days,
+        monthly_income_sen=user.monthly_income.sen,
     )
+
+
+@router.patch("/me", response_model=UserResponse)
+async def update_financial_profile(
+    body: FinancialProfileUpdateRequest, user: CurrentUser, session: SessionDep
+) -> UserResponse:
+    """Update the recurring income forecast; it never creates cash by itself."""
+    if body.monthly_income_sen is not None:
+        user.monthly_income = Money(body.monthly_income_sen, user.currency)
+    if body.next_payday is not None:
+        user.next_payday = body.next_payday
+    await session.commit()
+    return await me(user)

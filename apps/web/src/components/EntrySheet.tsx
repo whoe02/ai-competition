@@ -34,7 +34,7 @@ export function EntrySheet({ onClose, onAsk }: EntrySheetProps) {
   const [mode, setMode] = useState<Mode>("type");
 
   return (
-    <Sheet label="Add spending" onClose={onClose}>
+    <Sheet label="Tell Kira about money" onClose={onClose}>
       <div className="grab" />
       <div className="entry-tabs" role="tablist" aria-label="How to tell Kira">
         {MODES.map(({ id, label, hint, Icon }) => (
@@ -91,7 +91,7 @@ function TypeBody({
             In your words
           </p>
           <h2 style={{ margin: "5px 0 0", fontSize: 20, fontWeight: 800, letterSpacing: "-.03em" }}>
-            Just tell me what you spent
+            Tell me what moved
           </h2>
         </div>
       </div>
@@ -103,7 +103,7 @@ function TypeBody({
         id="entry-text"
         className="entry-text"
         rows={3}
-        placeholder="Grabbed lunch at the mamak, twelve fifty"
+        placeholder="Spent RM12.50 on lunch — or received RM5,000 salary"
         value={text}
         onChange={(event) => setText(event.target.value)}
         onKeyDown={(event) => {
@@ -114,8 +114,8 @@ function TypeBody({
         }}
       />
       <p className="sheet-note">
-        I will read it back as a draft before anything is recorded — and if you leave out the
-        amount, I will ask rather than guess.
+        Spending and income both come back as drafts before they affect your balance. If you
+        leave out the amount, I will ask rather than guess.
       </p>
       <div style={{ display: "flex", gap: 9, marginTop: 16 }}>
         <button className="btn btn-sm btn-ghost" style={{ flex: 1 }} onClick={onClose}>

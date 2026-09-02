@@ -202,7 +202,7 @@ export function Activity({
                       {DAY.format(new Date(`${day.date}T00:00:00`))}
                     </p>
                     <span style={{ fontSize: 12.5, fontWeight: 700, color: "var(--muted)" }}>
-                      RM{fmt(day.total_sen)}
+                      {day.total_sen < 0 ? "+" : ""}RM{fmt(Math.abs(day.total_sen))}
                     </span>
                   </div>
                   {day.transactions.map((txn) => (

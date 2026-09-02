@@ -10,9 +10,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from kira.db.models import (
     TXN_CONFIRMED,
+    TXN_EXPENSE,
     Account,
     Commitment,
     Goal,
+    GoalContributionRecord,
     GoalMilestoneRecord,
     GoalPlanRecord,
     GoalScenarioRecord,
@@ -103,7 +105,27 @@ async def load_financial_snapshot(
         .all()
     )
     opening_sen = sum(account.opening_balance.sen for account in accounts)
-    spent_sen = sum(transaction.amount.sen for transaction in confirmed)
+    spent_sen = sum(
+        transaction.amount.sen
+        for transaction in confirmed
+        if transaction.direction == TXN_EXPENSE
+    )
+    income_sen = sum(
+        transaction.amount.sen
+        for transaction in confirmed
+        if transaction.direction != TXN_EXPENSE
+    )
+    contributions = (
+        await session.execute(
+            select(GoalContributionRecord)
+            .join(Goal, Goal.id == GoalContributionRecord.goal_id)
+            .where(
+                GoalContributionRecord.user_id == user.id,
+                Goal.status != "cancelled",
+            )
+        )
+    ).scalars().all()
+    contributed_sen = sum(row.amount.sen for row in contributions)
 
     # Only the latest plan for each active goal can reserve money. Draft goals
     # and superseded plan versions are deliberately absent.
@@ -126,12 +148,13 @@ async def load_financial_snapshot(
     evidence = [f"account:{account.id}" for account in accounts]
     evidence.extend(f"transaction:{transaction.id}" for transaction in confirmed)
     evidence.extend(f"commitment:{commitment.id}" for commitment in commitments)
+    evidence.extend(f"goal-contribution:{row.id}" for row in contributions)
     evidence.append(f"user-payday:{user.id}")
     return FinancialSnapshot(
         user_id=str(user.id),
         as_of_utc=as_of_utc.astimezone(UTC),
         currency=user.currency,
-        cash_available_sen=opening_sen - spent_sen,
+        cash_available_sen=opening_sen + income_sen - spent_sen - contributed_sen,
         accounts=tuple(
             AccountBalance(
                 account_id=str(account.id),
@@ -142,9 +165,9 @@ async def load_financial_snapshot(
         ),
         next_income_payday=IncomePayday(
             payday_date=user.next_payday,
-            # The present schema records the payday but not a confirmed amount.
-            # None is intentionally not converted into an optimistic estimate.
-            amount_sen=None,
+            # This is a user-confirmed recurring profile amount. Actual income
+            # still enters cash only through a confirmed income transaction.
+            amount_sen=user.monthly_income.sen or None,
             evidence_ref=f"user-payday:{user.id}",
         ),
         commitments=tuple(
@@ -436,3 +459,70 @@ async def apply_approved_plan_change(
     record.approved_at = datetime.now(tz=UTC)
     await session.flush()
     return record
+
+
+async def recalculate_active_goal_plans(
+    session: AsyncSession, user: User, as_of_utc: datetime
+) -> tuple[GoalPlanRecord, ...]:
+    """Refresh goal health after a confirmed ledger change, with zero LLM calls."""
+    goals = (
+        await session.execute(
+            select(Goal).where(
+                Goal.user_id == user.id,
+                Goal.status.in_(("active", "at_risk", "needs_replan")),
+                Goal.target_date.is_not(None),
+            )
+        )
+    ).scalars().all()
+    if not goals:
+        return ()
+    snapshot = await load_financial_snapshot(session, user, as_of_utc)
+    refreshed: list[GoalPlanRecord] = []
+    for goal in sorted(goals, key=lambda item: str(item.id)):
+        current = (
+            await session.execute(
+                select(GoalPlanRecord)
+                .where(GoalPlanRecord.goal_id == goal.id)
+                .order_by(GoalPlanRecord.version.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if current is None or current.approval_status != "approved":
+            continue
+        try:
+            plan = calculate_goal_feasibility(definition_from_record(goal), snapshot)
+        except (TypeError, ValueError):
+            # A legacy or expired goal must be repaired through replanning, but
+            # it must never prevent an otherwise valid ledger confirmation.
+            goal.status = "needs_replan"
+            continue
+        before = plan_from_record(current)
+        material_before = (
+            before.feasible,
+            before.current_saved_sen,
+            before.required_contribution_per_payday_sen,
+            before.next_required_reserve_sen,
+            before.projected_completion_date,
+            before.risk_flags,
+        )
+        material_after = (
+            plan.feasible,
+            plan.current_saved_sen,
+            plan.required_contribution_per_payday_sen,
+            plan.next_required_reserve_sen,
+            plan.projected_completion_date,
+            plan.risk_flags,
+        )
+        if material_after == material_before:
+            continue
+        refreshed.append(
+            await apply_approved_plan_change(
+                session,
+                user,
+                definition=definition_from_record(goal),
+                plan=plan,
+                base_plan_version=current.version,
+                as_of_utc=as_of_utc,
+            )
+        )
+    return tuple(refreshed)

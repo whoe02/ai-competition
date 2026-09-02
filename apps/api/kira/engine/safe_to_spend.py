@@ -20,13 +20,30 @@ def safe_to_spend(snapshot: Snapshot) -> SafeToSpend:
 
     # A goal claims what has accrued so far this cycle, not its whole contribution.
     # Each goal is rounded once, on its own; rounded parts are never re-divided.
-    goal_reserve = Money.sum(
+    scheduled_goal_reserve = Money.sum(
         (
-            Money(round_half_up(goal.monthly.sen * cycle_elapsed, snapshot.cycle_days), currency)
+            Money(
+                round_half_up(
+                    goal.monthly.sen
+                    * min(
+                        snapshot.cycle_days,
+                        max(
+                            0,
+                            (
+                                snapshot.today
+                                - (goal.last_contributed_on or snapshot.cycle_start)
+                            ).days,
+                        ),
+                    ),
+                    snapshot.cycle_days,
+                ),
+                currency,
+            )
             for goal in snapshot.goals
         ),
         currency,
     )
+    goal_reserve = snapshot.contributed_goal_reserve + scheduled_goal_reserve
 
     # Only bills that land before the next payday compete with today's money.
     reserved = Money.sum(

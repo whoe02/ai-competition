@@ -80,6 +80,24 @@ class TestMe:
         response = await client.get("/v1/auth/me", headers={"Authorization": "Bearer nonsense"})
         assert response.status_code == 401
 
+    async def test_recurring_income_profile_is_forecast_not_cash(self, client):
+        token = await register(client)
+        headers = {"Authorization": f"Bearer {token}"}
+        balance_before = (await client.get("/v1/dashboard/today", headers=headers)).json()[
+            "balance_sen"
+        ]
+        updated = await client.patch(
+            "/v1/auth/me",
+            headers=headers,
+            json={"monthly_income_sen": 500_000, "next_payday": "2026-09-25"},
+        )
+        assert updated.status_code == 200, updated.text
+        assert updated.json()["monthly_income_sen"] == 500_000
+        balance_after = (await client.get("/v1/dashboard/today", headers=headers)).json()[
+            "balance_sen"
+        ]
+        assert balance_after == balance_before
+
 
 class TestRefresh:
     async def test_rotates_the_token(self, client):

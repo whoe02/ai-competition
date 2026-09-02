@@ -30,6 +30,14 @@ cd apps/api && .venv/bin/uvicorn kira.api.app:app --reload --port 8000
 npm --workspace apps/web run dev  # http://localhost:5173, proxies /v1
 ```
 
+After pulling schema changes, run `cd apps/api && poetry run alembic upgrade head`.
+
+Income is recorded separately from spending: a recurring salary profile is a
+forecast, while confirmed salary/other-income transactions change cash. Kira's
+goal split is deterministic and approval-gated; approved contributions are
+earmarked for goals and immediately reduce Daily Planner safe-to-spend without
+pretending that money was transferred out of the user's accounts.
+
 ## Check it
 
 ```bash

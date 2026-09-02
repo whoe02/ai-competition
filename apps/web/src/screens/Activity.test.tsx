@@ -405,6 +405,8 @@ const PLAN: ActivityData["drafts"][number] = {
   confidence: 70,
   note: "Planned, not spent — this is an estimate from your day plan. "
     + "Nothing counts against today until you confirm it.",
+  direction: "expense",
+  goal_allocation_applied: false,
 };
 
 function withPlan(overrides: Partial<typeof PLAN> = {}) {

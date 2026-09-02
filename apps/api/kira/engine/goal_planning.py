@@ -12,6 +12,7 @@ from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, timedelta
 
 CALCULATION_VERSION = "goal-plan-v1"
+ALLOCATION_CALCULATION_VERSION = "goal-allocation-v1"
 
 SHORT_TERM_GOAL_TYPES = frozenset(
     {
@@ -220,6 +221,133 @@ class GoalImpact:
     assumptions: tuple[str, ...]
     calculation_version: str
     evidence_refs: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class GoalFundingNeed:
+    """One active goal's deterministic claim on the current payday."""
+
+    goal_id: str
+    name: str
+    priority: str
+    target_date: date
+    remaining_amount_sen: int
+    required_contribution_sen: int
+
+    def __post_init__(self) -> None:
+        if self.priority not in GOAL_PRIORITIES:
+            raise ValueError(f"unsupported priority: {self.priority}")
+        _require_int("remaining_amount_sen", self.remaining_amount_sen)
+        _require_int("required_contribution_sen", self.required_contribution_sen)
+
+
+@dataclass(frozen=True, slots=True)
+class GoalAllocation:
+    goal_id: str
+    name: str
+    priority: str
+    amount_sen: int
+    income_share_bp: int
+    remaining_after_sen: int
+
+
+@dataclass(frozen=True, slots=True)
+class IncomeAllocationPlan:
+    income_transaction_id: str
+    income_amount_sen: int
+    available_for_goals_sen: int
+    protected_commitments_sen: int
+    emergency_buffer_sen: int
+    allocated_sen: int
+    unallocated_income_sen: int
+    allocations: tuple[GoalAllocation, ...]
+    risk_flags: tuple[str, ...]
+    assumptions: tuple[str, ...]
+    calculation_version: str
+    evidence_refs: tuple[str, ...]
+
+
+_PRIORITY_ORDER = {"protected": 0, "important": 1, "flexible": 2}
+
+
+def allocate_income_to_goals(
+    *,
+    income_transaction_id: str,
+    income_amount_sen: int,
+    snapshot: FinancialSnapshot,
+    goals: tuple[GoalFundingNeed, ...],
+) -> IncomeAllocationPlan:
+    """Split confirmed available income without allowing an LLM to set amounts.
+
+    Bills and the emergency buffer are removed first. Goals then receive at
+    most their required payday contribution in priority, target-date, and
+    stable-id order. The stable ordering makes identical inputs reproducible.
+    """
+    _require_int("income_amount_sen", income_amount_sen, minimum=1)
+    commitments = _commitments_due_before_next_payday(snapshot)
+    protected_cash = snapshot.emergency_buffer_sen + commitments
+    available_cash = max(0, snapshot.cash_available_sen - protected_cash)
+    available = min(income_amount_sen, available_cash)
+    left = available
+    allocations: list[GoalAllocation] = []
+    for goal in sorted(
+        goals,
+        key=lambda item: (
+            _PRIORITY_ORDER[item.priority],
+            item.target_date,
+            item.goal_id,
+        ),
+    ):
+        need = min(goal.remaining_amount_sen, goal.required_contribution_sen)
+        amount = min(left, need)
+        if amount > 0:
+            allocations.append(
+                GoalAllocation(
+                    goal_id=goal.goal_id,
+                    name=goal.name,
+                    priority=goal.priority,
+                    amount_sen=amount,
+                    income_share_bp=amount * 10_000 // income_amount_sen,
+                    remaining_after_sen=max(0, goal.remaining_amount_sen - amount),
+                )
+            )
+            left -= amount
+
+    allocated = available - left
+    risks: list[str] = []
+    if available == 0:
+        risks.append("no_income_available_after_protected_money")
+    if any(
+        allocation.amount_sen
+        < min(goal.remaining_amount_sen, goal.required_contribution_sen)
+        for allocation in allocations
+        for goal in goals
+        if goal.goal_id == allocation.goal_id
+    ) or (goals and len(allocations) < len([goal for goal in goals if goal.remaining_amount_sen])):
+        risks.append("some_goal_contributions_underfunded")
+    return IncomeAllocationPlan(
+        income_transaction_id=income_transaction_id,
+        income_amount_sen=income_amount_sen,
+        available_for_goals_sen=available,
+        protected_commitments_sen=commitments,
+        emergency_buffer_sen=snapshot.emergency_buffer_sen,
+        allocated_sen=allocated,
+        unallocated_income_sen=income_amount_sen - allocated,
+        allocations=tuple(allocations),
+        risk_flags=tuple(risks),
+        assumptions=(
+            "only confirmed income and financial records are used",
+            "protected commitments and the emergency buffer are reserved first",
+            "goals are ordered by priority, target date, then stable goal id",
+            "each goal receives no more than its deterministic payday requirement",
+        ),
+        calculation_version=ALLOCATION_CALCULATION_VERSION,
+        evidence_refs=tuple(
+            dict.fromkeys(
+                (*snapshot.evidence_refs, f"transaction:{income_transaction_id}")
+            )
+        ),
+    )
 
 
 def validate_goal_definition(goal: GoalDefinition, *, as_of_date: date | None = None) -> None:

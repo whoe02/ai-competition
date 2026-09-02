@@ -673,6 +673,80 @@ def _log_args(text: str, attachment: dict[str, Any] | None, today: date) -> dict
     }
 
 
+_INCOME = re.compile(
+    r"\b(?:received|got paid|salary (?:came|arrived|credited)|"
+    r"income (?:came|arrived)|bonus|freelance payment)\b",
+    re.I,
+)
+_INCOME_PROFILE = re.compile(
+    r"\b(?:salary|monthly income)\b.*\b(?:is now|increased to|changed to|will be)\b",
+    re.I,
+)
+
+
+def _income_args(text: str, attachment: dict[str, Any] | None, today: date) -> dict[str, Any]:
+    sen = _amount_sen(text) or (attachment or {}).get("amount_sen") or 0
+    salary = bool(re.search(r"\bsalary|payday|got paid\b", text, re.I))
+    return {
+        "add_income": {
+            "source_name": "Salary" if salary else "Other income",
+            "amount_sen": max(1, sen),
+            "occurred_on": _occurred_on(text, today).isoformat(),
+            "income_type": "salary" if salary else "other",
+            "note": text.strip()[:280],
+        }
+    }
+
+
+def _compose_income(messages: Sequence[BaseMessage], text: str) -> str:
+    result = _payload(messages, "add_income")
+    if result is None:
+        return "I have not recorded that income. Tell me the amount and I will prepare a draft."
+    if result.get("applied"):
+        return (
+            f"I added {_rm(result.get('amount_sen'))} as an income draft.\n"
+            "Confirm it in Activity before it increases your available cash; then Kira can "
+            "calculate a goal contribution for you to approve."
+        )
+    return "That income was not added. Nothing changed."
+
+
+def _income_profile_args(
+    text: str, attachment: dict[str, Any] | None, today: date
+) -> dict[str, Any]:
+    return {"update_income_profile": {"monthly_income_sen": max(0, _amount_sen(text) or 0)}}
+
+
+def _compose_income_profile(messages: Sequence[BaseMessage], text: str) -> str:
+    result = _payload(messages, "update_income_profile")
+    if result and result.get("applied"):
+        return (
+            f"Your recurring monthly income is now {_rm(result.get('monthly_income_sen'))}.\n"
+            "That updates future goal feasibility; cash changes only when income is confirmed."
+        )
+    return "Your recurring income forecast was not changed."
+
+
+def _compose_income_split(messages: Sequence[BaseMessage], text: str) -> str:
+    result = _payload(messages, "recommend_income_goal_split") or {}
+    allocations = result.get("allocations") or []
+    if not allocations:
+        return (
+            "There is no confirmed income available to split across active goals right now.\n"
+            "I have not earmarked anything."
+        )
+    details = ", ".join(
+        f"{item.get('name', 'goal')} {_rm(item.get('amount_sen'))}"
+        for item in allocations
+    )
+    return (
+        f"I recommend {details}.\n"
+        f"That earmarks {_rm(result.get('allocated_sen'))}; "
+        f"{_rm(result.get('unallocated_income_sen'))} remains unallocated. "
+        "The split protects bills and your emergency buffer and follows goal priority."
+    )
+
+
 def _compose_log(messages: Sequence[BaseMessage], text: str) -> str:
     """Say what happened to the proposal, and only what happened.
 
@@ -1151,6 +1225,33 @@ ROUTES: tuple[Route, ...] = (
             "start_day_planning": _places_args(text) | {"request": text}
         },
         compose=_compose_places,
+    ),
+    Route(
+        "income_goal_split",
+        re.compile(
+            r"\b(?:split|allocate|contribute|put)\b.*\b(?:income|salary|goals?)\b"
+            r"|\b(?:income|salary)\b.*\b(?:split|allocate|contribute|goals?)\b",
+            re.I,
+        ),
+        ("recommend_income_goal_split",),
+        arguments=lambda text, attachment, today=None: {"recommend_income_goal_split": {}},
+        compose=_compose_income_split,
+    ),
+    Route(
+        "income_profile",
+        _INCOME_PROFILE,
+        ("update_income_profile",),
+        arguments=_income_profile_args,
+        compose=_compose_income_profile,
+        when=lambda text: _amount_sen(text) is not None,
+    ),
+    Route(
+        "income",
+        _INCOME,
+        ("add_income",),
+        arguments=_income_args,
+        compose=_compose_income,
+        when=lambda text: _amount_sen(text) is not None,
     ),
     Route(
         "log",

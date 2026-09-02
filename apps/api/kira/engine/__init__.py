@@ -1,6 +1,7 @@
 """Pure finance calculations. This package imports nothing from the rest of Kira."""
 
 from kira.engine.goal_planning import (
+    ALLOCATION_CALCULATION_VERSION,
     CALCULATION_VERSION,
     GOAL_PRIORITIES,
     GOAL_STATUSES,
@@ -11,14 +12,18 @@ from kira.engine.goal_planning import (
     ActiveGoalReserve,
     CashflowReconciliation,
     FinancialSnapshot,
+    GoalAllocation,
     GoalContribution,
     GoalDefinition,
+    GoalFundingNeed,
     GoalImpact,
     GoalMilestone,
     GoalPlan,
     GoalScenario,
+    IncomeAllocationPlan,
     IncomePayday,
     ProtectedCommitment,
+    allocate_income_to_goals,
     build_goal_contribution_schedule,
     calculate_goal_feasibility,
     calculate_goal_plan_for_contribution,
@@ -38,6 +43,7 @@ from kira.engine.types import CommitmentInput, GoalInput, SafeToSpend, Snapshot
 __all__ = [
     "CommitmentInput",
     "CALCULATION_VERSION",
+    "ALLOCATION_CALCULATION_VERSION",
     "GOAL_PRIORITIES",
     "GOAL_STATUSES",
     "GOAL_TYPES",
@@ -50,6 +56,9 @@ __all__ = [
     "GoalContribution",
     "GoalDefinition",
     "GoalImpact",
+    "GoalAllocation",
+    "GoalFundingNeed",
+    "IncomeAllocationPlan",
     "GoalInput",
     "GoalMilestone",
     "GoalPlan",
@@ -70,5 +79,6 @@ __all__ = [
     "generate_goal_scenarios",
     "reconcile_goal_with_short_term_cashflow",
     "validate_goal_definition",
+    "allocate_income_to_goals",
     "with_target_date",
 ]

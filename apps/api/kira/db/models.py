@@ -29,6 +29,14 @@ TXN_CONFIRMED = "confirmed"
 TXN_DISCARDED = "discarded"
 TXN_STATUSES = (TXN_DRAFT, TXN_CONFIRMED, TXN_DISCARDED)
 
+TXN_EXPENSE = "expense"
+TXN_INCOME = "income"
+TXN_DIRECTIONS = (TXN_EXPENSE, TXN_INCOME)
+
+INCOME_SALARY = "salary"
+INCOME_OTHER = "other"
+INCOME_TYPES = (INCOME_SALARY, INCOME_OTHER)
+
 SOURCE_MANUAL = "manual"
 SOURCE_RECEIPT = "receipt"
 SOURCE_VOICE = "voice"
@@ -149,6 +157,9 @@ class Goal(Base):
     plans: Mapped[list[GoalPlanRecord]] = relationship(
         back_populates="goal", cascade="all, delete-orphan", lazy="selectin"
     )
+    contributions: Mapped[list[GoalContributionRecord]] = relationship(
+        back_populates="goal", cascade="all, delete-orphan", lazy="selectin"
+    )
 
 
 class GoalPlanRecord(Base):
@@ -226,6 +237,34 @@ class GoalMilestoneRecord(Base):
     plan: Mapped[GoalPlanRecord] = relationship(back_populates="milestones")
 
 
+class GoalContributionRecord(Base):
+    """A confirmed earmark into a goal, appended only after user approval."""
+
+    __tablename__ = "goal_contributions"
+    __table_args__ = (
+        UniqueConstraint(
+            "goal_id", "income_transaction_id", name="uq_goal_contribution_income"
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=_uuid)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    goal_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("goals.id", ondelete="CASCADE"), index=True
+    )
+    income_transaction_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("transactions.id", ondelete="RESTRICT"), nullable=True, index=True
+    )
+    amount: Mapped[Money] = mapped_column(MoneyType())
+    contributed_on: Mapped[date] = mapped_column(Date, index=True)
+    source: Mapped[str] = mapped_column(String(24), default="income_allocation")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+    goal: Mapped[Goal] = relationship(back_populates="contributions")
+
+
 class Transaction(Base):
     __tablename__ = "transactions"
 
@@ -241,6 +280,12 @@ class Transaction(Base):
     source: Mapped[str] = mapped_column(String(12), default=SOURCE_MANUAL)
     confidence: Mapped[int | None] = mapped_column(Integer, nullable=True)
     note: Mapped[str] = mapped_column(Text, default="")
+    # Amounts stay positive integer sen. Direction says whether the amount
+    # enters or leaves cash, avoiding signed-money ambiguity at every caller.
+    direction: Mapped[str] = mapped_column(String(8), default=TXN_EXPENSE, index=True)
+    income_type: Mapped[str | None] = mapped_column(String(16), nullable=True, index=True)
+    updates_income_profile: Mapped[bool] = mapped_column(Boolean, default=False)
+    goal_allocation_applied: Mapped[bool] = mapped_column(Boolean, default=False)
     # Client-side default: server now() is transaction time, so rows written in one
     # commit would tie and the ledger's within-day order would be undefined.
     created_at: Mapped[datetime] = mapped_column(

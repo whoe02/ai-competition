@@ -52,6 +52,7 @@ export function DraftCard({
   settling,
   correcting,
 }: DraftCardProps) {
+  const income = draft.direction === "income";
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [typed, setTyped] = useState(() => toRinggitInput(draft.amount_sen));
@@ -103,7 +104,9 @@ export function DraftCard({
           <b style={{ display: "block", fontSize: 15.5, letterSpacing: "-.02em", marginTop: 5 }}>
             {draft.merchant}
           </b>
-          <span style={{ fontSize: 12.5, color: "var(--muted)" }}>{draft.category_label}</span>
+          <span style={{ fontSize: 12.5, color: "var(--muted)" }}>
+            {income ? (draft.income_type === "salary" ? "Salary income" : "Other income") : draft.category_label}
+          </span>
         </div>
         <div className="money" style={{ fontSize: 20 }}>RM{fmt(draft.amount_sen)}</div>
       </div>
@@ -205,8 +208,8 @@ export function DraftCard({
             </p>
           )}
 
-          <DetailRow label="Category" index={2}>
-            <b>{draft.category}</b>
+          <DetailRow label={income ? "Income type" : "Category"} index={2}>
+            <b>{income ? (draft.income_type ?? "other") : draft.category}</b>
           </DetailRow>
           <DetailRow label="Date" index={3}>
             <b>{draft.occurred_on}</b>
@@ -221,7 +224,7 @@ export function DraftCard({
           disabled={busy}
           onClick={() => onConfirm(draft.id)}
         >
-          Confirm
+          {income ? "Confirm income" : "Confirm"}
         </button>
         <button className="btn btn-line btn-sm" onClick={() => setOpen((shown) => !shown)}>
           {open ? "Close" : "Details"}

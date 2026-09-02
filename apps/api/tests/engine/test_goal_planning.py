@@ -8,8 +8,10 @@ from kira.engine import (
     ActiveGoalReserve,
     FinancialSnapshot,
     GoalDefinition,
+    GoalFundingNeed,
     IncomePayday,
     ProtectedCommitment,
+    allocate_income_to_goals,
     build_goal_contribution_schedule,
     calculate_goal_feasibility,
     calculate_goal_plan_for_contribution,
@@ -69,6 +71,50 @@ class TestIntegerSen:
         schedule = build_goal_contribution_schedule(goal(), snapshot())
         assert [item.amount_sen for item in schedule] == [5_001, 5_000]
         assert sum(item.amount_sen for item in schedule) == 10_001
+
+
+class TestIncomeAllocation:
+    def test_priority_date_and_id_make_the_split_reproducible(self):
+        needs = (
+            GoalFundingNeed("z", "Flexible", "flexible", date(2026, 9, 20), 20_000, 20_000),
+            GoalFundingNeed("b", "Protected later", "protected", date(2026, 11, 1), 30_000, 30_000),
+            GoalFundingNeed("a", "Protected soon", "protected", date(2026, 10, 1), 30_000, 30_000),
+        )
+        first = allocate_income_to_goals(
+            income_transaction_id="income-1",
+            income_amount_sen=50_000,
+            snapshot=snapshot(cash_available_sen=100_000),
+            goals=needs,
+        )
+        second = allocate_income_to_goals(
+            income_transaction_id="income-1",
+            income_amount_sen=50_000,
+            snapshot=snapshot(cash_available_sen=100_000),
+            goals=tuple(reversed(needs)),
+        )
+        assert first == second
+        assert [(item.goal_id, item.amount_sen) for item in first.allocations] == [
+            ("a", 30_000),
+            ("b", 20_000),
+        ]
+        assert sum(item.amount_sen for item in first.allocations) == 50_000
+        assert all(isinstance(item.income_share_bp, int) for item in first.allocations)
+
+    def test_protected_money_caps_the_income_available_to_goals(self):
+        plan = allocate_income_to_goals(
+            income_transaction_id="income-2",
+            income_amount_sen=80_000,
+            snapshot=snapshot(cash_available_sen=55_000),
+            goals=(
+                GoalFundingNeed(
+                    "goal", "House", "important", date(2028, 1, 1), 80_000, 80_000
+                ),
+            ),
+        )
+        # RM30,000 bill + RM20,000 buffer leave RM5,000; the engine cannot
+        # reinterpret either protected amount as goal money.
+        assert plan.available_for_goals_sen == 5_000
+        assert plan.allocated_sen == 5_000
 
 
 class TestSafetyBoundaries:

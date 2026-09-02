@@ -103,7 +103,11 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Update Financial Profile
+         * @description Update the recurring income forecast; it never creates cash by itself.
+         */
+        patch: operations["update_financial_profile_v1_auth_me_patch"];
         trace?: never;
     };
     "/v1/dashboard/today": {
@@ -141,6 +145,46 @@ export interface paths {
          * @description Add spending. It lands as a draft whatever route it came in by.
          */
         post: operations["post_transaction_v1_transactions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/transactions/{transaction_id}/goal-allocation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Goal Allocation
+         * @description Preview the server-calculated split. This endpoint never writes.
+         */
+        get: operations["get_goal_allocation_v1_transactions__transaction_id__goal_allocation_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/transactions/{transaction_id}/goal-allocation/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Goal Allocation Approval
+         * @description Recalculate and atomically earmark the approved contribution split.
+         */
+        post: operations["post_goal_allocation_approval_v1_transactions__transaction_id__goal_allocation_approve_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -527,6 +571,13 @@ export interface paths {
          *     because the client cannot read its own state against a list that is still
          *     in flight: the answer on screen has to say which kind it was actually
          *     filtered by, exactly as it says which ceiling.
+         *
+         *     ``request`` is the user's sentence as they typed it, and the two travel
+         *     together rather than one instead of the other. Where the relevance pass is
+         *     on and a model answers, the sentence is what narrows the list and ``kind``
+         *     narrows nothing; where it is off, or the model cannot be reached, ``kind``
+         *     is the whole of the filter exactly as it has always been. ``ranking`` on the
+         *     response says which of the two the client is looking at.
          */
         get: operations["get_places_v1_day_plan_places_get"];
         put?: never;
@@ -728,6 +779,11 @@ export interface components {
             days: components["schemas"]["ActivityDayResponse"][];
             /** Spent This Cycle Sen */
             spent_this_cycle_sen: number;
+            /**
+             * Income This Cycle Sen
+             * @default 0
+             */
+            income_this_cycle_sen: number;
             /** Categories */
             categories: components["schemas"]["CategorySummaryResponse"][];
         };
@@ -742,6 +798,35 @@ export interface components {
             actual: components["schemas"]["MoneyOut"];
             /** Followed */
             followed: boolean;
+        };
+        /** AppliedGoalContributionResponse */
+        AppliedGoalContributionResponse: {
+            /**
+             * Contribution Id
+             * Format: uuid
+             */
+            contribution_id: string;
+            /**
+             * Goal Id
+             * Format: uuid
+             */
+            goal_id: string;
+            /** Goal Name */
+            goal_name: string;
+            /** Amount Sen */
+            amount_sen: number;
+            /** Saved After Sen */
+            saved_after_sen: number;
+            /** Target Amount Sen */
+            target_amount_sen: number;
+            /** Plan Version */
+            plan_version: number;
+        };
+        /** AppliedGoalIncomeAllocationResponse */
+        AppliedGoalIncomeAllocationResponse: {
+            plan: components["schemas"]["GoalIncomeAllocationResponse"];
+            /** Contributions */
+            contributions: components["schemas"]["AppliedGoalContributionResponse"][];
         };
         /** ApprovalDecisionRequest */
         ApprovalDecisionRequest: {
@@ -1000,6 +1085,14 @@ export interface components {
              * @default
              */
             note: string;
+            /**
+             * Direction
+             * @default expense
+             * @enum {string}
+             */
+            direction: "expense" | "income";
+            /** Income Type */
+            income_type?: ("salary" | "other") | null;
         };
         /** DashboardTodayResponse */
         DashboardTodayResponse: {
@@ -1167,10 +1260,12 @@ export interface components {
          *     is saying it was kept for this kind on a belief rather than on a tag, and
          *     the word that belief is about is the one here.
          *
-         *     ``kind_count`` counts both sorts of match, because both are in ``places``.
-         *     It is still the ``kind`` row of the price landscape and still the number of
-         *     places a search for that word returns; which of them rest on a tag and which
-         *     on a belief is on the rows themselves and nowhere else.
+         *     ``kind_count`` counts every sort of match, because all of them are in
+         *     ``places``. Where ``ranking`` is ``deterministic`` it is still the ``kind``
+         *     row of the price landscape and still the number of places a search for that
+         *     word returns; where a model ranked instead, it is how many places the model
+         *     kept. Which of them rest on a tag and which on a guess is on the rows
+         *     themselves and nowhere else.
          *
          *     ``nearest_over_cap`` is the cheapest few places the ceiling turned away, and
          *     it is only ever non-empty when ``places`` is empty. It is a separate field
@@ -1195,6 +1290,11 @@ export interface components {
             matching_count: number;
             /** Kind Count */
             kind_count: number;
+            /**
+             * Ranking
+             * @enum {string}
+             */
+            ranking: "model" | "deterministic";
             /** Places */
             places: components["schemas"]["PlaceResponse"][];
             /** Nearest Over Cap */
@@ -1209,6 +1309,13 @@ export interface components {
             probability_bp_after: number;
             /** Bp Per Ringgit */
             bp_per_ringgit: number;
+        };
+        /** FinancialProfileUpdateRequest */
+        FinancialProfileUpdateRequest: {
+            /** Monthly Income Sen */
+            monthly_income_sen?: number | null;
+            /** Next Payday */
+            next_payday?: string | null;
         };
         /** ForesightResponse */
         ForesightResponse: {
@@ -1424,6 +1531,57 @@ export interface components {
             goal_delay_days: number;
             /** Flexible Spending Remaining Sen */
             flexible_spending_remaining_sen: number;
+            /** Risk Flags */
+            risk_flags: string[];
+            /** Assumptions */
+            assumptions: string[];
+            /** Calculation Version */
+            calculation_version: string;
+            /** Evidence Refs */
+            evidence_refs: string[];
+        };
+        /** GoalIncomeAllocationItemResponse */
+        GoalIncomeAllocationItemResponse: {
+            /**
+             * Goal Id
+             * Format: uuid
+             */
+            goal_id: string;
+            /** Name */
+            name: string;
+            /**
+             * Priority
+             * @enum {string}
+             */
+            priority: "protected" | "important" | "flexible";
+            /** Amount Sen */
+            amount_sen: number;
+            /** Income Share Bp */
+            income_share_bp: number;
+            /** Remaining After Sen */
+            remaining_after_sen: number;
+        };
+        /** GoalIncomeAllocationResponse */
+        GoalIncomeAllocationResponse: {
+            /**
+             * Income Transaction Id
+             * Format: uuid
+             */
+            income_transaction_id: string;
+            /** Income Amount Sen */
+            income_amount_sen: number;
+            /** Available For Goals Sen */
+            available_for_goals_sen: number;
+            /** Protected Commitments Sen */
+            protected_commitments_sen: number;
+            /** Emergency Buffer Sen */
+            emergency_buffer_sen: number;
+            /** Allocated Sen */
+            allocated_sen: number;
+            /** Unallocated Income Sen */
+            unallocated_income_sen: number;
+            /** Allocations */
+            allocations: components["schemas"]["GoalIncomeAllocationItemResponse"][];
             /** Risk Flags */
             risk_flags: string[];
             /** Assumptions */
@@ -1697,15 +1855,30 @@ export interface components {
          *     ride fare in Kuala Lumpur can be half of the real one. The basis is
          *     per-place: one search routes some destinations and fails on others.
          *
-         *     ``match_basis`` is the other thing a row must not be read without. A kind
-         *     filter matches what OpenStreetMap states about a place and also what a model
+         *     ``match_basis`` is the other thing a row must not be read without. A search
+         *     matches what OpenStreetMap states about a place, and also what a model
          *     believes it serves beyond that, so a chicken search reaches the McDonald's
-         *     that OSM only ever calls a burger shop. The two are not the same kind of
-         *     truth and a client may not have to guess between them: ``tagged`` is the map
-         *     stating the cuisine, ``inferred`` is a belief about the menu, and null is no
-         *     kind having been asked for. A screen that drew an inferred row exactly like
-         *     a tagged one would be presenting a guess as a fact -- which is the one thing
-         *     a wider list must not buy.
+         *     that OSM only ever calls a burger shop. Those are not the same kind of truth
+         *     and a client may not have to guess between them: ``tagged`` is the map
+         *     stating the cuisine, ``inferred`` is a belief about the menu recorded when
+         *     the data was built, ``judged`` is a model reading this search's own request
+         *     and saying this place answers it with nothing in the data to point at, and
+         *     null is nothing having been asked for. A screen that drew any of the last
+         *     two exactly like a tagged one would be presenting a guess as a fact --
+         *     which is the one thing a wider list must not buy.
+         *
+         *     ``match_strength`` is how well that model thought this place answers the
+         *     request, and it is null on every row nothing judged -- which is every row
+         *     while ``DayPlanResponse.ranking`` says ``deterministic``, because a word
+         *     either matched or it did not and there is no degree in that.
+         *
+         *     ``match_reason`` is why this row is here, in words that can be printed as
+         *     they stand: "Tagged chicken", "Also serves chicken", "The model thinks this
+         *     serves beef". Empty where nothing matched. It exists because a row otherwise
+         *     cannot explain itself -- a place labelled Dessert answering a search for
+         *     chicken is either a good answer or a bug, and the category alone does not
+         *     say which. Every word of it is the server's; the model contributes at most
+         *     the name of a food.
          */
         PlaceResponse: {
             /** Id */
@@ -1749,7 +1922,11 @@ export interface components {
             /** Note */
             note: string;
             /** Match Basis */
-            match_basis: ("tagged" | "inferred") | null;
+            match_basis: ("tagged" | "inferred" | "judged") | null;
+            /** Match Strength */
+            match_strength: ("strong" | "weak") | null;
+            /** Match Reason */
+            match_reason: string;
         };
         /**
          * PlanDraftRequest
@@ -1846,6 +2023,19 @@ export interface components {
             confidence: number | null;
             /** Note */
             note: string;
+            /**
+             * Direction
+             * @default expense
+             * @enum {string}
+             */
+            direction: "expense" | "income";
+            /** Income Type */
+            income_type?: ("salary" | "other") | null;
+            /**
+             * Goal Allocation Applied
+             * @default false
+             */
+            goal_allocation_applied: boolean;
         };
         /** UserResponse */
         UserResponse: {
@@ -1877,6 +2067,11 @@ export interface components {
             cycle_start: string;
             /** Cycle Days */
             cycle_days: number;
+            /**
+             * Monthly Income Sen
+             * @default 0
+             */
+            monthly_income_sen: number;
         };
         /** ValidationError */
         ValidationError: {
@@ -2046,6 +2241,39 @@ export interface operations {
             };
         };
     };
+    update_financial_profile_v1_auth_me_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FinancialProfileUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_today_v1_dashboard_today_get: {
         parameters: {
             query?: never;
@@ -2117,6 +2345,68 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TransactionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_goal_allocation_v1_transactions__transaction_id__goal_allocation_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                transaction_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoalIncomeAllocationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_goal_allocation_approval_v1_transactions__transaction_id__goal_allocation_approve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                transaction_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppliedGoalIncomeAllocationResponse"];
                 };
             };
             /** @description Validation Error */
@@ -2747,6 +3037,7 @@ export interface operations {
                 cap_sen?: number | null;
                 radius_km?: number;
                 kind?: string | null;
+                request?: string | null;
             };
             header?: never;
             path?: never;

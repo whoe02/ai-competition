@@ -38,6 +38,8 @@ const DRAFT: Transaction = {
   source: "receipt",
   confidence: 94,
   note: "Line item total matched.",
+  direction: "expense",
+  goal_allocation_applied: false,
 };
 
 const LEDGER_TXN: Transaction = {
@@ -51,6 +53,8 @@ const LEDGER_TXN: Transaction = {
   source: "manual",
   confidence: null,
   note: "",
+  direction: "expense",
+  goal_allocation_applied: false,
 };
 
 const ACTIVITY = {
@@ -97,6 +101,7 @@ const DAY_PLAN: DayPlan = {
   nearby_count: 1,
   matching_count: 1,
   kind_count: 1,
+  ranking: "deterministic",
   places: [
     {
       id: "p1",
@@ -119,6 +124,8 @@ const DAY_PLAN: DayPlan = {
       // Nothing was filtered by kind, so nothing matched anything and there is
       // no basis to state.
       match_basis: null,
+      match_strength: null,
+      match_reason: "",
     },
   ],
   nearest_over_cap: [],

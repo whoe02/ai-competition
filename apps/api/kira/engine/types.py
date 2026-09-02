@@ -22,6 +22,7 @@ class GoalInput:
     target: Money = Money(0)
     saved: Money = Money(0)
     target_date: date | None = None
+    last_contributed_on: date | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,12 +50,15 @@ class Snapshot:
     # What lands on each payday. Zero by default, so safe_to_spend and every
     # golden fixture — none of which look past the next payday — are untouched.
     income: Money = Money(0)
+    # Confirmed goal contributions are still present in cash but are earmarked
+    # and therefore unavailable to Daily Planner spending.
+    contributed_goal_reserve: Money = Money(0)
 
     def __post_init__(self) -> None:
         if self.cycle_days <= 0:
             raise ValueError("cycle_days must be positive")
         currency = self.balance.currency
-        others = [self.buffer, self.spent_today, self.income]
+        others = [self.buffer, self.spent_today, self.income, self.contributed_goal_reserve]
         others += [c.amount for c in self.commitments]
         others += [g.monthly for g in self.goals]
         for amount in others:

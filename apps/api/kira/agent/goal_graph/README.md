@@ -61,6 +61,27 @@ contains exact before/after plans plus `base_plan_version`.
 
 Existing plan versions are never overwritten.
 
+## Income, progress, and Daily Planner
+
+Recurring income (`users.monthly_income`) is a forecast used by feasibility;
+it does not create cash. Actual salary or other income is a positive-sen
+transaction with `direction=income`, and affects cash only after confirmation.
+
+For confirmed income, `goal-allocation-v1` deterministically:
+
+1. preserves protected commitments and the emergency buffer;
+2. caps every goal at its required contribution for that payday;
+3. orders competing goals by protected, important, flexible, then target date
+   and stable goal ID;
+4. returns exact integer-sen amounts and income-share basis points.
+
+The LLM can explain this result but cannot change it. Applying the split needs
+explicit approval and appends `goal_contributions` plus new approved plan
+versions. Contributions earmark cash rather than pretending to transfer it;
+Daily Planner subtracts the earmarked total from safe-to-spend. Initial
+"already saved" money remains a one-time starting fact and is not double
+counted as a new contribution.
+
 ## Entry points
 
 - `POST /v1/butler/messages` is the normal conversational entry point. The

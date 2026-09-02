@@ -13,6 +13,8 @@ import {
   useCategories,
   useForesight,
   useHindsight,
+  useFinancialProfile,
+  useUpdateFinancialProfile,
   useMemories,
   useUnconfirm,
 } from "./api/hooks";
@@ -56,6 +58,8 @@ export function App() {
   // Butler tab should already have its history when it appears.
   const butler = useButlerThread(signedIn);
   const memories = useMemories(signedIn && tab === "more");
+  const profile = useFinancialProfile(signedIn);
+  const updateProfile = useUpdateFinancialProfile();
   const categories = useCategories(signedIn);
   const confirm = useConfirmDraft();
   const discard = useDiscardDraft();
@@ -229,7 +233,14 @@ export function App() {
                     />
                   )}
                   {signedIn && tab === "more" && (
-                    <More memories={memories.data} isLoading={memories.isLoading} />
+                    <More
+                      memories={memories.data}
+                      isLoading={memories.isLoading}
+                      profile={profile.data}
+                      profileLoading={profile.isLoading}
+                      profileSaving={updateProfile.isPending}
+                      onUpdateProfile={(value) => updateProfile.mutateAsync(value)}
+                    />
                   )}
                 </div>
               </div>

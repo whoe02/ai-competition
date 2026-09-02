@@ -102,6 +102,21 @@ class TestGoalReserve:
     def test_no_goals_reserves_nothing(self):
         assert safe_to_spend(snapshot(goals=())).goal_reserve == Money.zero()
 
+    def test_confirmed_contribution_is_reserved_without_double_accruing_today(self):
+        r = safe_to_spend(
+            snapshot(
+                goals=(
+                    GoalInput(
+                        "g",
+                        Money(30_000),
+                        last_contributed_on=TODAY,
+                    ),
+                ),
+                contributed_goal_reserve=Money(10_000),
+            )
+        )
+        assert r.goal_reserve == Money(10_000)
+
     def test_cycle_elapsed_is_clamped_to_the_cycle_length(self):
         r = safe_to_spend(snapshot(cycle_start=date(2026, 6, 1)))
         assert r.cycle_elapsed == 30

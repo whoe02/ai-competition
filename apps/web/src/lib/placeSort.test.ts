@@ -18,6 +18,8 @@ function place(
     name: id,
     kind: "Cafe",
     match_basis: matchBasis,
+    match_strength: null,
+    match_reason: "",
     address: "Kuala Lumpur",
     lat: 3.1577,
     lng: 101.712,

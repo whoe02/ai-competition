@@ -1,10 +1,11 @@
 import { useState } from "react";
 
-import type { Memory } from "@kira/contracts";
+import type { FinancialProfileUpdate, Memory, UserResponse } from "@kira/contracts";
 
 import { useCorrectMemory, useForgetMemory } from "../api/hooks";
 import { IcTrash } from "../components/Icons";
 import { Reveal } from "../components/Reveal";
+import { parseNonNegativeSen, toRinggitInput } from "../lib/money";
 
 const KIND_BLURB: Record<string, string> = {
   preference: "how you want to be told things",
@@ -19,6 +20,10 @@ const WHEN = new Intl.DateTimeFormat("en-MY", { day: "numeric", month: "short" }
 type MoreProps = {
   memories: Memory[] | undefined;
   isLoading: boolean;
+  profile?: UserResponse;
+  profileLoading?: boolean;
+  profileSaving?: boolean;
+  onUpdateProfile?: (value: FinancialProfileUpdate) => Promise<unknown>;
 };
 
 /**
@@ -27,7 +32,14 @@ type MoreProps = {
  * Memory that cannot be read back is memory you have to trust blindly, so the
  * correction and the delete are the feature as much as the remembering is.
  */
-export function More({ memories, isLoading }: MoreProps) {
+export function More({
+  memories,
+  isLoading,
+  profile,
+  profileLoading = false,
+  profileSaving = false,
+  onUpdateProfile,
+}: MoreProps) {
   return (
     <>
       <div className="topbar">
@@ -40,6 +52,16 @@ export function More({ memories, isLoading }: MoreProps) {
       </div>
 
       <div className="pad">
+        {onUpdateProfile && (
+          <Reveal>
+            <IncomeProfileCard
+              profile={profile}
+              loading={profileLoading}
+              saving={profileSaving}
+              onSave={onUpdateProfile}
+            />
+          </Reveal>
+        )}
         <Reveal>
           <section className="card">
             <p className="voice" style={{ margin: 0, fontSize: 15.5, lineHeight: 1.5 }}>
@@ -75,6 +97,73 @@ export function More({ memories, isLoading }: MoreProps) {
         </Reveal>
       </div>
     </>
+  );
+}
+
+function IncomeProfileCard({
+  profile,
+  loading,
+  saving,
+  onSave,
+}: {
+  profile?: UserResponse;
+  loading: boolean;
+  saving: boolean;
+  onSave: (value: FinancialProfileUpdate) => Promise<unknown>;
+}) {
+  const [income, setIncome] = useState("");
+  const [payday, setPayday] = useState("");
+  const [editing, setEditing] = useState(false);
+  const [notice, setNotice] = useState("");
+  const currentIncome = profile?.monthly_income_sen ?? 0;
+
+  const edit = () => {
+    setIncome(toRinggitInput(currentIncome));
+    setPayday(profile?.next_payday ?? "");
+    setNotice("");
+    setEditing(true);
+  };
+  const save = async () => {
+    const monthlyIncomeSen = parseNonNegativeSen(income);
+    if (monthlyIncomeSen === null) return;
+    try {
+      await onSave({
+        monthly_income_sen: monthlyIncomeSen,
+        ...(payday ? { next_payday: payday } : {}),
+      });
+      setEditing(false);
+      setNotice("Recurring income updated. This changes forecasts, not your cash balance.");
+    } catch {
+      setNotice("That did not save. Your recurring income is unchanged.");
+    }
+  };
+
+  return (
+    <section className="card" style={{ marginBottom: 14 }}>
+      <p className="eyebrow" style={{ margin: 0 }}>Income profile</p>
+      <h2 style={{ fontSize: 18, margin: "7px 0" }}>Salary and recurring income</h2>
+      {loading ? <p className="mem-meta">Reading…</p> : editing ? (
+        <div style={{ display: "grid", gap: 10 }}>
+          <label style={{ fontSize: 13 }}>Monthly income (RM)
+            <input className="mem-input" aria-label="Monthly recurring income" inputMode="decimal" value={income} onChange={(event) => setIncome(event.target.value)} />
+          </label>
+          <label style={{ fontSize: 13 }}>Next payday
+            <input className="mem-input" aria-label="Next payday" type="date" value={payday} onChange={(event) => setPayday(event.target.value)} />
+          </label>
+          <div className="mem-acts">
+            <button className="btn btn-primary btn-sm" disabled={saving || parseNonNegativeSen(income) === null} onClick={() => void save()}>{saving ? "Saving…" : "Save"}</button>
+            <button className="btn btn-ghost btn-sm" onClick={() => setEditing(false)}>Cancel</button>
+          </div>
+        </div>
+      ) : (
+        <>
+          <p className="money" style={{ fontSize: 21, margin: "10px 0 2px" }}>RM{toRinggitInput(currentIncome)}</p>
+          <p className="mem-meta">Forecast only · next payday {profile?.next_payday ?? "not set"}</p>
+          <button className="btn btn-line btn-sm" onClick={edit}>Update income</button>
+        </>
+      )}
+      {notice && <p className="mem-meta" role="status">{notice}</p>}
+    </section>
   );
 }
 

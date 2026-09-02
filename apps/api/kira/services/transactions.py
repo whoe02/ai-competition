@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import date
+from datetime import UTC, date, datetime, time
 from itertools import groupby
 
 from sqlalchemy import select
@@ -13,10 +13,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from kira.categories import label_for
 from kira.db.models import (
+    INCOME_TYPES,
     SOURCE_MANUAL,
     TXN_CONFIRMED,
+    TXN_DIRECTIONS,
     TXN_DISCARDED,
     TXN_DRAFT,
+    TXN_EXPENSE,
     Transaction,
     User,
 )
@@ -39,6 +42,10 @@ class InvalidTransaction(Exception):
     """The proposed transaction is not something that can go on the ledger."""
 
 
+class IncomeAllocationExists(Exception):
+    """An income supporting goal contributions cannot be removed underneath them."""
+
+
 @dataclass(frozen=True, slots=True)
 class TransactionView:
     id: uuid.UUID
@@ -51,6 +58,9 @@ class TransactionView:
     source: str
     confidence: int | None
     note: str
+    direction: str
+    income_type: str | None
+    goal_allocation_applied: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,6 +84,7 @@ class Activity:
     draft_total_sen: int
     days: tuple[ActivityDay, ...]
     spent_this_cycle_sen: int
+    income_this_cycle_sen: int
     categories: tuple[CategorySummary, ...]
 
 
@@ -89,11 +100,27 @@ def _view(txn: Transaction) -> TransactionView:
         source=txn.source,
         confidence=txn.confidence,
         note=txn.note,
+        direction=txn.direction,
+        income_type=txn.income_type,
+        goal_allocation_applied=txn.goal_allocation_applied,
     )
 
 
 def _total(txns: Iterable[TransactionView], currency: str) -> int:
     return Money.sum((Money(txn.amount_sen, currency) for txn in txns), currency).sen
+
+
+def _activity_day(occurred_on: date, transactions: Iterable[Transaction]) -> ActivityDay:
+    rows = tuple(_view(txn) for txn in transactions)
+    return ActivityDay(
+        date=occurred_on,
+        # A positive total is net money out; income therefore offsets it.
+        total_sen=sum(
+            row.amount_sen if row.direction == TXN_EXPENSE else -row.amount_sen
+            for row in rows
+        ),
+        transactions=rows,
+    )
 
 
 def _summarise(
@@ -102,6 +129,8 @@ def _summarise(
     """One chip per category present this cycle, dearest first."""
     totals: dict[str, list[int]] = {}
     for txn in confirmed:
+        if txn.direction != TXN_EXPENSE:
+            continue
         if txn.occurred_on < cycle_start:
             continue
         running = totals.setdefault(txn.category, [0, 0])
@@ -146,14 +175,14 @@ async def list_activity(
         )
     ).scalars().all()
     categories = _summarise(confirmed, user.cycle_start, user.currency)
-    shown = [txn for txn in confirmed if category is None or txn.category == category]
+    shown = [
+        txn
+        for txn in confirmed
+        if txn.direction != TXN_EXPENSE or category is None or txn.category == category
+    ]
 
     days = tuple(
-        ActivityDay(
-            date=occurred_on,
-            total_sen=_total(rows := tuple(_view(txn) for txn in group), user.currency),
-            transactions=rows,
-        )
+        _activity_day(occurred_on, group)
         for occurred_on, group in groupby(shown, key=lambda txn: txn.occurred_on)
     )
 
@@ -163,7 +192,19 @@ async def list_activity(
         draft_total_sen=_total(draft_views, user.currency),
         days=days,
         spent_this_cycle_sen=_total(
-            (_view(txn) for txn in shown if txn.occurred_on >= user.cycle_start),
+            (
+                _view(txn)
+                for txn in shown
+                if txn.direction == TXN_EXPENSE and txn.occurred_on >= user.cycle_start
+            ),
+            user.currency,
+        ),
+        income_this_cycle_sen=_total(
+            (
+                _view(txn)
+                for txn in shown
+                if txn.direction != TXN_EXPENSE and txn.occurred_on >= user.cycle_start
+            ),
             user.currency,
         ),
         categories=categories,
@@ -181,6 +222,8 @@ async def create_transaction(
     source: str = SOURCE_MANUAL,
     confidence: int | None = None,
     note: str = "",
+    direction: str = TXN_EXPENSE,
+    income_type: str | None = None,
 ) -> TransactionView:
     """Add a transaction as a draft. Nothing enters the ledger unconfirmed.
 
@@ -194,6 +237,12 @@ async def create_transaction(
         raise InvalidTransaction("a transaction needs a positive amount")
     if confidence is not None and not 0 <= confidence <= 100:
         raise InvalidTransaction("confidence is a percentage")
+    if direction not in TXN_DIRECTIONS:
+        raise InvalidTransaction(f"direction must be one of: {', '.join(TXN_DIRECTIONS)}")
+    if direction == TXN_EXPENSE and income_type is not None:
+        raise InvalidTransaction("an expense cannot have an income type")
+    if direction != TXN_EXPENSE and income_type not in INCOME_TYPES:
+        raise InvalidTransaction(f"income_type must be one of: {', '.join(INCOME_TYPES)}")
     txn = Transaction(
         user_id=user.id,
         merchant=merchant.strip(),
@@ -204,6 +253,8 @@ async def create_transaction(
         source=source,
         confidence=confidence,
         note=note,
+        direction=direction,
+        income_type=income_type,
     )
     session.add(txn)
     await session.flush()
@@ -304,7 +355,7 @@ async def confirm_draft(
     session: AsyncSession, user: User, transaction_id: uuid.UUID
 ) -> TransactionView:
     """Put a draft on the ledger, where safe-to-spend can finally see it."""
-    return await _move(
+    view = await _move(
         session,
         user,
         transaction_id,
@@ -312,6 +363,15 @@ async def confirm_draft(
         to=TXN_CONFIRMED,
         refusal=AlreadySettled,
     )
+    from kira.services.clock import today_for
+    from kira.services.goal_planning import recalculate_active_goal_plans
+
+    await recalculate_active_goal_plans(
+        session,
+        user,
+        datetime.combine(today_for(), time.min, tzinfo=UTC),
+    )
+    return view
 
 
 async def discard_draft(
@@ -332,7 +392,10 @@ async def unconfirm(
     session: AsyncSession, user: User, transaction_id: uuid.UUID
 ) -> TransactionView:
     """Take a transaction back off the ledger, undoing what a mis-tap counted."""
-    return await _move(
+    transaction = await _owned(session, user, transaction_id)
+    if transaction.goal_allocation_applied:
+        raise IncomeAllocationExists(str(transaction_id))
+    view = await _move(
         session,
         user,
         transaction_id,
@@ -340,3 +403,12 @@ async def unconfirm(
         to=TXN_DRAFT,
         refusal=NotConfirmed,
     )
+    from kira.services.clock import today_for
+    from kira.services.goal_planning import recalculate_active_goal_plans
+
+    await recalculate_active_goal_plans(
+        session,
+        user,
+        datetime.combine(today_for(), time.min, tzinfo=UTC),
+    )
+    return view

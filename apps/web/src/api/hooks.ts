@@ -16,6 +16,10 @@ import type {
   TokenResponse,
   Transaction,
   TransactionCorrection,
+  UserResponse,
+  FinancialProfileUpdate,
+  GoalIncomeAllocation,
+  AppliedGoalIncomeAllocation,
 } from "@kira/contracts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -26,6 +30,7 @@ export const activityKey = ["transactions"] as const;
 export const foresightKey = ["foresight"] as const;
 export const hindsightKey = ["hindsight"] as const;
 export const briefingTodayKey = ["briefings", "today"] as const;
+export const profileKey = ["auth", "me"] as const;
 const activityKeyFor = (category: string | null) => [...activityKey, category] as const;
 
 export function useDashboardToday(enabled: boolean) {
@@ -185,6 +190,33 @@ export function useUnconfirm() {
   return useSettle("unconfirm");
 }
 
+export function useIncomeGoalAllocation(transactionId: string | null, enabled: boolean) {
+  return useQuery({
+    queryKey: ["transactions", transactionId, "goal-allocation"],
+    queryFn: () =>
+      api.get<GoalIncomeAllocation>(`/v1/transactions/${transactionId}/goal-allocation`),
+    enabled: Boolean(transactionId) && enabled,
+    retry: false,
+  });
+}
+
+export function useApproveIncomeGoalAllocation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (transactionId: string) =>
+      api.post<AppliedGoalIncomeAllocation>(
+        `/v1/transactions/${transactionId}/goal-allocation/approve`,
+      ),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: activityKey }),
+        queryClient.invalidateQueries({ queryKey: dashboardTodayKey }),
+        queryClient.invalidateQueries({ queryKey: ["goals"] }),
+      ]);
+    },
+  });
+}
+
 /** What the user says a draft should have read. Anything left out stays as it is. */
 export type Correction = { id: string } & TransactionCorrection;
 
@@ -309,6 +341,29 @@ export function useLogin() {
       void queryClient.invalidateQueries({ queryKey: dashboardTodayKey });
       void queryClient.invalidateQueries({ queryKey: activityKey });
       void queryClient.invalidateQueries({ queryKey: butlerThreadKey });
+    },
+  });
+}
+
+export function useFinancialProfile(enabled: boolean) {
+  return useQuery({
+    queryKey: profileKey,
+    queryFn: () => api.get<UserResponse>("/v1/auth/me"),
+    enabled,
+  });
+}
+
+export function useUpdateFinancialProfile() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (profile: FinancialProfileUpdate) =>
+      api.patch<UserResponse>("/v1/auth/me", profile),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: profileKey }),
+        queryClient.invalidateQueries({ queryKey: dashboardTodayKey }),
+        queryClient.invalidateQueries({ queryKey: ["goals"] }),
+      ]);
     },
   });
 }

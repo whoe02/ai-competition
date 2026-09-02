@@ -17,6 +17,7 @@ from kira.agent.tools import (
     goal_workflow,
     goals,
     hindsight,
+    income,
     ledger,
     memory,
 )
@@ -36,6 +37,7 @@ MODULES = (
     chat,
     dashboard,
     ledger,
+    income,
     goals,
     goal_workflow,
     commitments,
