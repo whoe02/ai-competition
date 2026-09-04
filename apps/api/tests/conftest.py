@@ -104,17 +104,20 @@ class PlaceWorld:
     answer: what a caller does when there are more places than it means to hand
     back. ``multi_kind`` is a separate world for another one: a place that
     serves two kinds of food. ``believed`` is a third, for what a model thinks a
-    place serves beyond its tags. Nothing else uses any of them, so the seven
-    stay small enough to reason about.
+    place serves beyond its tags. ``spread`` is a fourth, for the only question
+    that needs places outside the 5 km radius at all. Nothing else uses any of
+    them, so the seven stay small enough to reason about.
     """
 
     places: tuple[Place, ...]
     crowd: tuple[Place, ...]
     multi_kind: tuple[Place, ...]
     believed: tuple[Place, ...]
+    spread: tuple[Place, ...]
     origin: dict[str, float]
     out_of_range: dict[str, float]
     lone_non_halal: dict[str, float]
+    spread_outskirts: dict[str, float]
     cheap: Place
     mid: Place
     near_non_halal: Place
@@ -129,6 +132,12 @@ class PlaceWorld:
     believed_chicken: Place
     both_ways: Place
     no_chicken: Place
+    near_western: Place
+    just_past_the_line: Place
+    dear_and_far: Place
+    non_halal_and_far: Place
+    far_noodles: Place
+    beyond_the_reach: Place
 
 
 _CHEAP = Place(
@@ -370,11 +379,155 @@ _NO_CHICKEN = Place(
     address="4 Jalan Percaya, Kuala Lumpur",
 )
 
+# A world spread across the 5 km radius, for the one question the others cannot
+# ask: what a narrowed search does when what it is looking for is mostly outside
+# the line. This is the shipped set's own shape, in miniature. Western food from
+# Bukit Bintang is three places inside 5 km and sixteen outside it, the nearest
+# of those a hundred metres past the cutoff -- so a radius that is merely
+# limiting for a common kind of food is, for a rare one, the whole answer.
+#
+# Five places inside the radius: one western, and four noodle shops a ringgit
+# apart. The noodles are there so one search can be plentiful while another is
+# thin from the same spot, which is the whole distinction the widening turns on.
+#
+# All on the origin's meridian, so the distance in each name is the distance
+# from the origin, and near enough to round prices that in walk mode the whole
+# outing is the meal.
+_NEAR_WESTERN = Place(
+    "s1",
+    "Barat Dekat",
+    "Western",
+    _north(2.0),
+    _ORIGIN_LNG,
+    Money(1800),
+    "high",
+    True,
+    "2 km away, and the only western place inside the radius.",
+    address="1 Jalan Barat, Kuala Lumpur",
+)
+_NEAR_NOODLES: tuple[Place, ...] = tuple(
+    Place(
+        f"s{index + 1}",
+        f"Mee Dekat {index}",
+        "Noodles",
+        _north(index / 5),
+        _ORIGIN_LNG,
+        Money(900 + index * 100),
+        "high",
+        True,
+        f"{index * 200} m away, one of the four noodle shops in range.",
+        address=f"{index} Jalan Mee, Kuala Lumpur",
+    )
+    for index in range(1, 5)
+)
+# A hundred metres past the line, which is the case the whole feature is about:
+# nothing distinguishes this place from the one at 2 km except a cutoff.
+_JUST_PAST_THE_LINE = Place(
+    "s6",
+    "Barat Jauh Satu",
+    "Western",
+    _north(5.1),
+    _ORIGIN_LNG,
+    Money(1900),
+    "high",
+    True,
+    "5.1 km away — a hundred metres outside the radius.",
+    address="6 Jalan Barat, Kuala Lumpur",
+)
+# Nearer than most of what follows and far past any ordinary ceiling, so a
+# ceiling still binds out here.
+_DEAR_AND_FAR = Place(
+    "s7",
+    "Barat Mahal",
+    "Western",
+    _north(5.3),
+    _ORIGIN_LNG,
+    Money(9000),
+    "low",
+    True,
+    "5.3 km away, and dearer than anything else in this world.",
+    address="7 Jalan Barat, Kuala Lumpur",
+)
+# Nearer and cheaper than most of what follows, and not halal: reaching past the
+# radius must not reach past what the user eats.
+_NON_HALAL_AND_FAR = Place(
+    "s8",
+    "Chophouse Jauh",
+    "Western",
+    _north(5.5),
+    _ORIGIN_LNG,
+    Money(1500),
+    "medium",
+    False,
+    "5.5 km away, cheap, and not halal.",
+    address="8 Jalan Barat, Kuala Lumpur",
+)
+_FURTHER_WESTERN: tuple[Place, ...] = tuple(
+    Place(
+        f"s{index}",
+        f"Barat Jauh {name}",
+        "Western",
+        _north(km),
+        _ORIGIN_LNG,
+        Money(sen),
+        "medium",
+        True,
+        f"{km} km away.",
+        address=f"{index} Jalan Barat, Kuala Lumpur",
+    )
+    for index, name, km, sen in (
+        (9, "Dua", 6.5, 2000),
+        (10, "Tiga", 7.4, 2100),
+        (11, "Empat", 8.2, 2200),
+    )
+)
+# Outside the radius and never offered, because a search for noodles from here
+# has four of them in range and does not need a fifth from two towns over.
+_FAR_NOODLES = Place(
+    "s12",
+    "Mee Jauh",
+    "Noodles",
+    _north(6.0),
+    _ORIGIN_LNG,
+    Money(900),
+    "high",
+    True,
+    "6 km away, and the cheapest noodles in this world.",
+    address="12 Jalan Mee, Kuala Lumpur",
+)
+# Past twice the radius, and the cheapest western place anywhere in this world.
+# It is here to be left out: the reach has to stop somewhere, or a search of the
+# whole city arrives wearing the word "nearby".
+_BEYOND_THE_REACH = Place(
+    "s13",
+    "Barat Terlalu Jauh",
+    "Western",
+    _north(10.5),
+    _ORIGIN_LNG,
+    Money(800),
+    "high",
+    True,
+    "10.5 km away, past twice the radius, and cheaper than all of them.",
+    address="13 Jalan Barat, Kuala Lumpur",
+)
+
+_SPREAD: tuple[Place, ...] = (
+    _NEAR_WESTERN,
+    *_NEAR_NOODLES,
+    _JUST_PAST_THE_LINE,
+    _DEAR_AND_FAR,
+    _NON_HALAL_AND_FAR,
+    *_FURTHER_WESTERN,
+    _FAR_NOODLES,
+    _BEYOND_THE_REACH,
+)
+
 PLACE_WORLD = PlaceWorld(
     places=(_CHEAP, _MID, _NEAR_NON_HALAL, _PRICEY, _FAR_NON_HALAL, _NOODLES, _SECOND_CAFE),
     crowd=_CROWD,
     multi_kind=(_TWO_KINDS, _ONE_KIND, _OTHER_KIND),
     believed=(_BELIEVED_CHICKEN, _TAGGED_CHICKEN, _BOTH_WAYS, _NO_CHICKEN),
+    spread=_SPREAD,
     origin={"lat": _ORIGIN_LAT, "lng": _ORIGIN_LNG},
     # George Town, Penang: ~294 km from all seven.
     out_of_range={"lat": 5.4141, "lng": 100.3288},
@@ -382,6 +535,11 @@ PLACE_WORLD = PlaceWorld(
     # the 5 km radius and the other six well outside it. It is not halal, so
     # the halal toggle is the only thing that can empty a search from here.
     lone_non_halal={"lat": _north(-8.9), "lng": _ORIGIN_LNG},
+    # 16 km north of the origin, which is out on the edge of the ``spread``
+    # world: nothing at all inside 5 km of here, and four western places between
+    # 5 and 10 km. The one origin from which "nothing within range" and "here is
+    # somewhere to eat" are both true at once.
+    spread_outskirts={"lat": _north(16.0), "lng": _ORIGIN_LNG},
     cheap=_CHEAP,
     mid=_MID,
     near_non_halal=_NEAR_NON_HALAL,
@@ -396,6 +554,12 @@ PLACE_WORLD = PlaceWorld(
     believed_chicken=_BELIEVED_CHICKEN,
     both_ways=_BOTH_WAYS,
     no_chicken=_NO_CHICKEN,
+    near_western=_NEAR_WESTERN,
+    just_past_the_line=_JUST_PAST_THE_LINE,
+    dear_and_far=_DEAR_AND_FAR,
+    non_halal_and_far=_NON_HALAL_AND_FAR,
+    far_noodles=_FAR_NOODLES,
+    beyond_the_reach=_BEYOND_THE_REACH,
 )
 
 

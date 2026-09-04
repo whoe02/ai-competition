@@ -182,6 +182,7 @@ const TENSION: DayPlanData = {
   ranking: "deterministic",
   places: [KENNY_HILLS, GERAI, ABC_BISTRO],
   nearest_over_cap: [],
+  nearest_beyond_radius: [],
 };
 
 /** The same place with the router silent: ``km`` is the great circle, there is
@@ -201,6 +202,7 @@ const RESPONSE: DayPlanData = {
   ranking: "deterministic",
   places: PLACES,
   nearest_over_cap: [],
+  nearest_beyond_radius: [],
 };
 
 /** What POST /v1/day-plan/drafts answers with: the draft the server made, with
@@ -258,6 +260,7 @@ const NOTHING_LEFT: DayPlanData = {
   ranking: "deterministic",
   places: [],
   nearest_over_cap: [],
+  nearest_beyond_radius: [],
 };
 
 function renderDayPlan() {
@@ -1858,6 +1861,7 @@ describe("DayPlan · the nearest places above the ceiling", () => {
       kind_count: 0,
       places: [],
       nearest_over_cap: [],
+  nearest_beyond_radius: [],
     });
     renderDayPlan();
 
@@ -2055,5 +2059,173 @@ describe("DayPlan · a place that matched on a belief rather than a tag", () => 
 
     const { sheet } = await openSheet("Ayam Bertanda");
     expect(within(sheet).queryByText(/records a guess/i)).not.toBeInTheDocument();
+  });
+});
+
+describe("DayPlan · places from outside the search radius", () => {
+  /**
+   * A rare kind of food in a fixed radius: one western place within reach and
+   * three just outside it. The server sends the second group in its own field
+   * precisely so this screen cannot draw the two as one list — every row in it
+   * is further away than the user asked for.
+   */
+  const BARAT_DEKAT: Place = {
+    ...PELITA,
+    id: "w1",
+    name: "Barat Dekat",
+    kind: "Western",
+    km: 2.0,
+    road_km: 2.0,
+    minutes: 26,
+    total_sen: 1800,
+    share: 1800 / ROOM_SEN,
+  };
+
+  function further(id: string, name: string, km: number, sen: number): Place {
+    return {
+      ...PELITA,
+      id,
+      name,
+      kind: "Western",
+      km,
+      road_km: km,
+      travel_sen: 900,
+      minutes: Math.round(km * 13) + 6,
+      total_sen: sen,
+      share: sen / ROOM_SEN,
+    };
+  }
+
+  const JUST_PAST = further("w2", "Barat Jauh Satu", 5.1, 1900);
+  const FURTHER_STILL = further("w3", "Barat Jauh Dua", 6.5, 2000);
+
+  const THIN: DayPlanData = {
+    ...RESPONSE,
+    kind: "Western",
+    nearby_count: 5,
+    matching_count: 5,
+    kind_count: 1,
+    places: [BARAT_DEKAT],
+    nearest_beyond_radius: [JUST_PAST, FURTHER_STILL],
+  };
+
+  function rowFor(name: string): HTMLElement {
+    const row = Array.from(document.querySelectorAll<HTMLElement>(".place")).find(
+      (each) => each.querySelector("b")?.textContent === name,
+    );
+    if (!row) throw new Error(`no row for ${name}`);
+    return row;
+  }
+
+  it("shows them under their own heading rather than in the list", async () => {
+    vi.mocked(api.get).mockResolvedValue(THIN);
+    renderDayPlan();
+    await screen.findByText("Barat Dekat");
+
+    expect(screen.getByText("Further out")).toBeInTheDocument();
+    expect(screen.getByText(/from outside the area I searched/i)).toBeInTheDocument();
+    expect(screen.getByText(/further away than you asked for/i)).toBeInTheDocument();
+    // And the list above still says how many actually fit nearby.
+    expect(screen.getByText(/1 western place fit/i)).toBeInTheDocument();
+  });
+
+  it("marks every one of those rows on the row itself", async () => {
+    vi.mocked(api.get).mockResolvedValue(THIN);
+    renderDayPlan();
+    await screen.findByText("Barat Jauh Satu");
+
+    // The heading can be scrolled past. The badge and the tint cannot.
+    expect(within(rowFor("Barat Jauh Satu")).getByText("Further")).toBeInTheDocument();
+    expect(rowFor("Barat Jauh Satu").className).toContain("further");
+    // And nothing of the sort on the place that really was in range.
+    expect(within(rowFor("Barat Dekat")).queryByText("Further")).not.toBeInTheDocument();
+    expect(rowFor("Barat Dekat").className).not.toContain("further");
+  });
+
+  it("puts the real distance for the longer journey on each of them", async () => {
+    vi.mocked(api.get).mockResolvedValue(THIN);
+    renderDayPlan();
+    await screen.findByText("Barat Jauh Satu");
+
+    expect(rowFor("Barat Jauh Satu").textContent).toContain("5.1 km");
+    expect(rowFor("Barat Jauh Satu").textContent).toContain("RM19.00");
+    expect(rowFor("Barat Jauh Dua").textContent).toContain("6.5 km");
+  });
+
+  it("says what the group still honours, so nothing reads as a filter dropped", async () => {
+    vi.mocked(api.get).mockResolvedValue(THIN);
+    renderDayPlan();
+    await screen.findByText("Barat Jauh Satu");
+
+    // Distance is the only thing relaxed: the kind and the ceiling both held.
+    expect(
+      screen.getByText(/still western, halal and under RM52\.97/i),
+    ).toBeInTheDocument();
+  });
+
+  it("shows no such group when the list is not thin", async () => {
+    vi.mocked(api.get).mockResolvedValue(RESPONSE);
+    renderDayPlan();
+    await screen.findByText("Nasi Kandar Pelita");
+
+    expect(screen.queryByText("Further out")).not.toBeInTheDocument();
+    expect(document.querySelector(".place.further")).toBeNull();
+  });
+
+  it("still says what emptied the list when nothing at all was in range", async () => {
+    // The group is an addition to that answer, never a replacement for it: the
+    // reason the list is empty is a fact the user still has to be told.
+    vi.mocked(api.get).mockResolvedValue({
+      ...THIN,
+      nearby_count: 0,
+      matching_count: 0,
+      kind_count: 0,
+      places: [],
+      nearest_beyond_radius: [JUST_PAST],
+    });
+    renderDayPlan();
+    await screen.findByText("Barat Jauh Satu");
+
+    expect(screen.getByText(/Nothing within range of here/i)).toBeInTheDocument();
+    expect(screen.getByText(/Nothing western nearby, so here is one more/i)).toBeInTheDocument();
+  });
+
+  it("tells the sheet of one of them what it is looking at", async () => {
+    vi.mocked(api.get).mockResolvedValue(THIN);
+    renderDayPlan();
+    await screen.findByText("Barat Jauh Satu");
+
+    const { sheet } = await openSheet("Barat Jauh Satu");
+    expect(within(sheet).getByText(/outside the area I searched/i)).toBeInTheDocument();
+    expect(within(sheet).getByText(/5\.1 km from where you are/i)).toBeInTheDocument();
+    expect(within(sheet).getByText(/all for that longer trip/i)).toBeInTheDocument();
+  });
+
+  it("says nothing of the kind in the sheet of a place that was in range", async () => {
+    vi.mocked(api.get).mockResolvedValue(THIN);
+    renderDayPlan();
+    await screen.findByText("Barat Dekat");
+
+    const { sheet } = await openSheet("Barat Dekat");
+    expect(within(sheet).queryByText(/outside the area I searched/i)).not.toBeInTheDocument();
+  });
+
+  it("adds one to today with the figures for the journey it really is", async () => {
+    // The whole outing, priced on the longer trip, exactly as the row showed
+    // it. A draft cheaper than the row would be a draft for a different place.
+    vi.mocked(api.get).mockResolvedValue(THIN);
+    renderDayPlan();
+    await screen.findByText("Barat Jauh Satu");
+
+    const { user, sheet } = await openSheet("Barat Jauh Satu");
+    await user.click(within(sheet).getByRole("button", { name: /add to today/i }));
+
+    await waitFor(() =>
+      expect(api.post).toHaveBeenCalledWith("/v1/day-plan/drafts", {
+        name: "Barat Jauh Satu",
+        total_sen: 1900,
+        confidence: "high",
+      }),
+    );
   });
 });

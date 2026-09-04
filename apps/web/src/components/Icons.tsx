@@ -41,6 +41,20 @@ export const IcBell = (p: IconProps) => (
   <Svg {...p} d={<><path d="M8 15V11a4 4 0 0 1 8 0v4l1.5 2.2h-11L8 15Z" /><path d="M10.6 19.4a1.7 1.7 0 0 0 2.8 0" /></>} />
 );
 export const IcChev = (p: IconProps) => <Svg {...p} d={<path d="m9.5 6 6 6-6 6" />} />;
+export const IcUser = (p: IconProps) => (
+  <Svg {...p} d={<><circle cx="12" cy="8.6" r="3.6" /><path d="M5.2 19.6c1.3-3.2 3.8-4.9 6.8-4.9s5.5 1.7 6.8 4.9" /></>} />
+);
+export const IcGear = (p: IconProps) => (
+  <Svg
+    {...p}
+    d={
+      <>
+        <circle cx="12" cy="12" r="3.1" />
+        <path d="M12 3.8v2.4m0 11.6v2.4M3.8 12h2.4m11.6 0h2.4M6.2 6.2l1.7 1.7m8.2 8.2 1.7 1.7m0-11.6-1.7 1.7m-8.2 8.2-1.7 1.7" />
+      </>
+    }
+  />
+);
 export const IcLock = (p: IconProps) => (
   <Svg {...p} d={<><rect x="5.5" y="10.5" width="13" height="9" rx="2.4" /><path d="M8.6 10.5V8.4a3.4 3.4 0 0 1 6.8 0v2.1" /></>} />
 );

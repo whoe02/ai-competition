@@ -316,7 +316,13 @@ export function useReadCapture(kind: "receipt" | "voice") {
   });
 }
 
-/** Save what was read. It becomes a draft, which is not yet the ledger. */
+/**
+ * Save what was read. It becomes a draft, which is not yet the ledger.
+ *
+ * `direction` defaults on the server, so a caller that only ever records
+ * spending says nothing about it. Income must name its type: the API refuses an
+ * income without one, and refuses an expense that has one.
+ */
 export function useCreateDraft() {
   return useLedgerWrite(
     (draft: {
@@ -327,6 +333,8 @@ export function useCreateDraft() {
       source?: string;
       confidence?: number | null;
       note?: string;
+      direction?: "expense" | "income";
+      income_type?: "salary" | "other" | null;
     }) => api.post<Transaction>("/v1/transactions", draft),
   );
 }

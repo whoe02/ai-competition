@@ -41,7 +41,7 @@ services:
       # at a call per search. Off is the default because that call is somebody's
       # quota, and because the filter underneath it still works.
       PLAN_SEARCH_LLM_ENABLED: ${PLAN_SEARCH_LLM_ENABLED:-false}
-      PLAN_SEARCH_LLM_TIMEOUT_SECONDS: ${PLAN_SEARCH_LLM_TIMEOUT_SECONDS:-4.0}
+      PLAN_SEARCH_LLM_TIMEOUT_SECONDS: ${PLAN_SEARCH_LLM_TIMEOUT_SECONDS:-12.0}
       # Road distances for the day planner. Off, or with the router unreachable
       # from the venue, every place comes back labelled "straight line" and the
       # screen says so rather than quoting a fare it cannot stand behind.

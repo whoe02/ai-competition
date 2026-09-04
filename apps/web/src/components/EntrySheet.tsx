@@ -1,8 +1,9 @@
 import { useState } from "react";
 
-import type { Capture } from "@kira/contracts";
+import type { Capture, Category } from "@kira/contracts";
 
 import { IcArrow, IcCam, IcMic, IcPen } from "./Icons";
+import { ManualBody } from "./ManualSheet";
 import { ScanBody } from "./ScanSheet";
 import { Sheet } from "./Sheet";
 import { VoiceBody } from "./VoiceSheet";
@@ -12,9 +13,13 @@ export type EntryAttachment = Capture & { preview?: string };
 type EntrySheetProps = {
   onClose: () => void;
   onAsk: (text: string, attachment?: EntryAttachment) => void;
+  /** The category vocabulary, when it has been fetched. The manual form needs it. */
+  categories?: Category[];
 };
 
 type Mode = "type" | "say" | "show";
+/** Who works out the fields: the user, or Kira from what they said. */
+type Route = "ask" | "manual";
 
 const MODES: { id: Mode; label: string; hint: string; Icon: typeof IcPen }[] = [
   { id: "type", label: "Type", hint: "Write it", Icon: IcPen },
@@ -22,40 +27,73 @@ const MODES: { id: Mode; label: string; hint: string; Icon: typeof IcPen }[] = [
   { id: "show", label: "Show", hint: "Photograph it", Icon: IcCam },
 ];
 
+const ROUTES: { id: Route; label: string; hint: string }[] = [
+  { id: "ask", label: "Ask Kira", hint: "Type, say or show it" },
+  { id: "manual", label: "Manual", hint: "In or out, by hand" },
+];
+
 /**
- * One way in, three ways of saying it.
+ * One way in, by either route.
  *
- * Typing, speaking and photographing are the same act — telling Kira about
- * money that has already moved — so they belong behind one control rather than
- * three. Whichever way it arrives, it becomes a proposal the user checks, and
- * a draft they confirm. None of them writes to the ledger.
+ * Ask Kira is the same act said three ways — typing, speaking, photographing —
+ * and it ends with a proposal to check, because a sentence has to be read
+ * before it can become fields. The manual form skips the reading: when the user
+ * already knows the merchant, the figure and the day, being asked to write a
+ * sentence for a model to take apart again is the longer road to the same
+ * draft. It is also the route that can say money went the other way in one tap,
+ * which is why the direction lives inside it rather than above both.
+ *
+ * Either way it becomes a draft they confirm. Neither writes to the ledger.
  */
-export function EntrySheet({ onClose, onAsk }: EntrySheetProps) {
+export function EntrySheet({ onClose, onAsk, categories }: EntrySheetProps) {
+  const [route, setRoute] = useState<Route>("ask");
   const [mode, setMode] = useState<Mode>("type");
 
   return (
     <Sheet label="Tell Kira about money" onClose={onClose}>
       <div className="grab" />
-      <div className="entry-tabs" role="tablist" aria-label="How to tell Kira">
-        {MODES.map(({ id, label, hint, Icon }) => (
+      <div className="entry-flow" role="tablist" aria-label="How the entry gets its figures">
+        {ROUTES.map(({ id, label, hint }) => (
           <button
             key={id}
             role="tab"
             aria-label={label}
-            aria-selected={mode === id}
-            className={`entry-tab ${mode === id ? "on" : ""}`}
-            onClick={() => setMode(id)}
+            aria-selected={route === id}
+            className={route === id ? "on" : ""}
+            onClick={() => setRoute(id)}
           >
-            <Icon size={17} />
             <b>{label}</b>
             <span>{hint}</span>
           </button>
         ))}
       </div>
 
-      {mode === "type" && <TypeBody onAsk={onAsk} onClose={onClose} />}
-      {mode === "say" && <VoiceBody onClose={onClose} onAsk={onAsk} />}
-      {mode === "show" && <ScanBody onClose={onClose} onAsk={onAsk} />}
+      {route === "manual" ? (
+        <ManualBody onClose={onClose} categories={categories} />
+      ) : (
+        <>
+          <div className="entry-tabs" role="tablist" aria-label="How to tell Kira">
+            {MODES.map(({ id, label, hint, Icon }) => (
+              <button
+                key={id}
+                role="tab"
+                aria-label={label}
+                aria-selected={mode === id}
+                className={`entry-tab ${mode === id ? "on" : ""}`}
+                onClick={() => setMode(id)}
+              >
+                <Icon size={17} />
+                <b>{label}</b>
+                <span>{hint}</span>
+              </button>
+            ))}
+          </div>
+
+          {mode === "type" && <TypeBody onAsk={onAsk} onClose={onClose} />}
+          {mode === "say" && <VoiceBody onClose={onClose} onAsk={onAsk} />}
+          {mode === "show" && <ScanBody onClose={onClose} onAsk={onAsk} />}
+        </>
+      )}
     </Sheet>
   );
 }

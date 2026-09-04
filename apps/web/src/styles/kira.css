@@ -657,6 +657,40 @@
 .entry-text:focus{outline:2px solid var(--brass);outline-offset:1px;}
 .entry-text::placeholder{color:rgba(233,237,233,.32);}
 
+/* Which route the entry takes — read by Kira, or typed out by hand. It sits
+   above everything else in the sheet because it decides what the rest of it is. */
+.entry-flow{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:4px;margin:2px 0 10px;
+  border-radius:17px;background:rgba(233,237,233,.05);border:1px solid rgba(233,237,233,.1);}
+.entry-flow button{padding:9px 11px;border-radius:13px;text-align:left;color:rgba(233,237,233,.62);
+  transition:background .25s ease,color .25s ease,box-shadow .25s ease;}
+.entry-flow button b{display:block;font-size:13.5px;font-weight:800;letter-spacing:-.02em;}
+.entry-flow button span{display:block;font-size:10.5px;opacity:.7;margin-top:1px;}
+.entry-flow button.on{background:rgba(198,161,91,.15);color:#EDF1ED;
+  box-shadow:inset 0 0 0 1px rgba(198,161,91,.55);}
+
+/* Spent or received, inside the manual form: one line, because it labels the
+   fields below it rather than replacing the sheet. */
+.entry-seg{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:4px;margin:14px 0 0;
+  border-radius:14px;background:rgba(233,237,233,.05);border:1px solid rgba(233,237,233,.1);}
+.entry-seg button{padding:8px 10px;border-radius:11px;text-align:center;font-size:12.5px;
+  font-weight:800;letter-spacing:-.01em;color:rgba(233,237,233,.6);
+  transition:background .25s ease,color .25s ease,box-shadow .25s ease;}
+.entry-seg button.on{background:rgba(198,161,91,.15);color:#EDF1ED;
+  box-shadow:inset 0 0 0 1px rgba(198,161,91,.55);}
+
+/* The typed fields of the manual form; the dark scheme keeps the native date
+   picker and the select's own menu from opening white on this sheet. */
+.entry-in{width:100%;font-family:inherit;font-size:15px;color:#EDF1ED;color-scheme:dark;
+  background:rgba(233,237,233,.05);border:1px solid rgba(233,237,233,.14);border-radius:14px;
+  padding:12px 13px;}
+.entry-in:focus{outline:2px solid var(--brass);outline-offset:1px;}
+.entry-in::placeholder{color:rgba(233,237,233,.32);}
+.entry-in[aria-invalid='true']{border-color:rgba(196,110,90,.6);}
+select.entry-in{cursor:pointer;}
+.entry-hint{margin:7px 2px 0;font-size:11.5px;color:rgba(233,237,233,.5);}
+.entry-money{display:flex;align-items:center;gap:9px;}
+.entry-money > span{font-size:13px;font-weight:700;color:rgba(233,237,233,.5);flex:none;}
+
 .field-edit{cursor:text;}
 .field-in{flex:1;min-width:0;font-size:14px;font-weight:700;letter-spacing:-.01em;
   color:#EDF1ED;background:rgba(233,237,233,.05);border:1px solid rgba(233,237,233,.14);
@@ -758,9 +792,18 @@ input.field:focus{outline:2px solid var(--brass);outline-offset:2px;}
 .place.over-cap{background:rgba(154,74,59,.045);border:1.5px dashed rgba(154,74,59,.34);
   box-shadow:none;}
 .place.over-cap.sel{border-style:solid;}
+/* The places from outside the search radius. Set apart the same way, and for
+   the same reason: a row that is not what was asked for must not be drawn like
+   one that is. In the neutral tone rather than the clay one, because these are
+   further away than was asked for, which is not the same as being over the
+   money — that one has its own badge and may appear on these rows too. */
+.place.further{background:rgba(97,117,111,.05);border:1.5px dashed rgba(97,117,111,.36);
+  box-shadow:none;}
+.place.further.sel{border-style:solid;}
 .badge{font-size:9px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;padding:3px 7px;border-radius:6px;}
 .badge-best{background:rgba(169,133,63,.16);color:var(--brass);}
 .badge-over{background:rgba(154,74,59,.13);color:var(--clay);}
+.badge-further{background:rgba(97,117,111,.14);color:var(--muted);}
 .empty-map{text-align:center;padding:26px 18px;}
 
 .fallmap{position:absolute;inset:0;background:
@@ -866,3 +909,31 @@ body { background: #E7EAE5; }
 .mem-acts{display:flex;gap:7px;margin-top:9px;}
 .mem-input{width:100%;font:inherit;font-size:14px;padding:9px 11px;border-radius:11px;
   border:1px solid var(--rule);background:transparent;color:var(--ink);}
+
+/* ── More: the menu, its disclosure, and the profile page ─────────────────── */
+.more-card{padding:0;overflow:hidden;}
+.more-row{display:flex;align-items:center;gap:13px;width:100%;padding:15px 16px;text-align:left;}
+.card-flat.more-row{padding:15px 16px;}
+.more-ic{width:34px;height:34px;flex:none;border-radius:12px;display:grid;place-items:center;
+  background:rgba(169,133,63,.13);color:var(--brass);}
+.more-body{flex:1;min-width:0;}
+.more-body b{display:block;font-size:14.5px;font-weight:800;letter-spacing:-.02em;}
+.more-body > span{display:block;font-size:12.5px;color:var(--muted);margin-top:2px;}
+.more-chev{flex:none;color:var(--muted-2);display:grid;place-items:center;
+  transition:transform .32s var(--spring);}
+.more-chev.down{transform:rotate(90deg);}
+.more-panel{padding:0 16px 4px;border-top:1px solid var(--line);
+  animation:fadeUp .4s var(--spring) both;}
+.more-group{padding:15px 0;border-bottom:1px solid var(--line);}
+.more-group:last-child{border-bottom:none;}
+
+.prof-head{display:flex;align-items:center;gap:14px;}
+.prof-mark{width:52px;height:52px;flex:none;border-radius:50%;display:grid;place-items:center;
+  font-size:18px;font-weight:800;letter-spacing:-.02em;color:#1a1206;
+  background:linear-gradient(160deg,var(--brass-lit),#8a6a2f);box-shadow:var(--shadow-sm);}
+.prof-row{display:flex;justify-content:space-between;align-items:baseline;gap:14px;
+  padding:11px 0;border-bottom:1px solid var(--line);font-size:13.5px;}
+.prof-row:last-of-type{border-bottom:none;}
+.prof-row > span:first-child{color:var(--muted);}
+.prof-row b{font-weight:700;letter-spacing:-.01em;}
+.prof-note{display:block;font-size:11px;color:var(--muted-2);margin-top:2px;}

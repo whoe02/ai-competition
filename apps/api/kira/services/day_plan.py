@@ -443,6 +443,37 @@ class PlacesFound:
     things rather than disagreeing -- the row is the cheapest of that kind
     anywhere in range, and this is the closest one.
 
+    ``nearest_beyond_radius`` is the same idea one filter along, for the line
+    that throws away more than any other. A search for Western food from Bukit
+    Bintang finds three places inside 5 km; nineteen of them are in the set, and
+    the fourth is a hundred metres past the cutoff. For a common kind a radius
+    that tight is merely thin, and for a rare one it is the whole answer. So
+    where a narrowed search comes back with few places, the nearest matching
+    ones from just outside the radius come back here -- in their own field,
+    never in ``places``, for the same reason ``nearest_over_cap`` is: these are
+    further away than the user asked for, and folding them in would be the same
+    lie as a dropped "halal".
+    Everything else still holds over them, the ceiling included, so distance is
+    the only thing relaxed. Their distances, fares and travel times are the real
+    ones for the longer journey -- measured by the same router and priced by the
+    same fare table as the list above -- because the whole point of the group is
+    that the user can see what the extra kilometres cost.
+
+    ``loose_matches`` is the third group set apart, and the line relaxed for it
+    is relevance itself. A ranking model says of each place it keeps whether it
+    is plainly the thing that was asked for or only a fair second best, and the
+    second sort is not an answer to the question: a dessert cafe and a bakery
+    came back from a search for Western food, drawn exactly like the burger
+    place above them. So a weak match never stands in ``places``. It comes back
+    here, where a client has to head it as loosely related before it can draw a
+    single row -- and where a badge that means "this is the one" can never land
+    on it.
+
+    A weak match is also allowed to be dropped outright, which none of the other
+    groups is. See ``find_places``: past a handful of real answers the loose ones
+    stop being alternatives and start being padding, and a list padded out to
+    look longer is the thing the whole group exists to stop.
+
     ``ranking`` says which of the two narrowed this search: a model that read
     the request, or the deterministic kind filter. It is stated because the two
     are not equally good and the difference is invisible in the list itself. A
@@ -450,6 +481,19 @@ class PlacesFound:
     prevent -- a screen that cannot say "I could not reach my model, so this is
     the word filter" will say nothing, and a search that quietly went back to
     matching two dozen cuisine tags looks exactly like one that did not.
+
+    Every count above and the landscape are about the radius and nothing else.
+    A place in ``nearest_beyond_radius`` is in none of them: it was never inside
+    ``nearby_count``, so it cannot reach ``matching_count`` or ``kind_count``,
+    and the landscape goes on describing what is actually in range. The counts
+    still nest, and the first of them that is nil is still the cause.
+
+    ``kind_count`` does count the loose matches, and that is the one place where
+    a count is deliberately larger than the list beneath it. Those places were in
+    range and the model did keep them, so leaving them out would have the count
+    disagreeing with what the model actually said. The nesting above still holds:
+    ``kind_count >= len(places)``, with the difference being the loose group and
+    whatever was trimmed off the end of it.
     """
 
     places: tuple[EvaluatedPlace, ...]
@@ -458,6 +502,8 @@ class PlacesFound:
     kind_count: int
     landscape: tuple[KindPrice, ...]
     nearest_over_cap: tuple[EvaluatedPlace, ...] = ()
+    nearest_beyond_radius: tuple[EvaluatedPlace, ...] = ()
+    loose_matches: tuple[EvaluatedPlace, ...] = ()
     near_misses: tuple[EvaluatedPlace, ...] = ()
     ranking: Ranking = "deterministic"
 
@@ -648,6 +694,30 @@ def _named_in(request: str, words: Iterable[str]) -> str | None:
     return None
 
 
+def _answers_the_request(serves: str, request: str) -> bool:
+    """Whether the model's own few words are about the thing that was asked for.
+
+    This is the check that arrived with a complaint. A search for Western food
+    came back with a dessert cafe and a bakery, and the reason under each of
+    them read "The model thinks this serves Bakery" -- a true enough sentence
+    about the shop and no answer whatever to the question. A row that cannot say
+    why it answers *this* request explains nothing, and drawn beside a row that
+    can, it makes the whole list look guessed at.
+
+    So the model's words have to touch the request. Whole-word and forgiving of
+    a plural, the same rule ``_named_in`` applies to a kind word, and word by
+    word rather than as a phrase: "beef noodles" answers "somewhere for beef",
+    where "Bakery" answers "western food" not at all.
+
+    It is a coarse rule and it is coarse in the safe direction. "laksa" under
+    "something warm" says nothing the request says, so it comes back weak --
+    which is a real answer sent to the loose group. The alternative is a row
+    claiming a connection this app cannot show, beside figures it measured, and
+    of the two mistakes that is the one that costs the list its credibility.
+    """
+    return _named_in(request, serves.split()) is not None
+
+
 def _judged(
     evaluated: Sequence[EvaluatedPlace],
     judgements: Sequence[Judgement],
@@ -672,6 +742,14 @@ def _judged(
     says that instead. Only where neither holds -- a Dessert place answering a
     search for beef -- does the row fall back to the model's own account of
     itself, and there it says out loud that that is what it is.
+
+    And a row that cannot say anything about the request is weak, whatever the
+    model called it. The first two branches are already provably about the
+    request: the request itself said the word. The third is the model's word
+    alone, and where that word is not about what was asked -- "Bakery", under a
+    search for Western food -- the claim is dropped and the strength comes down
+    with it. A verdict of "strong" resting on a reason that explains nothing is
+    the pairing that made the list look untrustworthy in the first place.
     """
     by_id = {place.id: place for place in evaluated}
     kept: list[EvaluatedPlace] = []
@@ -685,22 +763,246 @@ def _judged(
             continue
         seen.add(place.id)
         basis: MatchBasis
+        strength = judgement.strength
         tagged = _named_in(request, place.kinds)
         if tagged is not None:
             basis, reason = "tagged", _tagged_reason(tagged)
         elif (believed := _named_in(request, place.also_serves)) is not None:
             basis, reason = "inferred", _believed_reason(believed)
-        else:
+        elif _answers_the_request(judgement.serves, request):
             basis, reason = "judged", _judged_reason(judgement.serves, request)
+        elif judgement.serves.strip():
+            # The words are dropped rather than printed under a hedge. "The
+            # model thinks this serves Bakery" is not made honest by the word
+            # "thinks" -- it is off the subject, and a row saying nothing about
+            # the request at least says that much accurately by quoting it.
+            #
+            # Only where it said something, though. Saying the wrong thing is a
+            # reason to trust the verdict less; saying nothing is not. A model
+            # that names no food has made no claim to be off the subject about,
+            # and demoting it would quietly turn every terse answer weak --
+            # which is how a strong match ends up in the loosely-related group
+            # for the crime of being brief.
+            basis, reason, strength = "judged", _judged_reason("", request), "weak"
+        else:
+            basis, reason = "judged", _judged_reason("", request)
         kept.append(
             replace(
                 place,
                 match_basis=basis,
-                match_strength=judgement.strength,
+                match_strength=strength,
                 match_reason=reason,
             )
         )
     return kept
+
+
+# ── The loose matches, and how few of them survive ────────────────────────────
+
+# How many weak matches are ever offered.
+#
+# The complaint was a list of ten with a padded tail, so the answer had to be a
+# number and not a hope. Three is enough to be a second shelf worth glancing at
+# and few enough that nobody mistakes it for the answer -- the same size as the
+# group offered from above the ceiling, and for the same reason.
+LOOSE_MATCHES = 3
+
+
+def _loose(under_cap: Sequence[EvaluatedPlace], answers: int) -> tuple[EvaluatedPlace, ...]:
+    """The few weak matches worth offering, or none where the answer is enough.
+
+    This is the deliberate answer to "should the model be returning fewer weak
+    matches", and it is settled here rather than by asking the model nicely. A
+    prompt is a request; this is arithmetic. Three attempts at steering this
+    model's behaviour by writing more prompt are already on the record in this
+    project, and the third one ended with an invented restaurant.
+
+    Dropped altogether once the strong matches outnumber ``FEW_NEARBY``. Past a
+    handful of places that plainly are what was asked for, a loosely-related one
+    is not an alternative to them -- it is length. That is the same trigger the
+    group from beyond the radius uses and the same instinct the ceiling group
+    follows: a second list is worth showing exactly when the first one is thin.
+
+    Capped rather than sorted afresh: ``under_cap`` arrives in ``_order_key``
+    order, so the cheapest weak matches are already at the front of it.
+    """
+    if answers > FEW_NEARBY:
+        return ()
+    return tuple(place for place in under_cap if place.match_strength == "weak")[:LOOSE_MATCHES]
+
+
+# ── Reaching past the radius ──────────────────────────────────────────────────
+
+# How thin a narrowed list has to be before the search looks past the radius.
+#
+# Three, because three is the number the complaint arrived with: a search for
+# Western food from Bukit Bintang holds exactly three places inside 5 km, and
+# sixteen more of the same kind are outside it. Firing only on an empty list
+# would leave that search exactly as it was -- three is not nought, and the user
+# is no better off for the rule that says so. Firing always would be worse the
+# other way: a dozen good places nearby, with a tail of distant ones underneath
+# that nobody asked about. Three is where a list stops being a choice and starts
+# being whatever happened to fall inside the line.
+FEW_NEARBY = 3
+
+# How much further than the radius the search will reach, as a multiple of it.
+#
+# A multiple rather than a distance, because the radius is the question: a 1 km
+# search widened to a fixed 6 km would be answering a different one, where
+# doubling keeps the wider search recognisably about the same part of town. And
+# bounded at all because the alternative is "the nearest match anywhere", which
+# is a search of the whole city handed over as though it were nearby.
+BEYOND_RADIUS_REACH = 2.0
+
+# How many places from beyond the radius are ever measured. It bounds one call
+# to the router and, where a model is narrowing, one prompt: without it a thin
+# search from the middle of town would price and rank most of the city in order
+# to hand back four rows.
+BEYOND_RADIUS_CANDIDATES = 24
+
+# How many come back. Four rather than the ceiling group's three: the trigger
+# above is three, so a group that could only ever offer three more would answer
+# "why so few" with as few again. Still short enough that nobody could read it
+# as the radius having been widened on their behalf.
+NEAREST_BEYOND_RADIUS = 4
+
+
+def _carries(place: Place, wanted: str) -> bool:
+    """Whether a search for ``wanted`` would keep this place, before it is priced.
+
+    The same two fields ``_matching`` reads, over a place nothing has measured
+    yet. It exists so the widened search can drop what the filter is going to
+    drop before paying a router to measure it. Nothing is described here: the
+    basis and the reason are still written on by ``_matching`` afterwards, so
+    there is exactly one place that says why a place is on a list.
+    """
+    return (
+        _first_matching(place.kinds, wanted) is not None
+        or _first_matching(place.also_serves, wanted) is not None
+    )
+
+
+async def _nearest_beyond_radius(
+    *,
+    lat: float,
+    lng: float,
+    mode: Mode,
+    halal_only: bool,
+    cap_sen: int,
+    room_sen: int,
+    radius_km: float,
+    inside: set[str],
+    wanted: str | None,
+    request: str,
+    rank: PlaceRanker | None,
+) -> tuple[EvaluatedPlace, ...]:
+    """The nearest few matching places from just outside the radius.
+
+    ``inside`` is every id the radius held, before any filter ran. Excluding by
+    id rather than by distance is what makes this group disjoint from all three
+    of the others by construction: a place the halal filter or the ceiling
+    turned away cannot come back here wearing "further than you asked", which it
+    is not.
+
+    ``wanted`` is the kind filter where the deterministic filter narrowed the
+    list this group stands beside, and None where a model did -- exactly as in
+    ``find_places``, where a model that answered leaves ``kind`` narrowing
+    nothing. Which of the two it was decides how this group is narrowed too,
+    because one group narrowed by a word beside another narrowed by a model
+    would be two answers where ``ranking`` can only describe one.
+
+    A model that cannot answer for these places hands back nothing rather than
+    falling through to the word filter. The near list would still be the
+    model's, and a group narrowed by something else beneath it would be a
+    difference the response has no field to state. An empty group says nothing
+    and is the honest answer to having nothing to say.
+
+    Every figure on these places is measured for the longer journey, by the same
+    router and the same fare table as the list above. That is the whole reason
+    they can be offered at all: the user can see the extra kilometres and what
+    they cost, and decide.
+    """
+    adapters = get_adapters()
+
+    def kept(place: Place) -> bool:
+        if place.id in inside:
+            return False
+        if halal_only and not place.halal:
+            return False
+        # The kind filter is applied here, before anything is measured, rather
+        # than after: routing a place the filter is certain to drop is a call to
+        # a public service bought for nothing. Where a model is narrowing there
+        # is no such certainty and nothing to apply, so everything nearby goes
+        # through to be priced and asked about.
+        return wanted is None or _carries(place, wanted)
+
+    beyond = [
+        place
+        for place in adapters.maps.places_near(lat, lng, radius_km * BEYOND_RADIUS_REACH)
+        if kept(place)
+    ]
+    if not beyond:
+        # Nothing out there worth measuring, so nothing is measured. This is the
+        # line that keeps a search which cannot be helped -- a corner of town
+        # with nothing around it for miles -- from costing a router call and a
+        # model call to find that out.
+        return ()
+    # Nearest first, on the straight line, because that is the only distance
+    # there is before the router has been asked. The id breaks a tie so that two
+    # runs of one search cannot measure two different shortlists.
+    beyond.sort(key=lambda place: (haversine_km(lat, lng, place.lat, place.lng), place.id))
+    beyond = beyond[:BEYOND_RADIUS_CANDIDATES]
+
+    routed = await adapters.routing.road_metres(
+        (lat, lng), [(place.lat, place.lng) for place in beyond]
+    )
+    if len(routed) != len(beyond):
+        # Same reasoning as the search inside the radius: an adapter that
+        # answered a different number of destinations cannot be lined up with
+        # them, and pairing them off anyway would put one place's distance on
+        # another place's fare.
+        routed = [None] * len(beyond)
+    evaluated = [
+        evaluate_place(place, lat, lng, mode, room_sen, road_metres=metres)
+        for place, metres in zip(beyond, routed, strict=True)
+    ]
+
+    if wanted is not None:
+        matched = _matching(evaluated, wanted)
+    else:
+        judgements = None if rank is None else await rank(request, evaluated)
+        if judgements is None:
+            return ()
+        matched = _judged(evaluated, judgements, request)
+
+    # Nearest first, and the one group in this module ordered on distance for a
+    # reason of its own: distance is the thing that was relaxed to get here, so
+    # it is the thing the reader is owed in order. A cheapest-first order would
+    # put a place nine kilometres out ahead of one a hundred metres past the
+    # line, which is the wrong end of the only question this group answers.
+    #
+    # Held to the ceiling all the way: reaching past the radius is one thing,
+    # and reaching past what the user can pay while doing it would be relaxing
+    # two filters for the price of asking about one.
+    #
+    # And held to a strong verdict, which is the same rule read once more. A
+    # place that is only loosely what was asked for AND further away than was
+    # asked for has nothing left to recommend it: the extra kilometres were
+    # spent to find a better answer, not a vaguer one.
+    affordable = [
+        place
+        for place in matched
+        if place.total_sen <= cap_sen and place.match_strength != "weak"
+    ]
+    nearest = sorted(affordable, key=lambda place: (place.km, place.total_sen, place.id))
+    # The band is left exactly as it was evaluated, which is where this parts
+    # company with ``_nearest_over_cap``. There the band is forced to "over"
+    # because every place in that group fails the ceiling and the band is what a
+    # client renders as "this does not fit". Here the ceiling was honoured, so
+    # these do fit; stamping "over" on them would be stating something false
+    # about the money in order to say something true about the distance. The
+    # distance says itself, on ``km``, on every row.
+    return tuple(nearest[:NEAREST_BEYOND_RADIUS])
 
 
 async def find_places(
@@ -735,12 +1037,28 @@ async def find_places(
     under their own kinds, for a caller that knows something about a menu that
     neither the tags nor the beliefs do.
 
+    ``radius_km`` is a hard line for everything above and a soft one for exactly
+    one field. Where a narrowed search comes back with ``FEW_NEARBY`` places or
+    fewer, the nearest matching places from just outside the radius come back in
+    ``nearest_beyond_radius`` -- separately, so no reading of the answer can have
+    them nearby. Nothing widens for an unnarrowed browse: everything in range is
+    already the answer to "what is around me", and topping that up with distant
+    places would be answering a question nobody asked. See
+    ``_nearest_beyond_radius``.
+
     ``request`` is the user's own sentence, and ``rank`` is something that can
     read it against the places in range. Given both, the model's verdict is what
     narrows the search and ``kind`` narrows nothing: the two are not run one
     over the other, because the word filter is the thing the model is there to
     replace. Two dozen cuisine tags is the whole of what ``kind`` can match, and
     "satay", "nasi lemak" and "beef" are none of them.
+
+    That verdict comes in two strengths, and only the strong one is an answer.
+    ``places`` holds the places the model said plainly are what was asked for; a
+    weak match goes to ``loose_matches``, capped and often dropped outright --
+    see ``_loose``. So ``places`` can be short beside a ``kind_count`` that is
+    not, and that is the two saying different things rather than disagreeing:
+    the count is what the model kept, the list is what it stood behind.
 
     Given neither -- which is the default, and the whole product while the
     feature is off -- not one line below behaves differently from the day before
@@ -849,6 +1167,18 @@ async def find_places(
     # ``_order_key``.
     under_cap = sorted((p for p in of_kind if p.total_sen <= cap_sen), key=_order_key)
 
+    # Split at the one line a model is allowed to draw: whether a place plainly
+    # is the thing that was asked for, or is only near enough to mention. The
+    # answers stay in ``places``; the rest go to their own field, where a client
+    # has to say what they are before drawing one. Nothing is re-sorted -- the
+    # order above already puts every strong match ahead of every weak one, so
+    # this only cuts the list where it was already divided.
+    #
+    # ``match_strength`` is None on the whole deterministic path, so on that
+    # path the answers are the list and the loose group is always empty.
+    answers = [place for place in under_cap if place.match_strength != "weak"]
+    loose = _loose(under_cap, len(answers))
+
     # What the kind filter turned away, held to the same ceiling the list is.
     # Disjoint from the list by id rather than by a second run of the filter,
     # so no reading of the two can ever put one place in both -- including the
@@ -864,16 +1194,47 @@ async def find_places(
         else _near_misses([p for p in evaluated if p.id not in matched and p.total_sen <= cap_sen])
     )
 
+    # The one step that looks past the radius, and only from a narrowed search
+    # that came back thin. An unnarrowed browse is left alone: everything in
+    # range already is the answer to "what is around me", and there is no filter
+    # over it for the distance to be compensating for.
+    #
+    # Thinness is counted over the answers alone. A list of one real match and
+    # five loose ones is a thin answer wearing a long list, and it is exactly
+    # the search that has most to gain from looking a little further out.
+    beyond_radius: tuple[EvaluatedPlace, ...] = ()
+    if narrowed and len(answers) <= FEW_NEARBY:
+        beyond_radius = await _nearest_beyond_radius(
+            lat=lat,
+            lng=lng,
+            mode=mode,
+            halal_only=halal_only,
+            cap_sen=cap_sen,
+            room_sen=room_sen,
+            radius_km=radius_km,
+            # Every id the radius held, before any filter ran, so that nothing
+            # already weighed and turned away can come back as somewhere new.
+            inside={place.id for place in nearby},
+            # None where the model narrowed this search: ``kind`` narrowed
+            # nothing above and must narrow nothing out there either.
+            wanted=None if judgements is not None else wanted,
+            request=request,
+            rank=rank,
+        )
+
     return PlacesFound(
-        places=tuple(under_cap),
+        places=tuple(answers),
         nearby_count=len(nearby),
         matching_count=len(matching),
         kind_count=len(of_kind),
         landscape=landscape,
-        # Only where the ceiling admitted nothing whatever. A thin list is a
-        # list: it has somewhere to go in it, and topping it up from above the
-        # ceiling would be answering a question with a slightly different one.
+        # Only where the ceiling admitted nothing whatever -- and a loose match
+        # under the ceiling counts, because the ceiling did admit it. This group
+        # answers "nothing came in under RM10", which is not the sentence a
+        # search with somewhere loosely related under RM10 is telling.
         nearest_over_cap=() if under_cap else _nearest_over_cap(of_kind),
+        nearest_beyond_radius=beyond_radius,
+        loose_matches=loose,
         near_misses=near_misses,
         ranking=ranking,
     )

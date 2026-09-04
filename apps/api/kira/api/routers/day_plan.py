@@ -87,6 +87,12 @@ async def get_places(
         # client that draws it has to say what it is: these cost more than the
         # ceiling it was asked for.
         "nearest_over_cap": found.nearest_over_cap,
+        # The same again for the radius. Only ever non-empty where a narrowed
+        # search came back thin, and a client that draws it owes the user the
+        # same sentence: these are further away than was asked for. The counts
+        # above say nothing about them, because the counts are about what is in
+        # range and these are not.
+        "nearest_beyond_radius": found.nearest_beyond_radius,
     }
 
 

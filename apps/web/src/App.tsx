@@ -248,7 +248,7 @@ export function App() {
           </SheetHostContext.Provider>
 
           {signedIn && (tab === "today" || tab === "activity") && (
-            <button className="fab" onClick={() => setEntry(true)} aria-label="Add spending">
+            <button className="fab" onClick={() => setEntry(true)} aria-label="Add money">
               <IcPlus size={21} />
             </button>
           )}
@@ -256,6 +256,7 @@ export function App() {
           {entry && (
             <EntrySheet
               onClose={() => setEntry(false)}
+              categories={categories.data}
               onAsk={(text, attachment) => {
                 setEntry(false);
                 setPending({ text, attachment });

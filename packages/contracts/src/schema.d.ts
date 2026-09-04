@@ -1276,6 +1276,25 @@ export interface components {
          *     filter still holds over it — halal is still halal and ``kind`` is still that
          *     kind — so the ceiling is the only thing relaxed, and only to say what the
          *     money would have to stretch to.
+         *
+         *     ``nearest_beyond_radius`` is the same shape for the other line the user drew:
+         *     the nearest few matching places from outside the search radius, sent only
+         *     when a narrowed search found few places inside it. A search for Western food
+         *     from Bukit Bintang holds three places within 5 km and sixteen more outside,
+         *     the closest of them a hundred metres past the line — for a rare kind of food
+         *     that line is not a filter, it is the answer. So these come over in their own
+         *     field for exactly the reason above: they are further away than was asked
+         *     for, and a client that shows them owes the user a heading saying so. Their
+         *     ``km``, ``minutes`` and ``travel_sen`` are the real figures for the longer
+         *     journey, measured and priced like every other row, which is the whole basis
+         *     on which they can be offered at all. Every other filter holds, the ceiling
+         *     included, so distance is the only thing relaxed.
+         *
+         *     None of them is in ``nearby_count``, ``matching_count`` or ``kind_count``,
+         *     and none of them is in the price landscape behind those: all of that is
+         *     about what is in range, and it stays that way. So the counts can be nil,
+         *     or small, beside a group that is not — that is the two describing different
+         *     places, not disagreeing about the same ones.
          */
         DayPlanResponse: {
             /** Room Sen */
@@ -1299,6 +1318,8 @@ export interface components {
             places: components["schemas"]["PlaceResponse"][];
             /** Nearest Over Cap */
             nearest_over_cap: components["schemas"]["PlaceResponse"][];
+            /** Nearest Beyond Radius */
+            nearest_beyond_radius: components["schemas"]["PlaceResponse"][];
         };
         /** DriverOut */
         DriverOut: {

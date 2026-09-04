@@ -549,6 +549,131 @@ class TestTheNearestPlacesAboveTheCeiling:
         assert all(p["halal"] for p in body["nearest_over_cap"])
 
 
+
+class TestTheNearestPlacesBeyondTheRadius:
+    """A narrowed search that came back thin carries what is just outside it.
+
+    In its own field, exactly as the over-the-ceiling group is: every one of
+    these is further away than the client asked for, and the wire shape is the
+    first thing that has to make it impossible to draw them as though they were
+    not.
+    """
+
+    async def _body(self, client, session, place_world, **params):
+        token = await demo_token(client, session)
+        with serving(places=place_world.spread):
+            response = await client.get(
+                "/v1/day-plan/places",
+                params={**place_world.origin, "cap_sen": 100_000, **params},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert response.status_code == 200, response.text
+        return response.json()
+
+    async def test_a_thin_narrowed_search_carries_the_group(
+        self, client, session, place_world
+    ):
+        body = await self._body(client, session, place_world, kind="Western")
+
+        assert [p["name"] for p in body["places"]] == [place_world.near_western.name]
+        assert [p["name"] for p in body["nearest_beyond_radius"]] == [
+            place_world.just_past_the_line.name,
+            place_world.dear_and_far.name,
+            place_world.non_halal_and_far.name,
+            "Barat Jauh Dua",
+        ]
+        # The real distance for the longer journey is on every row, which is the
+        # figure a client needs in order to say what this group is.
+        assert all(p["km"] > 5.0 for p in body["nearest_beyond_radius"])
+
+    async def test_a_search_with_plenty_nearby_carries_none(
+        self, client, session, place_world
+    ):
+        body = await self._body(client, session, place_world, kind="Noodles")
+
+        assert len(body["places"]) == 4
+        assert body["nearest_beyond_radius"] == []
+
+    async def test_an_unfiltered_browse_carries_none(self, client, session, place_world):
+        body = await self._body(client, session, place_world)
+
+        assert body["places"] != []
+        assert body["nearest_beyond_radius"] == []
+
+    async def test_the_field_is_always_there_even_when_it_is_empty(
+        self, client, session, place_world
+    ):
+        # A field a client may find missing is a field a client will forget to
+        # read, and this one carries places the user did not ask to be shown.
+        token = await demo_token(client, session)
+        response = await client.get(
+            "/v1/day-plan/places",
+            params={**place_world.origin, "cap_sen": 100_000},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.json()["nearest_beyond_radius"] == []
+
+    async def test_nothing_is_in_two_groups_at_once(self, client, session, place_world):
+        body = await self._body(client, session, place_world, kind="Western")
+
+        beyond = {p["id"] for p in body["nearest_beyond_radius"]}
+        assert beyond
+        assert not beyond & {p["id"] for p in body["places"]}
+        assert not beyond & {p["id"] for p in body["nearest_over_cap"]}
+
+    async def test_the_counts_still_describe_what_is_in_range(
+        self, client, session, place_world
+    ):
+        # The counts are how a client tells five empty lists apart. A group from
+        # outside the radius must not be able to move one of them.
+        body = await self._body(client, session, place_world, kind="Western")
+
+        assert body["nearby_count"] == 5
+        assert body["matching_count"] == 5
+        assert body["kind_count"] == 1
+        assert body["kind_count"] == len(body["places"])
+        assert len(body["nearest_beyond_radius"]) == 4
+
+    async def test_the_group_still_honours_halal_and_the_ceiling(
+        self, client, session, place_world
+    ):
+        body = await self._body(
+            client, session, place_world, kind="Western", halal_only=True, cap_sen=3000
+        )
+
+        assert all(p["halal"] for p in body["nearest_beyond_radius"])
+        assert all(p["total_sen"] <= body["cap_sen"] for p in body["nearest_beyond_radius"])
+        names = {p["name"] for p in body["nearest_beyond_radius"]}
+        assert place_world.non_halal_and_far.name not in names
+        assert place_world.dear_and_far.name not in names
+
+    async def test_the_fare_is_the_one_for_the_longer_journey(
+        self, client, session, place_world
+    ):
+        token = await demo_token(client, session)
+        with serving(
+            StubRouting({"s6": 6000.0}, places=place_world.spread), places=place_world.spread
+        ):
+            response = await client.get(
+                "/v1/day-plan/places",
+                params={
+                    **place_world.origin,
+                    "cap_sen": 100_000,
+                    "kind": "Western",
+                    "mode": "ride",
+                },
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        routed = next(
+            p
+            for p in response.json()["nearest_beyond_radius"]
+            if p["name"] == place_world.just_past_the_line.name
+        )
+        assert routed["distance_basis"] == "road"
+        assert routed["road_km"] == 6.0
+        assert routed["travel_sen"] == 1640
+        assert routed["total_sen"] == 1900 + 1640
+
 class TestDayOnWhichNothingIsLeft:
     """A day already spent out is the state the whole product exists for."""
 

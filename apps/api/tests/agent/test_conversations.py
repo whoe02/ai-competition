@@ -803,6 +803,69 @@ class TestTheAnswerChoosesInsteadOfEnumerating:
         )
 
 
+class TestTheOfflineAnswerReachesPastTheRadius:
+    """Three western places within 5 km, sixteen outside it.
+
+    "There are three" is true and it is the answer the owner complained about.
+    The planner hands over the nearest few from outside the radius for exactly
+    this, so the reply is more names — with the extra distance on every one of
+    them, because that is the part of them the user did not ask for.
+    """
+
+    async def test_it_names_what_is_further_out_and_says_how_much_further(
+        self, session, butler, today, place_world
+    ):
+        with serving(places=place_world.spread):
+            result = await ask(session, butler, today, "Where can I eat western food nearby?")
+
+        assert f"{place_world.near_western.name} — RM18" in result.answer
+        assert "Further out than I searched:" in result.answer
+        assert (
+            f"{place_world.just_past_the_line.name} at RM19, 5.1 km out" in result.answer
+        )
+        # And the distance is on every one of them, never a name on its own.
+        assert f"{place_world.non_halal_and_far.name} at RM15, 5.5 km out" in result.answer
+
+    async def test_a_list_with_plenty_in_it_says_nothing_about_further_out(
+        self, session, butler, today, place_world
+    ):
+        with serving(places=place_world.spread):
+            result = await ask(session, butler, today, "I feel like noodles")
+
+        assert result.tools_used == ["start_day_planning"]
+        assert "Further out" not in result.answer
+        assert place_world.far_noodles.name not in result.answer
+
+    async def test_nothing_within_range_stays_said_and_stops_being_the_whole_answer(
+        self, session, butler, today, place_world
+    ):
+        # Only the two places outside the radius, so the search really does hold
+        # nothing. The sentence that says so is still true and is still said;
+        # what follows it is somewhere to eat.
+        with serving(places=(place_world.just_past_the_line, place_world.dear_and_far)):
+            result = await ask(session, butler, today, "Where can I eat western food nearby?")
+
+        assert "Nothing I know of is within range of there." in result.answer
+        assert (
+            f"Further out than I searched: {place_world.just_past_the_line.name} at RM19, "
+            "5.1 km out." in result.answer
+        )
+        # The dear one is past today's room, so the ceiling still kept it out.
+        assert place_world.dear_and_far.name not in result.answer
+
+    async def test_the_panel_names_each_one_with_the_distance_that_priced_it(
+        self, session, butler, today, place_world
+    ):
+        with serving(places=place_world.spread):
+            result = await ask(session, butler, today, "Where can I eat western food nearby?")
+
+        rows = [pair for pair in result.evidence if pair[0] == "Further out"]
+        assert rows
+        assert rows[0][1] == (
+            f"{place_world.just_past_the_line.name} · Western · 5.1 km · RM19.00"
+        )
+
+
 class TestReadingAnAmountOutOfASentence:
     """The offline parser against the way this app writes ringgit at the user.
 

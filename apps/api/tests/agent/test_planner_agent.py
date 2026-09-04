@@ -231,3 +231,50 @@ class TestWhatTheChoosingTurnIsShown:
         assert "Nothing came in under the ceiling." in block
         assert "Closest above the ceiling:" in block
         assert "o-1: Kopi Kaki" in block
+
+    def test_places_outside_the_radius_are_labelled_as_outside_it(self):
+        # The block is what the choosing turn reads. A group headed like any
+        # other list would have it recommending a place twice as far away as
+        # was asked for, with nothing on the page to say so.
+        block = _selection_block(
+            {
+                "room_sen": 5000,
+                "cap_sen": 5000,
+                "kind": "Western",
+                "places": [
+                    {"id": "a-1", "name": "Barat Dekat", "kind": "Western",
+                     "total_sen": 1800, "km": 2.0}
+                ],
+                "nearest_over_cap": [],
+                "nearest_beyond_radius": [
+                    {"id": "f-1", "name": "Barat Jauh", "kind": "Western",
+                     "total_sen": 1900, "km": 5.1}
+                ],
+                "near_misses": [],
+                "price_landscape": [],
+            },
+            "MYR",
+        )
+
+        assert "Outside the search radius — further away than was asked for:" in block
+        assert "f-1: Barat Jauh · Western · RM19.00 · 5.1 km" in block
+
+    def test_a_search_that_reached_nowhere_says_nothing_about_the_radius(self):
+        block = _selection_block(
+            {
+                "room_sen": 5000,
+                "cap_sen": 5000,
+                "kind": None,
+                "places": [
+                    {"id": "a-1", "name": "Kopi Kaki", "kind": "Mamak",
+                     "total_sen": 1150, "km": 0.4}
+                ],
+                "nearest_over_cap": [],
+                "nearest_beyond_radius": [],
+                "near_misses": [],
+                "price_landscape": [],
+            },
+            "MYR",
+        )
+
+        assert "Outside the search radius" not in block

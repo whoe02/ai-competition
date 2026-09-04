@@ -403,6 +403,39 @@ def _nearest_above(result: dict[str, Any], cap_sen: int | None, limit: int = 3) 
     return said
 
 
+def _further_out(result: dict[str, Any], limit: int = 3) -> str:
+    """The nearest matching places from outside the radius, said as being outside it.
+
+    The planner only fills ``nearest_beyond_radius`` where a filtered search came
+    back with few places inside the radius, which for a rare kind of food is
+    most of the time: three western places within 5 km of Bukit Bintang, and
+    sixteen more just past it.
+
+    Every one of these is further away than the user asked for, so the distance
+    is on every name and the sentence says outright that the line was crossed.
+    Dropping either would be the same failure as quietly widening a ceiling: a
+    row that reads exactly like one that was in range, for a journey twice as
+    long.
+    """
+    rows = []
+    for place in result.get("nearest_beyond_radius") or []:
+        if not isinstance(place, dict):
+            continue
+        name, total, km = place.get("name"), place.get("total_sen"), place.get("km")
+        if not (isinstance(name, str) and name and isinstance(total, int)):
+            continue
+        if isinstance(km, int | float):
+            rows.append((name, total, float(km)))
+    if not rows:
+        return ""
+    # Nearest first, sorted here rather than taken on trust, for the same reason
+    # ``_priced_kinds`` is: the sentence below is about the near end of this
+    # list and would quietly go false if the order upstream ever changed.
+    rows.sort(key=lambda row: (row[2], row[1], row[0]))
+    said = _listed([f"{name} at {_rm(total)}, {km:.1f} km out" for name, total, km in rows[:limit]])
+    return f"Further out than I searched: {said}."
+
+
 def _out_of_reach(result: dict[str, Any], cap_sen: int | None, limit: int = 3) -> str:
     """What the money does not reach, said beside a list that is not empty.
 
@@ -873,6 +906,13 @@ def _compose_places(messages: Sequence[BaseMessage], text: str) -> str:
                     f"{ceiling} That is what today has room for, not what the food is "
                     "worth. " + rest
                 )
+        # Said under all four of them. "Nothing within range" and "no western
+        # food around here" are both answers a place a little further out
+        # improves on, and neither stops being true for its being said — which
+        # is why this is added to the sentence rather than replacing it.
+        further = _further_out(result)
+        if further:
+            body = f"{body.rstrip()} {further}"
         return f"{body.rstrip()}\n{unread}"
 
     # One place, named, with what the outing costs and why it is that one.
@@ -940,6 +980,15 @@ def _compose_places(messages: Sequence[BaseMessage], text: str) -> str:
                 f"{asked}, not on tags saying so."
             )
         )
+
+    # What the search found past its own radius. It only ever reaches out there
+    # when the list above came back short, so this sits with the names rather
+    # than in the small print: it is more of the answer, not a caveat about it.
+    # Every one of them carries the extra distance, because that is the thing
+    # about them the user did not ask for.
+    further = _further_out(result)
+    if further:
+        head += f" {further}"
 
     # What the ceiling ruled out, in kinds of food. The list above is already
     # the answer to what it let through, so this is the part of the picture the

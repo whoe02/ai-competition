@@ -129,6 +129,7 @@ const DAY_PLAN: DayPlan = {
     },
   ],
   nearest_over_cap: [],
+  nearest_beyond_radius: [],
 };
 
 /** Mutable so a test can prove the screens re-read after a confirm. */
@@ -137,6 +138,8 @@ let dashboard = DASHBOARD;
 let asked: (string | null)[] = [];
 /** What a correction actually put on the wire, and how often Today re-read. */
 let corrected: unknown = null;
+/** What a hand-typed entry put on the wire. */
+let created: Record<string, unknown> | null = null;
 let dashboardReads = 0;
 
 function renderApp() {
@@ -153,6 +156,7 @@ beforeEach(() => {
   dashboard = DASHBOARD;
   asked = [];
   corrected = null;
+  created = null;
   dashboardReads = 0;
   vi.useFakeTimers({ shouldAdvanceTime: true });
   vi.stubGlobal(
@@ -224,6 +228,29 @@ beforeEach(() => {
         asked.push(new URL(url, "http://test").searchParams.get("category"));
         return new Response(JSON.stringify({ ...activity, days: [], spent_this_cycle_sen: 0 }), {
           status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      // Before the ledger read below: the same path, and only the method tells
+      // a hand-typed entry from a fetch of everything already recorded.
+      if (url.endsWith("/v1/transactions") && init?.method === "POST") {
+        created = JSON.parse(String(init.body)) as Record<string, unknown>;
+        const draft = {
+          ...DRAFT,
+          ...created,
+          id: "d2",
+          status: "draft",
+          confidence: null,
+          category_label: "Food & drink",
+        };
+        activity = {
+          ...activity,
+          drafts: [...activity.drafts, draft as Transaction],
+          draft_total_sen: activity.draft_total_sen + (draft.amount_sen as number),
+        };
+        dashboard = { ...dashboard, drafts_waiting: dashboard.drafts_waiting + 1 };
+        return new Response(JSON.stringify(draft), {
+          status: 201,
           headers: { "content-type": "application/json" },
         });
       }
@@ -420,26 +447,26 @@ describe("Adding spending from anywhere", () => {
 
   it("offers one way in from Today", async () => {
     const user = await signedIn();
-    await user.click(await screen.findByRole("button", { name: "Add spending" }));
+    await user.click(await screen.findByRole("button", { name: "Add money" }));
     expect(await screen.findByRole("tab", { name: "Type" })).toBeInTheDocument();
   });
 
   it("offers the same way in from Activity", async () => {
     const user = await signedIn();
     await user.click(await screen.findByRole("button", { name: /^Activity$/i }));
-    await user.click(await screen.findByRole("button", { name: "Add spending" }));
+    await user.click(await screen.findByRole("button", { name: "Add money" }));
     expect(await screen.findByRole("tab", { name: "Show" })).toBeInTheDocument();
   });
 
   it("does not interrupt the Butler with a second way in", async () => {
     const user = await signedIn();
     await user.click(await screen.findByRole("button", { name: /^Butler$/i }));
-    expect(screen.queryByRole("button", { name: "Add spending" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Add money" })).not.toBeInTheDocument();
   });
 
   it("carries a typed sentence to the Butler and asks it there", async () => {
     const user = await signedIn();
-    await user.click(await screen.findByRole("button", { name: "Add spending" }));
+    await user.click(await screen.findByRole("button", { name: "Add money" }));
     await user.type(
       await screen.findByLabelText("What did you spend?"),
       "grabbed lunch at the mamak, twelve fifty",
@@ -453,5 +480,53 @@ describe("Adding spending from anywhere", () => {
       await screen.findByText(/I have written it up as a draft/),
     ).toBeInTheDocument();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("writes a hand-typed entry itself, with the vocabulary the API gave it", async () => {
+    const user = await signedIn();
+    await user.click(await screen.findByRole("button", { name: "Add money" }));
+    await user.click(await screen.findByRole("tab", { name: "Manual" }));
+
+    // The category list is the server's, fetched once and handed down — a
+    // hardcoded copy is how the same spending ends up under Food and food.
+    await user.selectOptions(await screen.findByLabelText("Category"), "food");
+    await user.type(screen.getByLabelText("Where it went"), "Pelita");
+    await user.type(screen.getByLabelText("How much"), "18.90");
+    await user.click(screen.getByRole("button", { name: /Add spending/ }));
+
+    await waitFor(() =>
+      expect(created).toMatchObject({
+        merchant: "Pelita",
+        amount_sen: 1890,
+        category: "food",
+        direction: "expense",
+        source: "manual",
+      }),
+    );
+    // Nothing was asked of the Butler, and the sheet closed on the answer.
+    expect(screen.queryByText(/I have written it up as a draft/)).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
+  it("re-reads Today after a hand-typed entry, because one more draft is waiting", async () => {
+    const user = await signedIn();
+    await waitFor(() => expect(dashboardReads).toBeGreaterThan(0));
+    const before = dashboardReads;
+
+    await user.click(await screen.findByRole("button", { name: "Add money" }));
+    await user.click(await screen.findByRole("tab", { name: "Manual" }));
+    await user.click(screen.getByRole("radio", { name: "Received" }));
+    await user.type(screen.getByLabelText("How much"), "6500");
+    await user.click(screen.getByRole("button", { name: /Add income/ }));
+
+    await waitFor(() =>
+      expect(created).toMatchObject({
+        merchant: "Salary",
+        amount_sen: 650_000,
+        direction: "income",
+        income_type: "salary",
+      }),
+    );
+    await waitFor(() => expect(dashboardReads).toBeGreaterThan(before));
   });
 });

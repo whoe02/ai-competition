@@ -66,9 +66,17 @@ class Settings(BaseSettings):
     # (for example, "nasi lemak") against the places actually in range. Off,
     # the deterministic recorded-cuisine filter remains the complete path.
     plan_search_llm_enabled: bool = False
-    # This call sits on the Plan screen's critical path, so it has a shorter
-    # timeout and falls back to the deterministic filter when it expires.
-    plan_search_llm_timeout_seconds: float = 4.0
+    # Shorter than the ask box's, and for the reason ``routing_timeout_seconds``
+    # is short: this one sits on the critical path of a list the user is waiting
+    # to read, and the fallback below it is a filter that costs nothing.
+    # Four seconds was under the measurement, not over it: judging the 65 places
+    # around Bukit Bintang takes about 4.8, so every search timed out and fell
+    # back to the filter while reporting itself as a model ranking. A ceiling has
+    # to sit above what the thing actually costs or it is not a ceiling, it is an
+    # outage. Twelve is slow to wait for and still bounded; the way to make this
+    # quick is to send the model fewer places, not to cut it off mid-answer.
+    plan_search_llm_timeout_seconds: float = 12.0
+
     # Voice and camera capture. Off means the affordances stay hidden rather
     # than pretending to work; the adapters behind them are chosen in the
     # adapter registry, not here.

@@ -511,6 +511,89 @@ class TestTheNearestPlacesAboveTheCeiling:
         assert "price_landscape" in SELECTION
 
 
+class TestTheNearestPlacesBeyondTheRadius:
+    """What the model is handed when a filtered search came back thin.
+
+    Three western places within 5 km of Bukit Bintang and sixteen outside it, so
+    a model given only what is in range would say "there are three" and be
+    right and useless. Given the nearest few outside it, and told outright that
+    is what they are, it can offer them without either of them being counted
+    among the places in range.
+    """
+
+    async def _searched(self, session, user, today, place_world, **kwargs):
+        context = await context_for(session, user, today)
+        with serving(places=place_world.spread):
+            return await run_search(
+                context, PlanArgs(cap_sen=100_000, **place_world.origin, **kwargs)
+            )
+
+    async def test_a_thin_narrowed_search_hands_over_what_is_outside(
+        self, session, user, today, place_world
+    ):
+        result = await self._searched(session, user, today, place_world, kind="Western")
+
+        assert [p["name"] for p in result.value["places"]] == [
+            place_world.near_western.name
+        ]
+        assert [p["name"] for p in result.value["nearest_beyond_radius"]] == [
+            place_world.just_past_the_line.name,
+            place_world.dear_and_far.name,
+            place_world.non_halal_and_far.name,
+            "Barat Jauh Dua",
+        ]
+        # And none of them counted among the places that were in range.
+        assert result.value["shown_count"] == 1
+        assert result.value["total_under_cap"] == 1
+        assert result.value["kind_count"] == 1
+
+    async def test_a_search_with_plenty_nearby_hands_over_none(
+        self, session, user, today, place_world
+    ):
+        result = await self._searched(session, user, today, place_world, kind="Noodles")
+
+        assert len(result.value["places"]) == 4
+        assert result.value["nearest_beyond_radius"] == []
+
+    async def test_an_unfiltered_browse_hands_over_none(
+        self, session, user, today, place_world
+    ):
+        result = await self._searched(session, user, today, place_world)
+
+        assert result.value["places"] != []
+        assert result.value["nearest_beyond_radius"] == []
+
+    async def test_the_evidence_names_each_one_with_how_far_out_it_is(
+        self, session, user, today, place_world
+    ):
+        result = await self._searched(session, user, today, place_world, kind="Western")
+
+        rows = [row.as_pair() for row in result.evidence]
+        further = [value for label, value in rows if label == "Further out"]
+        assert further[0] == f"{place_world.just_past_the_line.name} · Western · 5.1 km · RM19.00"
+        assert len(further) == 4
+        # The distance is on every one of them: a name and a price alone would
+        # read exactly like a row from the list above.
+        assert all(" km · " in value for value in further)
+
+    async def test_the_selection_turn_is_told_never_to_present_one_as_nearby(self):
+        assert "nearest_beyond_radius" in SELECTION
+        assert "Never present one as nearby" in SELECTION
+
+    async def test_the_model_can_resolve_one_by_id(
+        self, session, user, today, place_world
+    ):
+        # The planner reads every name and price back out of an id, so a group
+        # the lookup did not know about would be one the model could not choose
+        # from however plainly it was described.
+        result = await self._searched(session, user, today, place_world, kind="Western")
+
+        found = _by_id(result.value)
+        assert found[place_world.just_past_the_line.id]["name"] == (
+            place_world.just_past_the_line.name
+        )
+
+
 class TestThePlacesTheKindFilterTurnedAway:
     """The one place in this planner where the model knows more than the data.
 

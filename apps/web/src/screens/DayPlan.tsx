@@ -86,6 +86,12 @@ function failureFor(code: number): LocFailure {
   return code === 1 ? "blocked" : code === 3 ? "timeout" : "unavailable";
 }
 
+/** a, b and c — the way a person reads a short list out loud. */
+function listed(parts: string[]): string {
+  if (parts.length < 2) return parts.join("");
+  return `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
+}
+
 function formatKm(km: number): string {
   return km < 1 ? `${Math.round(km * 1000)} m` : `${km.toFixed(1)} km`;
 }
@@ -189,7 +195,7 @@ type PlaceRowProps = {
   /** Its position in the group it belongs to, one-based. */
   rank: number;
   selected: boolean;
-  badge: "best" | "over-cap" | null;
+  badge: "best" | "over-cap" | "further" | null;
   nameTheBasis: boolean;
   /**
    * The kind this row matched on a belief rather than on a tag, or null. See
@@ -200,13 +206,18 @@ type PlaceRowProps = {
 };
 
 /**
- * One tappable row, in the list or in the group of near misses above it.
+ * One tappable row, in the list or in either group set apart from it.
  *
- * The two groups share this because the figures are the same figures and a
- * second set of markup for them would be a second place for the two to drift.
- * What tells them apart is on the row and not only above it: `badge-over` is
- * on every near miss, and `over-cap` tints the row itself. A row that read
- * identically to one that fitted is the whole thing this must not do.
+ * All three share this because the figures are the same figures and a second
+ * set of markup for them would be a second place for the three to drift. What
+ * tells them apart is on the row and not only above it: `over-cap` badges and
+ * tints a row the ceiling excluded, `further` does the same for one from
+ * outside the search radius. A row that read identically to one that answered
+ * the question is the whole thing this must not do.
+ *
+ * The two are separate marks because they are separate facts, and a row can
+ * carry the distance mark and still be over today's room — the badges say both
+ * rather than one standing in for the other.
  */
 function PlaceRow({
   place,
@@ -220,7 +231,9 @@ function PlaceRow({
   return (
     <button
       type="button"
-      className={`place ${selected ? "sel" : ""} ${badge === "over-cap" ? "over-cap" : ""}`}
+      className={`place ${selected ? "sel" : ""} ${badge === "over-cap" ? "over-cap" : ""} ${
+        badge === "further" ? "further" : ""
+      }`}
       onClick={onSelect}
     >
       <span className="place-rank">{rank}</span>
@@ -228,6 +241,10 @@ function PlaceRow({
         <span style={{ display: "flex", alignItems: "center", gap: 7 }}>
           <b style={{ fontSize: 15, letterSpacing: "-.02em" }}>{place.name}</b>
           {badge === "best" && <span className="badge badge-best">Best fit</span>}
+          {/* Its own badge, beside the money one rather than instead of it: a
+              place from outside the radius can also be over today's room, and
+              one mark standing for both would hide whichever it did not name. */}
+          {badge === "further" && <span className="badge badge-further">Further</span>}
           {/* Said in full on a near miss. "Over" alone is the room's word, and
               these are over the ceiling — which may not be the same thing. */}
           {badge === "over-cap"
@@ -287,6 +304,11 @@ type DetailSheetProps = {
   /** Whether this place came back in `nearest_over_cap` rather than in the list. */
   overCap: boolean;
   /**
+   * Whether this place came back in `nearest_beyond_radius` — outside the area
+   * the search covered, offered because there was little inside it.
+   */
+  beyondRadius: boolean;
+  /**
    * The kind this place matched on a belief rather than on a tag, or null. The
    * row above only had space to hedge; here there is room to say what the hedge
    * rests on, which is the one thing the user needs before acting on it.
@@ -306,6 +328,7 @@ function DetailSheet({
   capSen,
   believedKind,
   overCap,
+  beyondRadius,
   adding,
   addFailed,
   onClose,
@@ -369,6 +392,21 @@ function DetailSheet({
       {place.address && (
         <p style={{ margin: "-8px 0 14px", fontSize: 12.5, lineHeight: 1.45, color: "rgba(233,237,233,.6)" }}>
           {place.address}
+        </p>
+      )}
+
+      {/* Said before the figures, because it is what the figures are about.
+          Everything below this line was measured for a journey longer than the
+          one the user asked for, and a breakdown read without that is a
+          breakdown of the wrong trip. */}
+      {beyondRadius && (
+        <p
+          style={{ margin: "-6px 0 14px", fontSize: 12.5, lineHeight: 1.5, color: "var(--brass)" }}
+        >
+          This one is outside the area I searched — {formatKm(place.km)} from where you are. It is
+          here because there was little enough nearby to be worth showing you what is a bit further
+          out. The travel cost, the distance and the {place.minutes} minutes below are all for that
+          longer trip.
         </p>
       )}
 
@@ -752,6 +790,10 @@ export function DayPlan() {
   // control is not even on screen when this appears (it needs two rows in the
   // list above, and there are none).
   const overCap = data.nearest_over_cap;
+  // Left in the order the server sent for the same reason: nearest first, which
+  // is what makes the first row the one just past the line. Empty on almost
+  // every response — it only arrives when a filtered search came back thin.
+  const beyond = data.nearest_beyond_radius;
   // The nearest miss of all, and the only one the copy above quotes a figure
   // from. Undefined on almost every response, which is the ordinary case.
   const closest = overCap[0];
@@ -788,29 +830,30 @@ export function DayPlan() {
   const nearbyCount = data.nearby_count;
   const matchingCount = data.matching_count;
   // The basis is per-place: one search routes some destinations and fails on
-  // others. Where the whole list fell back there is nothing to tell apart down
-  // the rows, and one line above says it better than twenty-seven repetitions;
-  // where only some did, every row has to be named or an unlabelled figure
-  // beside a labelled one is still a guess.
-  const straightLineCount = results.filter(
+  // others. Where every row on screen fell back there is nothing to tell apart
+  // down the page, and one line above says it better than twenty-seven
+  // repetitions; where only some did, every row has to be named or an
+  // unlabelled figure beside a labelled one is still a guess.
+  //
+  // Read over all three groups at once, because all three can be on screen
+  // together now. A caption drawn from the list alone would be claiming a
+  // basis for rows in a group it never looked at.
+  const onScreen = [...results, ...overCap, ...beyond];
+  const straightLineCount = onScreen.filter(
     (place) => place.distance_basis === "straight_line",
   ).length;
-  const everyPlaceFellBack = results.length > 0 && straightLineCount === results.length;
+  const everyPlaceFellBack = onScreen.length > 0 && straightLineCount === onScreen.length;
   const someFellBack = straightLineCount > 0 && !everyPlaceFellBack;
-  // The same rule read over the near-miss group on its own. It only ever
-  // appears with the list above empty, so the two never share a caption.
-  const overCapStraightLine = overCap.filter(
-    (place) => place.distance_basis === "straight_line",
-  ).length;
-  const overCapFellBack = overCapStraightLine > 0 && overCapStraightLine < overCap.length;
-  const everyOverCapFellBack = overCap.length > 0 && overCapStraightLine === overCap.length;
   const modeLabel = MODES.find((candidate) => candidate.id === mode)?.label ?? mode;
-  // Both groups, because a near miss is tappable too. Whichever it came from
-  // decides what the sheet is allowed to say about the ceiling.
+  // All three groups, because every row is tappable. Which one it came from
+  // decides what the sheet is allowed to say about the ceiling and about the
+  // distance.
   const selected = results.find((place) => place.id === selectedId)
     ?? overCap.find((place) => place.id === selectedId)
+    ?? beyond.find((place) => place.id === selectedId)
     ?? null;
   const selectedIsOverCap = selected !== null && overCap.some((p) => p.id === selected.id);
+  const selectedIsBeyond = selected !== null && beyond.some((p) => p.id === selected.id);
   // What the group still honours, said above it, so an offer from over the
   // ceiling can never read as a filter quietly dropped. Each word has to be
   // true of the rows themselves as well as asked for: the kind comes from the
@@ -819,6 +862,16 @@ export function DayPlan() {
   const stillHolds = [
     shownKind?.toLowerCase() ?? null,
     halalOnly && overCap.every((place) => place.halal) ? "halal" : null,
+  ].filter((word): word is string => word !== null);
+  // The same claim over the other group, checked over its own rows. The ceiling
+  // is in this one because a place from outside the radius did have to come in
+  // under it — distance is the only thing that was relaxed to find them.
+  const beyondHolds = [
+    shownKind?.toLowerCase() ?? null,
+    halalOnly && beyond.every((place) => place.halal) ? "halal" : null,
+    beyond.every((place) => place.total_sen <= data.cap_sen)
+      ? `under RM${fmt(data.cap_sen)}`
+      : null,
   ].filter((word): word is string => word !== null);
   // Null on most lists, and that is the point: the badge is a claim, not a
   // label for row one. See bestFitId for the three things that have to hold.
@@ -1038,10 +1091,11 @@ export function DayPlan() {
           </Reveal>
         )}
 
-        {/* Said once above whichever group is on screen. The two never appear
-            together — the near misses only turn up with the list empty — so one
-            caption can speak for both. */}
-        {(everyPlaceFellBack || everyOverCapFellBack) && (
+        {/* Said once above every group on screen, and only where it is true of
+            all of them: `everyPlaceFellBack` is read over the three together,
+            so this cannot speak for rows it does not cover. Where only some
+            fell back, each row names its own basis instead. */}
+        {everyPlaceFellBack && (
           <Reveal delay={55} style={{ marginTop: 14 }}>
             <p
               role="status"
@@ -1199,7 +1253,7 @@ export function DayPlan() {
                   {overCap.length === 1
                     ? "is the one place"
                     : `are the ${overCap.length} places`} closest above it
-                  {stillHolds.length > 0 ? `, still ${stillHolds.join(" and ")}` : ""}.{" "}
+                  {stillHolds.length > 0 ? `, still ${listed(stillHolds)}` : ""}.{" "}
                   {overCap.length === 1 ? "It is" : "They are"} not in the list because{" "}
                   {overCap.length === 1 ? "it does" : "they do"} not fit.
                 </p>
@@ -1211,7 +1265,51 @@ export function DayPlan() {
                     rank={index + 1}
                     selected={selectedId === place.id}
                     badge="over-cap"
-                    nameTheBasis={overCapFellBack}
+                    nameTheBasis={someFellBack}
+                    believedKind={alsoDoes(place, shownKind)}
+                    onSelect={() => {
+                      addPlan.reset();
+                      setSelectedId(place.id);
+                    }}
+                  />
+                </Reveal>
+              ))}
+            </>
+          )}
+
+          {/* Its own heading, its own tinted rows, its own badge — the same
+              shape as the group above, because it is the same kind of offer:
+              something the search reached for after the filters the user set
+              had already answered. What was relaxed here is the distance, and
+              the heading has to say so before a single price is read. */}
+          {beyond.length > 0 && (
+            <>
+              <Reveal delay={40} style={{ marginTop: 4 }}>
+                <p className="eyebrow" style={{ margin: 0 }}>
+                  Further out
+                </p>
+                <p style={{ margin: "7px 0 0", fontSize: 13, color: "var(--muted)", lineHeight: 1.5 }}>
+                  {results.length === 0
+                    ? `Nothing ${shownKind ? `${shownKind.toLowerCase()} ` : ""}nearby, so here `
+                    : `Only ${results.length} ${shownKind ? `${shownKind.toLowerCase()} ` : ""}`
+                      + `place${results.length > 1 ? "s" : ""} nearby, so here `}
+                  {beyond.length === 1 ? "is one more" : `are ${beyond.length} more`} from outside
+                  the area I searched
+                  {beyondHolds.length > 0 ? `, still ${listed(beyondHolds)}` : ""}.{" "}
+                  {beyond.length === 1 ? "It is" : "They are"} not in the list because{" "}
+                  {beyond.length === 1 ? "it is" : "they are"} further away than you asked for. The
+                  distance and travel cost on each one {beyond.length === 1 ? "is" : "are"} for that
+                  longer trip.
+                </p>
+              </Reveal>
+              {beyond.map((place, index) => (
+                <Reveal key={place.id} delay={60 + index * 70}>
+                  <PlaceRow
+                    place={place}
+                    rank={index + 1}
+                    selected={selectedId === place.id}
+                    badge="further"
+                    nameTheBasis={someFellBack}
                     believedKind={alsoDoes(place, shownKind)}
                     onSelect={() => {
                       addPlan.reset();
@@ -1239,6 +1337,7 @@ export function DayPlan() {
           roomSen={roomSen}
           capSen={data.cap_sen}
           overCap={selectedIsOverCap}
+          beyondRadius={selectedIsBeyond}
           believedKind={alsoDoes(selected, shownKind)}
           adding={addPlan.isPending}
           addFailed={addPlan.isError}

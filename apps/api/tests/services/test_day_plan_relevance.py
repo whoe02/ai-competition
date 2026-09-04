@@ -79,6 +79,16 @@ def by_id(found) -> dict[str, EvaluatedPlace]:
     return {place.id: place for place in found.places}
 
 
+def judged(found) -> dict[str, EvaluatedPlace]:
+    """Every place the model kept, wherever it was filed.
+
+    A weak match leaves ``places`` for its own group, so a test about what the
+    model *said* has to look in both — otherwise it is asserting about the
+    grouping it did not mean to test.
+    """
+    return {place.id: place for place in (*found.places, *found.loose_matches)}
+
+
 class TestNothingHandedIn:
     """The whole product while the feature is off, which is its default.
 
@@ -132,7 +142,11 @@ class TestAModelRanksTheList:
             request="somewhere for beef", rank=ranker(strong(NOODLES), weak(BURGER))
         )
 
-        assert set(by_id(found)) == {NOODLES, BURGER}
+        # Both are the model's, and nothing else is. Which group each landed in
+        # is the next test's business; this one is that the search is its answer
+        # and not the word filter's.
+        assert set(judged(found)) == {NOODLES, BURGER}
+        assert set(by_id(found)) == {NOODLES}
         assert found.ranking == "model"
 
     async def test_it_is_given_the_request_and_every_place_in_range(self):
@@ -207,7 +221,7 @@ class TestItMayOnlyChooseFromWhatItWasGiven:
     async def test_the_first_verdict_on_an_id_is_the_one_that_stands(self):
         found = await search(request="chicken", rank=ranker(weak(TAGGED), strong(TAGGED)))
 
-        assert by_id(found)[TAGGED].match_strength == "weak"
+        assert judged(found)[TAGGED].match_strength == "weak"
 
 
 class TestWhatARowCanSayForItself:
@@ -248,7 +262,7 @@ class TestWhatARowCanSayForItself:
     async def test_every_row_says_how_strongly_it_was_judged(self):
         found = await search(request="chicken", rank=ranker(strong(TAGGED), weak(NOODLES)))
 
-        places = by_id(found)
+        places = judged(found)
         assert places[TAGGED].match_strength == "strong"
         assert places[NOODLES].match_strength == "weak"
 
@@ -324,10 +338,12 @@ class TestItRanksRelevanceAndNothingElse:
             request="chicken", rank=ranker(weak(NOODLES), strong(BOTH, "chicken"))
         )
 
-        # Mee Percaya is 1200 against Ayam Dua Kali's 1900, and still second:
-        # relevance groups the list, money orders it inside each group.
-        assert [place.id for place in found.places] == [BOTH, NOODLES]
-        assert [place.total_sen for place in found.places] == [1900, 1200]
+        # Mee Percaya is 1200 against Ayam Dua Kali's 1900, and still does not
+        # lead: a weak match is not a cheaper version of the answer, so it
+        # leaves the list entirely rather than sitting under it where a reader
+        # skimming prices would meet it first.
+        assert [place.id for place in found.places] == [BOTH]
+        assert [place.id for place in found.loose_matches] == [NOODLES]
 
 
 class TestFallingBack:
@@ -448,6 +464,108 @@ class TestTheNearestAboveTheCeiling:
 
         offered = found.nearest_over_cap[0]
         assert offered.match_reason == "The model thinks this serves beef noodles"
+        assert offered.match_strength == "strong"
+
+
+def keeps(*ids: str):
+    """A ranker that keeps whichever of the places in front of it are named.
+
+    Keyed on what it is shown rather than answering with one fixed verdict,
+    because the widened search asks twice — once about what is in range, and
+    once about what is just outside it — and a stub that answered the second
+    call with the first call's ids would be dropped whole by ``find_places``.
+    """
+
+    async def rank(request: str, places: Sequence[EvaluatedPlace]):
+        rank.asked.append(tuple(place.id for place in places))
+        return tuple(strong(place.id) for place in places if place.id in ids)
+
+    rank.asked = []
+    return rank
+
+
+async def spread_search(*, request: str = "", rank=None, kind: str | None = None):
+    """The ``spread`` world, which has places on both sides of the radius."""
+    with serving(places=PLACE_WORLD.spread):
+        return await find_places(
+            **PLACE_WORLD.origin,
+            mode="walk",
+            halal_only=False,
+            cap_sen=100_000,
+            room_sen=100_000,
+            kind=kind,
+            request=request,
+            rank=rank,
+        )
+
+
+class TestTheNearestBeyondTheRadius:
+    """A model-narrowed search that came back thin reaches past the radius too.
+
+    Narrowed by the same thing the list beside it was: a group chosen by the
+    word filter sitting under a list chosen by a model would be two answers
+    where ``ranking`` can only describe one.
+    """
+
+    async def test_a_thin_list_is_widened_by_asking_the_same_model_again(self):
+        rank = keeps("s1", "s6", "s9")
+        found = await spread_search(request="somewhere for a steak", rank=rank)
+
+        assert found.ranking == "model"
+        assert [place.id for place in found.places] == ["s1"]
+        assert [place.id for place in found.nearest_beyond_radius] == ["s6", "s9"]
+        # Twice: once about the places in range, once about the nearest few
+        # outside it, and the second shortlist is in distance order.
+        assert rank.asked == [
+            ("s1", "s2", "s3", "s4", "s5"),
+            ("s6", "s7", "s8", "s12", "s9", "s10", "s11"),
+        ]
+
+    async def test_a_list_with_plenty_in_it_asks_nothing_further(self):
+        rank = keeps("s2", "s3", "s4", "s5")
+        found = await spread_search(request="noodles", rank=rank)
+
+        assert len(found.places) == 4
+        assert found.nearest_beyond_radius == ()
+        # Not merely an empty group: the second call was never made, so a thick
+        # list costs nothing extra.
+        assert len(rank.asked) == 1
+
+    async def test_a_model_that_cannot_answer_out_there_hands_back_nothing(self):
+        # Falling through to the word filter for the group alone would put a
+        # list narrowed by a model above a group narrowed by a word, with
+        # ``ranking`` saying "model" over both of them.
+        async def rank(request: str, places: Sequence[EvaluatedPlace]):
+            rank.asked.append(tuple(place.id for place in places))
+            return None if len(rank.asked) > 1 else (strong("s1"),)
+
+        rank.asked = []
+        found = await spread_search(request="somewhere for a steak", rank=rank)
+
+        assert [place.id for place in found.places] == ["s1"]
+        assert found.nearest_beyond_radius == ()
+        assert len(rank.asked) == 2
+
+    async def test_the_kind_narrows_nothing_out_there_either(self):
+        # ``kind`` narrows nothing on the model path, and it may not quietly
+        # start narrowing again a kilometre past the radius: the noodle shop out
+        # there is in the group because the model kept it.
+        rank = keeps("s1", "s12")
+        found = await spread_search(request="somewhere for a steak", rank=rank, kind="Western")
+
+        assert found.ranking == "model"
+        assert [place.id for place in found.nearest_beyond_radius] == ["s12"]
+
+    async def test_each_of_them_says_the_model_is_what_put_it_there(self):
+        found = await spread_search(
+            request="somewhere for a steak", rank=keeps("s1", "s6")
+        )
+
+        offered = found.nearest_beyond_radius[0]
+        assert offered.match_basis == "judged"
+        assert offered.match_reason == (
+            "The model thinks this answers \u201csomewhere for a steak\u201d"
+        )
         assert offered.match_strength == "strong"
 
 

@@ -220,6 +220,12 @@ async def run_search(
         # "nothing under RM10" leaves the user with nowhere to eat and the
         # search already knows what the nearest thing costs.
         "nearest_over_cap": [row(place) for place in found.nearest_over_cap],
+        # Only ever populated where a narrowed search came back with few places
+        # inside the radius, and kept out of ``places`` for the same reason: a
+        # model reading one list where there are two would recommend a place
+        # twice as far away as the user asked for and never mention it. Every
+        # figure on them is measured for that longer journey.
+        "nearest_beyond_radius": [row(place) for place in found.nearest_beyond_radius],
         # Only ever populated where a kind was asked for, and every one of
         # these is a place that kind did not match. Nearest first rather than
         # cheapest -- being right here is what a near miss has going for it.
@@ -318,6 +324,19 @@ async def run_search(
     evidence += tuple(
         EvidenceRow("Also nearby", f"{place.name} · {place.kind} · {money(place.total_sen)}")
         for place in found.near_misses
+    )
+
+    # One row each, and the distance on every one of them. These are the places
+    # the radius excluded, so how far out they are is the figure that makes the
+    # row honest: a name and a price alone would read exactly like a row from
+    # the list above, which is the one thing this group must never do. The
+    # distance is the real one for the journey, measured like every other.
+    evidence += tuple(
+        EvidenceRow(
+            "Further out",
+            f"{place.name} · {place.kind} · {place.km:.1f} km · {money(place.total_sen)}",
+        )
+        for place in found.nearest_beyond_radius
     )
 
     return ToolResult(value, evidence)

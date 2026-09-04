@@ -119,6 +119,11 @@ is the closest few places above it. Choose the first one and say how far over it
 "nothing under RM10, and the closest is RM11.50" is an answer; an apology is not.
 Never present one as fitting, and never count it among the places that did.
 
+`nearest_beyond_radius` appears only when a filtered search found few places inside
+the radius, and it is the nearest few matching places outside it. Each row carries
+the real distance for that longer journey. Say how far out one is whenever you name
+it. Never present one as nearby, and never count it among the places in range.
+
 `price_landscape` is every kind of food in range with the cheapest whole outing of
 each, whatever the ceiling and whatever kind was asked for. Read it before you settle
 for nothing, and let it shape your reason: what the money does reach is more use than
@@ -166,6 +171,14 @@ def _selection_block(payload: dict[str, Any], currency: str) -> str:
         blocks.append(
             "Closest above the ceiling:\n" + _lines(payload["nearest_over_cap"], currency)
         )
+    if payload.get("nearest_beyond_radius"):
+        # Labelled as outside the radius in the heading as well as by the
+        # kilometres on each row, so the block cannot be skimmed as more of the
+        # list above it.
+        blocks.append(
+            "Outside the search radius — further away than was asked for:\n"
+            + _lines(payload["nearest_beyond_radius"], currency)
+        )
     if payload["near_misses"]:
         blocks.append(
             "near_misses — the kind filter turned these away:\n"
@@ -186,7 +199,7 @@ def _selection_block(payload: dict[str, Any], currency: str) -> str:
 def _by_id(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
     """Every place the search returned, in one lookup. The only source of names."""
     found: dict[str, dict[str, Any]] = {}
-    for key in ("places", "nearest_over_cap", "near_misses"):
+    for key in ("places", "nearest_over_cap", "nearest_beyond_radius", "near_misses"):
         for row in payload.get(key) or []:
             found[row["id"]] = row
     return found
