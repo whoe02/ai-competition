@@ -442,6 +442,10 @@ class TestWhatAModelBelievesAboutTheMenu:
         ``tagged`` is always a word the map really carries, and the word that
         says ``inferred`` is never one it carries.
         """
+        # The independent set this checks against, and the radius the search
+        # below is pinned to so the two are talking about the same places. On
+        # foot the search would reach 1.9 km of its own accord, and half the
+        # beliefs picked out here belong to places further off than that.
         in_range = FakeMaps().places_near(BB["lat"], BB["lng"], 5.0)
         believed = {
             kind_key(kind)
@@ -460,6 +464,7 @@ class TestWhatAModelBelievesAboutTheMenu:
                 cap_sen=1_000_000,
                 room_sen=1_000_000,
                 kind=kind,
+                radius_km=5.0,
             )
             inferred = 0
             for place in found.places:

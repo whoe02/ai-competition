@@ -137,6 +137,89 @@ MODES: dict[Mode, ModeCost] = {
 }
 
 
+# ── How far a search reaches ──────────────────────────────────────────────────
+
+# How long a person will spend getting to a meal, per mode, in minutes.
+#
+# This is what a search is really bounded by, and the kilometres are worked out
+# from ``MODES`` above rather than written down here beside it. People spend
+# roughly the same sort of time getting to lunch however they travel -- that is
+# *why* the distances differ -- so the time is the figure worth choosing and the
+# distance is the one that follows. Written down twice, the two would agree
+# until the first time a pace was tuned and silently disagree afterwards.
+#
+# The two you sit through get longer than the one you walk, because people put
+# up with a longer journey when they are not the ones doing the work. Twenty-five
+# minutes on foot is a walk somebody actually takes for lunch; forty-five is an
+# expedition. Forty-five minutes of LRT or Grab is an ordinary trip across town.
+TRAVEL_BUDGET_MIN: dict[Mode, float] = {
+    "walk": 25.0,
+    "transit": 45.0,
+    "ride": 45.0,
+}
+
+
+def radius_for(mode: Mode) -> float:
+    """How far this mode gets inside its travel budget, in kilometres.
+
+    The wait comes off the top, because waiting for a train is time spent
+    getting there and no distance is covered by it. What is left is spent at
+    the mode's own pace.
+
+    With the paces in ``MODES`` that is about 1.9 km on foot, 8.4 km by transit
+    and 12.5 km by ride -- which is the whole point of doing it this way. The
+    flat five kilometres this replaced was an hour's walk and a nine-minute
+    Grab: too far to be an answer at one end and too mean to be one at the
+    other.
+    """
+    cost = MODES[mode]
+    return (TRAVEL_BUDGET_MIN[mode] - cost.wait_min) / cost.min_per_km
+
+
+# The furthest any mode reaches. It is what an id resolves against rather than
+# what a search uses: see ``find_place``.
+WIDEST_RADIUS_KM: float = max(radius_for(mode) for mode in MODES)
+
+# How many places one search will ever measure, nearest first.
+#
+# A guard rather than a routine trim, and the difference matters. The radius
+# says what is eligible and this says what a single search can physically ask
+# about: every candidate is one coordinate pair in the routing call's URL, and
+# that URL is where a wide search breaks first. The public table service answers
+# three hundred destinations in about a second and refuses five hundred outright
+# -- 414, URI too long -- at which point the adapter returns nothing and every
+# place in the search falls back to a straight line. Three hundred is inside
+# what was measured to work, and comfortably above anything the curated set
+# produces: the widest search in it holds a hundred and eighty.
+#
+# It is deliberately not sized to a model's prompt, which is a smaller number
+# for a different reason and lives in ``RANKED_PLACES`` below. One number doing
+# both jobs was tried and it quietly undid this whole change: sixty nearest, in
+# the middle of Kuala Lumpur, is everything within 4.8 km -- so a Grab search
+# nominally reaching 12.5 km came back with the same three western places a
+# five-kilometre search found, and the sixteen further out were eligible and
+# never looked at.
+#
+# Nearest is the cut, because it is the only ordering available before anything
+# has been measured, and because a place it turns away is one with three hundred
+# nearer than it.
+CANDIDATE_PLACES = 300
+
+# How many places a ranking model is ever shown, nearest first.
+#
+# Smaller than the guard above, and for a cost the guard knows nothing about:
+# each place is a row in a prompt, a search already takes about thirteen
+# seconds, and somebody is paying per call. A five-kilometre search put about
+# sixty-five places in front of the model, so sixty keeps that bill where it
+# already was while the radius decides, separately, how far the search reached.
+#
+# It bounds the model and nothing else. The kind filter, the price landscape and
+# the counts are all arithmetic over whatever is in range, so they go on
+# describing the whole of it -- which is why a search for Western food by Grab
+# finds the ones eight kilometres out even though no model was asked about them.
+RANKED_PLACES = 60
+
+
 @dataclass(frozen=True, slots=True)
 class EvaluatedPlace:
     id: str
@@ -380,8 +463,13 @@ class PlacesFound:
     An empty ``places`` has four unrelated causes and the caller must not have
     to guess between them, so each filter states what it left behind:
 
-    * ``nearby_count`` is what the radius held. Nil means distance is the cause,
-      and no ceiling and no toggle will close it.
+    * ``nearby_count`` is what the radius held -- the places whose journey fits
+      the travel budget for this mode, measured on the road wherever the router
+      answered. Nil means distance is the cause, and no ceiling and no toggle
+      will close it. Where more places were eligible than one search can
+      physically ask a router about, it is the nearest ``CANDIDATE_PLACES`` of
+      them: every place it counts really is in range, and a search that hit that
+      guard is one with hundreds of answers rather than none.
     * ``matching_count`` is what was still standing after the halal filter, and
       before the kind filter and the ceiling ran. Nil against a non-nil
       ``nearby_count`` means the halal toggle is the cause -- raising the
@@ -444,15 +532,16 @@ class PlacesFound:
     anywhere in range, and this is the closest one.
 
     ``nearest_beyond_radius`` is the same idea one filter along, for the line
-    that throws away more than any other. A search for Western food from Bukit
-    Bintang finds three places inside 5 km; nineteen of them are in the set, and
-    the fourth is a hundred metres past the cutoff. For a common kind a radius
-    that tight is merely thin, and for a rare one it is the whole answer. So
-    where a narrowed search comes back with few places, the nearest matching
+    that throws away more than any other. A search for Western food on foot
+    finds a handful inside the walking radius while nineteen of them are in the
+    set, and the fourth is a hundred metres past the cutoff. For a common kind a
+    radius that tight is merely thin, and for a rare one it is the whole answer.
+    So where a narrowed search comes back with few places, the nearest matching
     ones from just outside the radius come back here -- in their own field,
     never in ``places``, for the same reason ``nearest_over_cap`` is: these are
     further away than the user asked for, and folding them in would be the same
     lie as a dropped "halal".
+    Only for a mode with room left to reach: see ``_reaches_past_radius``.
     Everything else still holds over them, the ceiling included, so distance is
     the only thing relaxed. Their distances, fares and travel times are the real
     ones for the longer journey -- measured by the same router and priced by the
@@ -836,7 +925,7 @@ def _loose(under_cap: Sequence[EvaluatedPlace], answers: int) -> tuple[Evaluated
 # How thin a narrowed list has to be before the search looks past the radius.
 #
 # Three, because three is the number the complaint arrived with: a search for
-# Western food from Bukit Bintang holds exactly three places inside 5 km, and
+# Western food from Bukit Bintang holds exactly three of them inside a walk, and
 # sixteen more of the same kind are outside it. Firing only on an empty list
 # would leave that search exactly as it was -- three is not nought, and the user
 # is no better off for the rule that says so. Firing always would be worse the
@@ -865,6 +954,32 @@ BEYOND_RADIUS_CANDIDATES = 24
 # "why so few" with as few again. Still short enough that nobody could read it
 # as the radius having been widened on their behalf.
 NEAREST_BEYOND_RADIUS = 4
+
+
+def _reaches_past_radius(mode: Mode) -> bool:
+    """Whether this mode has any room left to look past its own radius.
+
+    This group was written when every mode searched a flat five kilometres, and
+    a mode-aware radius takes most of its work away: the Grab that needed a
+    separate box to reach a place eight kilometres out now simply reaches it,
+    in ``places``, priced and ranked with everything else. Stacking the two
+    would offer the same place twice over -- once in range and once as though it
+    were not.
+
+    What is left is the mode whose budget is not already the longest journey
+    this app asks anybody for. On foot the line is short, real, and worth
+    stepping past deliberately: twenty-five minutes is the walk people take, and
+    a rare kind of food ten minutes further is a choice somebody might make with
+    the minutes in front of them. A mode already spending forty-five minutes has
+    nothing left to offer -- reaching further is not "a little further", it is a
+    different sort of afternoon, and the fare on it says so.
+
+    Read off the budget table rather than naming a mode, so that tuning the
+    budgets moves this with them. Give walking three quarters of an hour like
+    the others and this stops firing for it, which is the right answer to that
+    change and not a thing anybody has to remember to come back and edit.
+    """
+    return TRAVEL_BUDGET_MIN[mode] < max(TRAVEL_BUDGET_MIN.values())
 
 
 def _carries(place: Place, wanted: str) -> bool:
@@ -966,6 +1081,11 @@ async def _nearest_beyond_radius(
         evaluate_place(place, lat, lng, mode, room_sen, road_metres=metres)
         for place, metres in zip(beyond, routed, strict=True)
     ]
+    # The reach is held on the measured distance, exactly as the radius itself
+    # is: the straight line got these onto the shortlist, and the road is what
+    # they are offered on. Otherwise the group's one promise -- a little further
+    # than you asked -- would be made about a line nobody travels.
+    evaluated = [place for place in evaluated if place.km <= radius_km * BEYOND_RADIUS_REACH]
 
     if wanted is not None:
         matched = _matching(evaluated, wanted)
@@ -1013,7 +1133,7 @@ async def find_places(
     halal_only: bool,
     cap_sen: int,
     room_sen: int,
-    radius_km: float = 5.0,
+    radius_km: float | None = None,
     kind: str | None = None,
     request: str = "",
     rank: PlaceRanker | None = None,
@@ -1037,14 +1157,23 @@ async def find_places(
     under their own kinds, for a caller that knows something about a menu that
     neither the tags nor the beliefs do.
 
-    ``radius_km`` is a hard line for everything above and a soft one for exactly
-    one field. Where a narrowed search comes back with ``FEW_NEARBY`` places or
-    fewer, the nearest matching places from just outside the radius come back in
-    ``nearest_beyond_radius`` -- separately, so no reading of the answer can have
-    them nearby. Nothing widens for an unnarrowed browse: everything in range is
-    already the answer to "what is around me", and topping that up with distant
-    places would be answering a question nobody asked. See
-    ``_nearest_beyond_radius``.
+    ``radius_km`` is left unset by everything the app itself calls, and then the
+    mode decides it: how far somebody will go is a fact about how they are
+    travelling, and a flat distance was wrong for all three at once. See
+    ``radius_for``. A radius handed in still wins outright -- somebody who asked
+    for three kilometres asked for three kilometres, whatever they were
+    travelling by -- and the whole of what "unset" means now is "work it out
+    from the mode".
+
+    Whichever it is, it is a hard line for everything above and a soft one for
+    exactly one field. Where a narrowed search comes back with ``FEW_NEARBY``
+    places or fewer, the nearest matching places from just outside the radius
+    come back in ``nearest_beyond_radius`` -- separately, so no reading of the
+    answer can have them nearby, and only for a mode that has room left to reach
+    (``_reaches_past_radius``). Nothing widens for an unnarrowed browse:
+    everything in range is already the answer to "what is around me", and
+    topping that up with distant places would be answering a question nobody
+    asked. See ``_nearest_beyond_radius``.
 
     ``request`` is the user's own sentence, and ``rank`` is something that can
     read it against the places in range. Given both, the model's verdict is what
@@ -1068,44 +1197,76 @@ async def find_places(
     back exactly as it was. ``ranking`` on the result says which of the two
     happened, because the difference is not visible in a list of places.
 
-    The order below is load-bearing. Routing happens after the radius and the
-    halal filter and before the kind filter and the ceiling, because it is the
-    only step that costs a network call and the only step whose answer changes
-    what the ceiling is judging. It stays ahead of the kind filter -- one
-    request either way, the same one it was before this filter existed -- so
-    that the landscape below is priced on the same roads the list is. A
-    landscape built on straight lines under a list built on roads would be two
-    prices for the same outing.
+    The order below is load-bearing. Routing happens after the radius has picked
+    the candidates and before every filter that follows, because it is the only
+    step that costs a network call and the only step whose answer changes what
+    those filters are judging -- the radius included, now that the radius is a
+    travel budget and a budget is spent on the road. One request either way, the
+    same one it was before any of this existed, so the landscape below is priced
+    on the same roads the list is. A landscape built on straight lines under a
+    list built on roads would be two prices for the same outing.
     """
     adapters = get_adapters()
-    # The radius is measured in a straight line, and that is correct as a
-    # pre-filter: the great circle between two points is never longer than a
-    # road between them, so a straight-line radius can only ever be too
-    # generous. Nothing the road would have put inside it is dropped here --
-    # only extra candidates come through, and the ceiling below removes them.
+    # An explicit radius wins outright. Otherwise the mode decides, which is
+    # what every call the app itself makes now does.
+    radius_km = radius_for(mode) if radius_km is None else radius_km
+
+    # The radius is a travel-time budget turned into kilometres, and the
+    # kilometres it bounds are the ones every figure on a row is built from: the
+    # road where the router answered for a place, the straight line where it did
+    # not. So it is drawn twice, because only the first of the two is free.
+    #
+    # Here it is drawn on the straight line, as a pre-filter, and that is safe
+    # in the one direction that matters: the great circle between two points is
+    # never longer than a road between them, so nothing whose road journey fits
+    # the budget can be dropped by this line. Only extra candidates come
+    # through -- a 12.5 km radius admits a place that is 18 km of driving -- and
+    # they are dropped below, once there is a real distance to drop them on.
     # Routing first, to filter on road distance, would mean asking a public
     # service about the whole city to throw most of it away.
-    nearby = adapters.maps.places_near(lat, lng, radius_km)
-    matching = [place for place in nearby if not halal_only or place.halal]
-
-    # One call for everything still standing. A 5 km radius holds a few dozen
-    # places, well inside what OSRM's table service answers in one request, so
-    # the whole search costs one round trip however many places it found.
-    routed = await adapters.routing.road_metres(
-        (lat, lng), [(place.lat, place.lng) for place in matching]
+    #
+    # Nearest first, and never more than one search will look at. Sorting before
+    # the cut is what makes "the nearest sixty" mean anything, and the id breaks
+    # a tie so that two runs of one search cannot measure two different sets.
+    in_radius = sorted(
+        adapters.maps.places_near(lat, lng, radius_km),
+        key=lambda place: (haversine_km(lat, lng, place.lat, place.lng), place.id),
     )
-    if len(routed) != len(matching):
+    candidates = in_radius[:CANDIDATE_PLACES]
+
+    # One call for everything the search is going to look at. Sixty places is
+    # well inside what OSRM's table service answers in one request, so the whole
+    # search costs one round trip however wide the radius was.
+    #
+    # It runs ahead of the halal filter, which is a change of order and not an
+    # oversight. The counts below are taken on the line the budget draws, that
+    # line is a road distance, and only the router knows a road distance -- so a
+    # place has to be measured before it can be said to be out of range, halal
+    # or not. The cap above is what keeps the bill for that bounded.
+    routed = await adapters.routing.road_metres(
+        (lat, lng), [(place.lat, place.lng) for place in candidates]
+    )
+    if len(routed) != len(candidates):
         # An adapter that answered a different number of destinations than it
         # was asked about cannot be lined up with them, and pairing them off
         # anyway would put one place's distance on another place's fare. The
         # straight line is wrong by a known amount; that would be wrong by an
         # unknown one.
-        routed = [None] * len(matching)
+        routed = [None] * len(candidates)
 
-    evaluated = [
+    priced = [
         evaluate_place(place, lat, lng, mode, room_sen, road_metres=metres)
-        for place, metres in zip(matching, routed, strict=True)
+        for place, metres in zip(candidates, routed, strict=True)
     ]
+
+    # The radius drawn the second time, on the distance each place was actually
+    # priced and timed by. This is what stops a 45-minute ride being a list with
+    # an 80-minute drive in it: the fare and the clock on the row are built from
+    # ``km``, so holding ``km`` to the budget is holding the row to what the row
+    # says. Where the router said nothing, ``km`` is the straight line and this
+    # line has already been passed.
+    nearby = [place for place in priced if place.km <= radius_km]
+    evaluated = [place for place in nearby if not halal_only or place.halal]
 
     # The landscape is built here, before the kind filter and before the
     # ceiling, and both omissions are deliberate.
@@ -1139,7 +1300,17 @@ async def find_places(
     # in the same place: the kind filter, unchanged. Nothing is half-applied --
     # a list narrowed by a model that then failed would be neither of the two
     # things the screen can describe.
-    judgements = None if rank is None or not request.strip() else await rank(request, evaluated)
+    #
+    # The nearest ``RANKED_PLACES`` of them, and only here. A wide radius can
+    # hold a couple of hundred places and a prompt with a couple of hundred rows
+    # in it is a slower, dearer call for a longer list nobody reads to the end
+    # of. Everything else below still works over the whole of what is in range.
+    shown_to_the_model = evaluated[:RANKED_PLACES]
+    judgements = (
+        None
+        if rank is None or not request.strip()
+        else await rank(request, shown_to_the_model)
+    )
 
     if judgements is None:
         # Any of the kinds a place carries, not only the one on its label. OSM
@@ -1195,15 +1366,19 @@ async def find_places(
     )
 
     # The one step that looks past the radius, and only from a narrowed search
-    # that came back thin. An unnarrowed browse is left alone: everything in
-    # range already is the answer to "what is around me", and there is no filter
-    # over it for the distance to be compensating for.
+    # that came back thin, in a mode with any room left to reach. An unnarrowed
+    # browse is left alone: everything in range already is the answer to "what
+    # is around me", and there is no filter over it for the distance to be
+    # compensating for. And a mode whose budget already runs to the longest
+    # journey this app suggests is left alone too -- it reached those places
+    # itself, in ``places``, rather than needing a second box to reach them
+    # from. See ``_reaches_past_radius``.
     #
     # Thinness is counted over the answers alone. A list of one real match and
     # five loose ones is a thin answer wearing a long list, and it is exactly
     # the search that has most to gain from looking a little further out.
     beyond_radius: tuple[EvaluatedPlace, ...] = ()
-    if narrowed and len(answers) <= FEW_NEARBY:
+    if narrowed and _reaches_past_radius(mode) and len(answers) <= FEW_NEARBY:
         beyond_radius = await _nearest_beyond_radius(
             lat=lat,
             lng=lng,
@@ -1212,9 +1387,13 @@ async def find_places(
             cap_sen=cap_sen,
             room_sen=room_sen,
             radius_km=radius_km,
-            # Every id the radius held, before any filter ran, so that nothing
-            # already weighed and turned away can come back as somewhere new.
-            inside={place.id for place in nearby},
+            # Every id the radius held on the straight line, before any filter
+            # ran and before the cap cut the list down, so that nothing already
+            # weighed and turned away -- and nothing that was simply nearer than
+            # sixty others -- can come back out here as somewhere new. A place
+            # inside the radius offered as "further away than you asked" would
+            # be the one thing this group must never say.
+            inside={place.id for place in in_radius},
             # None where the model narrowed this search: ``kind`` narrowed
             # nothing above and must narrow nothing out there either.
             wanted=None if judgements is not None else wanted,
@@ -1225,7 +1404,7 @@ async def find_places(
     return PlacesFound(
         places=tuple(answers),
         nearby_count=len(nearby),
-        matching_count=len(matching),
+        matching_count=len(evaluated),
         kind_count=len(of_kind),
         landscape=landscape,
         # Only where the ceiling admitted nothing whatever -- and a loose match
@@ -1244,14 +1423,22 @@ class UnknownPlace(LookupError):
     """No place with that id sits within range of where the plan was built."""
 
 
-def find_place(place_id: str, *, lat: float, lng: float, radius_km: float = 5.0) -> Place | None:
+def find_place(
+    place_id: str, *, lat: float, lng: float, radius_km: float = WIDEST_RADIUS_KM
+) -> Place | None:
     """The place a plan row's id names, or None if nothing around here is it.
 
     Scoped to the same search the plan came from rather than to the whole
     curated set, and on purpose. An id is a handle on a row somebody was shown;
     one resolved from the other side of the city would put a place on today
-    that never appeared in any list. The radius defaults to ``find_places``'s
-    own, so an id that came out of a plan resolves back through it.
+    that never appeared in any list.
+
+    The default is the widest radius any mode searches rather than any one
+    mode's, because this is handed a place id and an origin and never the mode
+    that produced them. Anything narrower would refuse a row the user was
+    actually shown -- the Grab twelve kilometres out is a real row of a real
+    plan, and "there is no place with that id in range" would be a flat
+    contradiction of the list it was tapped from.
     """
     for place in get_adapters().maps.places_near(lat, lng, radius_km):
         if place.id == place_id:

@@ -31,9 +31,14 @@ KLCC_LAT = 3.1577
 KLCC_LNG = 101.7120
 
 # The district centres scripts/fetch-kl-places.py allocates the set across, and
-# the radius the day-plan endpoint searches by default. Kept here rather than
-# imported so the assertion below states the promise in its own terms: the
-# generator can change how it meets it, but not whether it does.
+# the radius its halal floor pass works to. Kept here rather than imported so
+# the assertion below states the promise in its own terms: the generator can
+# change how it meets it, but not whether it does.
+#
+# Not a radius any search uses any more -- how far a search reaches is worked
+# out from the mode, and comes to about 1.9 km on foot. This is the data's own
+# promise about how the set is spread, which is a different thing and the only
+# one this file is in a position to check.
 DISTRICT_CENTRES: dict[str, tuple[float, float]] = {
     "KLCC": (3.1577, 101.7120),
     "Bukit Bintang": (3.1466, 101.7106),
@@ -54,7 +59,7 @@ DISTRICT_CENTRES: dict[str, tuple[float, float]] = {
     "Bukit Jalil": (3.0580, 101.6900),
     "Titiwangsa": (3.1750, 101.7050),
 }
-DEFAULT_RADIUS_KM = 5.0
+FLOOR_RADIUS_KM = 5.0
 
 
 class TestProtocolConformance:
@@ -185,7 +190,7 @@ class TestTheShippedKlSet:
         assert any(place.halal for place in KL_PLACES)
         assert any(not place.halal for place in KL_PLACES)
 
-    def test_every_district_has_a_halal_place_within_the_default_radius(self):
+    def test_every_district_has_a_halal_place_within_the_floor_radius(self):
         """The whole reason this file replaced eight hand-written places.
 
         The Halal chip is on by default, so a district whose only halal-tagged
@@ -196,9 +201,9 @@ class TestTheShippedKlSet:
         and only the screen to say so.
         """
         for district, (lat, lng) in DISTRICT_CENTRES.items():
-            nearby = FakeMaps().places_near(lat, lng, DEFAULT_RADIUS_KM)
+            nearby = FakeMaps().places_near(lat, lng, FLOOR_RADIUS_KM)
             halal = [place for place in nearby if place.halal]
-            assert halal, f"{district} has no halal place within {DEFAULT_RADIUS_KM} km"
+            assert halal, f"{district} has no halal place within {FLOOR_RADIUS_KM} km"
 
 
 class TestReadingOneStoredRecord:

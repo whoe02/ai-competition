@@ -18,6 +18,8 @@ from dataclasses import replace
 import pytest
 
 from kira.services.day_plan import (
+    CANDIDATE_PLACES,
+    RANKED_PLACES,
     EvaluatedPlace,
     Judgement,
     find_places,
@@ -485,7 +487,14 @@ def keeps(*ids: str):
 
 
 async def spread_search(*, request: str = "", rank=None, kind: str | None = None):
-    """The ``spread`` world, which has places on both sides of the radius."""
+    """The ``spread`` world, which has places on both sides of the radius.
+
+    The radius is pinned at the five kilometres that world was laid out around,
+    which an explicit radius is still entitled to do. On foot, because that is
+    the one mode with any room left to reach past its own radius --
+    ``_reaches_past_radius``, and ``TestTheModeDecidesTheRadius`` in
+    ``test_day_plan.py`` for why.
+    """
     with serving(places=PLACE_WORLD.spread):
         return await find_places(
             **PLACE_WORLD.origin,
@@ -493,10 +502,50 @@ async def spread_search(*, request: str = "", rank=None, kind: str | None = None
             halal_only=False,
             cap_sen=100_000,
             room_sen=100_000,
+            radius_km=5.0,
             kind=kind,
             request=request,
             rank=rank,
         )
+
+
+class TestHowManyPlacesTheModelIsShown:
+    """A wide radius is not a licence to put a couple of hundred rows in a prompt.
+
+    The ``throng`` world is 320 places packed into the twelve kilometres a Grab
+    reaches, which is what a dense maps adapter looks like from the middle of
+    town. Two separate bounds apply and they are different sizes on purpose: the
+    search measures the nearest ``CANDIDATE_PLACES``, because that is what one
+    routing call can carry, and the model is shown the nearest ``RANKED_PLACES``
+    of those, because that is what a prompt should hold.
+    """
+
+    async def test_the_model_is_shown_the_nearest_few_and_not_the_whole_radius(self):
+        rank = ranker()
+        with serving(places=PLACE_WORLD.throng):
+            found = await find_places(
+                **PLACE_WORLD.origin,
+                mode="ride",
+                halal_only=False,
+                cap_sen=1_000_000,
+                room_sen=1_000_000,
+                request="somewhere for beef",
+                rank=rank,
+            )
+
+        assert len(rank.asked) == 1
+        _, ids = rank.asked[0]
+        assert len(ids) == RANKED_PLACES
+        # Nearest first, so the prompt is the places the user is most likely to
+        # be choosing between rather than an arbitrary slice.
+        assert ids == tuple(f"t{index:03d}" for index in range(1, RANKED_PLACES + 1))
+        # And the search itself is not bounded by that. It measured every place
+        # one routing call can carry, and the counts still describe them.
+        assert found.nearby_count == CANDIDATE_PLACES == found.matching_count
+        # One kind across the whole throng, so the landscape is one row and it
+        # counts every place the search measured rather than the sixty it asked
+        # about.
+        assert [row.count for row in found.landscape] == [CANDIDATE_PLACES]
 
 
 class TestTheNearestBeyondTheRadius:
@@ -515,9 +564,10 @@ class TestTheNearestBeyondTheRadius:
         assert [place.id for place in found.places] == ["s1"]
         assert [place.id for place in found.nearest_beyond_radius] == ["s6", "s9"]
         # Twice: once about the places in range, once about the nearest few
-        # outside it, and the second shortlist is in distance order.
+        # outside it, and both shortlists are in distance order -- the four
+        # noodle shops from 200 m out, then the western place at 2 km.
         assert rank.asked == [
-            ("s1", "s2", "s3", "s4", "s5"),
+            ("s2", "s3", "s4", "s5", "s1"),
             ("s6", "s7", "s8", "s12", "s9", "s10", "s11"),
         ]
 

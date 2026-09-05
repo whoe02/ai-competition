@@ -515,7 +515,7 @@ class TestAskingTheButlerForOneKindOfFood:
         assert "What is around you: cafe from RM9" in result.answer
 
     async def test_a_ceiling_that_empties_one_kind_does_not_claim_it_emptied_them_all(
-        self, session, butler, today, place_world
+        self, session, butler, today, place_world, whole_world_in_range
     ):
         # Omakase Empat is RM50 and the only Japanese place; Kopi Kaki is RM9.
         # "There are places nearby, but none under RM15" would be false, and
@@ -743,7 +743,7 @@ class TestTheAnswerChoosesInsteadOfEnumerating:
         assert f"{place_world.noodles.name} — RM18" in result.answer
 
     async def test_it_names_one_place_and_says_why_that_one(
-        self, session, butler, today, place_world
+        self, session, butler, today, place_world, whole_world_in_range
     ):
         result = await ask(session, butler, today, "Where can I eat somewhere halal nearby?")
         assert f"{place_world.cheap.name} — RM9 for the whole outing" in result.answer
@@ -753,7 +753,7 @@ class TestTheAnswerChoosesInsteadOfEnumerating:
         assert "17% of today's room" in result.answer
 
     async def test_a_ceiling_that_rules_out_whole_kinds_says_which_and_from_what(
-        self, session, butler, today, place_world
+        self, session, butler, today, place_world, whole_world_in_range
     ):
         # RM15 reaches the cafe and the mamak. The chinese, noodles, western and
         # japanese places all start above it, and the cheapest of those is RM16
@@ -788,7 +788,7 @@ class TestTheAnswerChoosesInsteadOfEnumerating:
         assert rows["Over the ceiling by"] == "RM4.00"
 
     async def test_the_kinds_the_money_does_reach_stand_beside_the_nearest_place(
-        self, session, butler, today, place_world
+        self, session, butler, today, place_world, whole_world_in_range
     ):
         # A kind filter is what empties this list, not the money: RM20 reaches
         # the cafe, the mamak and the chinese place, and no japanese under RM50.
@@ -813,7 +813,7 @@ class TestTheOfflineAnswerReachesPastTheRadius:
     """
 
     async def test_it_names_what_is_further_out_and_says_how_much_further(
-        self, session, butler, today, place_world
+        self, session, butler, today, place_world, whole_world_in_range
     ):
         with serving(places=place_world.spread):
             result = await ask(session, butler, today, "Where can I eat western food nearby?")
@@ -837,7 +837,7 @@ class TestTheOfflineAnswerReachesPastTheRadius:
         assert place_world.far_noodles.name not in result.answer
 
     async def test_nothing_within_range_stays_said_and_stops_being_the_whole_answer(
-        self, session, butler, today, place_world
+        self, session, butler, today, place_world, whole_world_in_range
     ):
         # Only the two places outside the radius, so the search really does hold
         # nothing. The sentence that says so is still true and is still said;
@@ -854,7 +854,7 @@ class TestTheOfflineAnswerReachesPastTheRadius:
         assert place_world.dear_and_far.name not in result.answer
 
     async def test_the_panel_names_each_one_with_the_distance_that_priced_it(
-        self, session, butler, today, place_world
+        self, session, butler, today, place_world, whole_world_in_range
     ):
         with serving(places=place_world.spread):
             result = await ask(session, butler, today, "Where can I eat western food nearby?")
@@ -981,7 +981,7 @@ class TestAFollowUpThatNamesOnlyAKindOfFood:
         )
 
     async def test_it_searches_for_the_food_it_named(
-        self, session, butler, today, place_world
+        self, session, butler, today, place_world, whole_world_in_range
     ):
         await say(session, butler, today, "Where can I eat nearby?")
         result = await say(session, butler, today, "what about japanese instead")

@@ -7,9 +7,20 @@ place would be pinning data rather than behaviour.
 The fixture serves ``NoRouting``, so unless a test says otherwise every distance
 here is the straight line and every place says so. The road-distance scenarios
 below opt in with ``serving(StubRouting(...))``.
+
+The world was laid out for a flat five-kilometre search, from before the radius
+came from the mode. A scenario that needs a place further off than a walk pins
+``radius_km=WHOLE_WORLD_KM``, which an explicit radius is still entitled to do,
+so that what the mode's own radius does is one class of tests rather than a
+thing every other test has to be read around. That class is
+``TestTheModeDecidesTheRadius``.
 """
 
 from __future__ import annotations
+
+from dataclasses import replace
+
+import pytest
 
 from kira.adapters.protocols import Place
 from kira.db.models import SOURCE_PLAN, TXN_DRAFT
@@ -17,19 +28,29 @@ from kira.engine import safe_to_spend
 from kira.money import Money
 from kira.seed.demo import DEMO_TODAY, seed_demo_user
 from kira.services.day_plan import (
+    CANDIDATE_PLACES,
+    FEW_NEARBY,
+    MODES,
     NEAREST_BEYOND_RADIUS,
     PLAN_CONFIDENCE,
+    TRAVEL_BUDGET_MIN,
     add_to_today,
     confidence_for,
     evaluate_place,
+    find_place,
     find_places,
     kind_key,
     known_kinds,
+    radius_for,
     resolve_kind,
 )
 from kira.services.snapshot import load_snapshot
 from kira.services.transactions import confirm_draft, list_activity
 from tests.conftest import StubRouting, serving
+
+# Far enough to hold every place in the fixed world, which is what the searches
+# below were written against. See the module docstring.
+WHOLE_WORLD_KM = 5.0
 
 
 class TestBandThresholds:
@@ -44,6 +65,7 @@ class TestBandThresholds:
                 halal_only=False,
                 cap_sen=100_000,
                 room_sen=2000,
+                radius_km=WHOLE_WORLD_KM,
             )
         ).places
         by_name = {p.name: p for p in places}
@@ -276,6 +298,7 @@ class TestMatchingCount:
             halal_only=True,
             cap_sen=1,  # admits nothing at all
             room_sen=100_000,
+            radius_km=WHOLE_WORLD_KM,
         )
         assert found.places == ()
         # Two of the seven places in range are not halal, and the ceiling of one
@@ -293,6 +316,7 @@ class TestMatchingCount:
             halal_only=True,
             cap_sen=100_000,
             room_sen=100_000,
+            radius_km=WHOLE_WORLD_KM,
         )
         assert found.places == ()
         assert found.nearby_count == 1
@@ -305,6 +329,7 @@ class TestMatchingCount:
             halal_only=False,
             cap_sen=100_000,
             room_sen=100_000,
+            radius_km=WHOLE_WORLD_KM,
         )
         assert [p.name for p in relaxed.places] == [place_world.far_non_halal.name]
         assert relaxed.matching_count == 1
@@ -352,6 +377,7 @@ class TestTheKindFilter:
                 cap_sen=100_000,
                 room_sen=100_000,
                 kind=asked,
+                radius_km=WHOLE_WORLD_KM,
             )
             assert [p.name for p in found.places] == [place_world.noodles.name], asked
 
@@ -362,6 +388,7 @@ class TestTheKindFilter:
             cap_sen=100_000,
             room_sen=100_000,
             kind="japanese",
+            radius_km=WHOLE_WORLD_KM,
         )
         assert [p.name for p in japanese.places] == [place_world.pricey.name]
 
@@ -381,6 +408,7 @@ class TestTheKindFilter:
             cap_sen=100_000,
             room_sen=100_000,
             kind="Hawker",
+            radius_km=WHOLE_WORLD_KM,
         )
         assert found.places == ()
         assert found.kind_count == 0
@@ -397,6 +425,7 @@ class TestTheKindFilter:
             cap_sen=100_000,
             room_sen=100_000,
             kind="Korean",
+            radius_km=WHOLE_WORLD_KM,
         )
         by_ceiling = await find_places(
             **place_world.origin,
@@ -404,6 +433,7 @@ class TestTheKindFilter:
             halal_only=False,
             cap_sen=1,
             room_sen=100_000,
+            radius_km=WHOLE_WORLD_KM,
         )
         assert by_kind.places == by_ceiling.places == ()
         # Identical lists, and the counts are the whole difference between
@@ -419,6 +449,7 @@ class TestTheKindFilter:
             cap_sen=1000,  # admits only Kopi Kaki's 900
             room_sen=100_000,
             kind="Cafe",
+            radius_km=WHOLE_WORLD_KM,
         )
         assert found.nearby_count == 7
         assert found.matching_count == 5  # two of the seven are not halal
@@ -437,6 +468,7 @@ class TestTheKindFilter:
             cap_sen=100_000,
             room_sen=100_000,
             kind="Chinese",
+            radius_km=WHOLE_WORLD_KM,
         )
         assert found.places == ()
         assert found.matching_count == 5
@@ -449,6 +481,7 @@ class TestTheKindFilter:
             halal_only=False,
             cap_sen=100_000,
             room_sen=100_000,
+            radius_km=WHOLE_WORLD_KM,
         )
         assert len(found.places) == 7
         assert found.kind_count == found.matching_count == 7
@@ -758,7 +791,8 @@ class TestWhatTheKindFilterTurnedAway:
 
     async def _search(self, world, kind: str | None = None, cap_sen: int = 100_000):
         """The seven the fixture already serves, on foot so the outing is the
-        meal and every price below is the one written into the world."""
+        meal and every price below is the one written into the world, and over
+        the whole five kilometres so all seven of them are in it."""
         return await find_places(
             **world.origin,
             mode="walk",
@@ -766,6 +800,7 @@ class TestWhatTheKindFilterTurnedAway:
             cap_sen=cap_sen,
             room_sen=100_000,
             kind=kind,
+            radius_km=WHOLE_WORLD_KM,
         )
 
     async def test_no_kind_asked_for_turns_nothing_away(self, place_world):
@@ -884,6 +919,7 @@ class TestWhatTheKindFilterTurnedAway:
             cap_sen=100_000,
             room_sen=100_000,
             kind="Cafe",
+            radius_km=WHOLE_WORLD_KM,
         )
         assert all(p.halal for p in found.near_misses)
         assert [p.name for p in found.near_misses] == [
@@ -1004,6 +1040,7 @@ class TestThePriceLandscape:
             halal_only=False,
             cap_sen=100_000,
             room_sen=100_000,
+            radius_km=WHOLE_WORLD_KM,
         )
         rows = {row.kind: row for row in found.landscape}
         assert set(rows) == {"Cafe", "Mamak", "Chinese", "Japanese", "Western", "Noodles"}
@@ -1020,6 +1057,7 @@ class TestThePriceLandscape:
             halal_only=False,
             cap_sen=100_000,
             room_sen=100_000,
+            radius_km=WHOLE_WORLD_KM,
         )
         prices = [row.cheapest_total_sen for row in found.landscape]
         assert prices == sorted(prices)
@@ -1050,6 +1088,7 @@ class TestThePriceLandscape:
             halal_only=False,
             cap_sen=1,  # admits nothing at all
             room_sen=100_000,
+            radius_km=WHOLE_WORLD_KM,
         )
         assert found.places == ()
         # The whole point: with the list empty, this is the only thing left that
@@ -1069,6 +1108,7 @@ class TestThePriceLandscape:
             cap_sen=100_000,
             room_sen=100_000,
             kind="Korean",
+            radius_km=WHOLE_WORLD_KM,
         )
         assert found.places == ()
         assert len(found.landscape) == 6
@@ -1083,6 +1123,7 @@ class TestThePriceLandscape:
             halal_only=True,
             cap_sen=100_000,
             room_sen=100_000,
+            radius_km=WHOLE_WORLD_KM,
         )
         assert {row.kind for row in found.landscape} == {"Cafe", "Mamak", "Japanese", "Noodles"}
 
@@ -1280,6 +1321,157 @@ class TestTheNearestPlacesAboveTheCeiling:
         assert mamak.total_sen == 1250 + 728
 
 
+class TestTheModeDecidesTheRadius:
+    """How far a search reaches follows from how the user is travelling.
+
+    A flat five kilometres was wrong for all three modes at once. On foot it is
+    an hour's walk, which nobody takes for lunch; by Grab it is under ten
+    minutes, and a search that mean was leaving nineteen western places out of a
+    list of three. So the figure that is chosen is the time somebody will spend
+    getting there, and the distance follows from the pace table.
+
+    The ``ladder`` world is six places at 1.8, 2.1, 8.2, 8.7, 12.3 and 13.0 km,
+    each one just inside or just outside one of the three radii those budgets
+    work out to.
+    """
+
+    async def _rungs(self, world, mode, **kwargs) -> list[str]:
+        with serving(places=world.ladder):
+            found = await find_places(
+                **world.origin,
+                mode=mode,
+                halal_only=False,
+                cap_sen=100_000,
+                room_sen=100_000,
+                **kwargs,
+            )
+        return [place.id for place in found.places]
+
+    async def test_each_mode_reaches_its_own_distance_and_the_three_differ(self, place_world):
+        walking = await self._rungs(place_world, "walk")
+        training = await self._rungs(place_world, "transit")
+        riding = await self._rungs(place_world, "ride")
+
+        # A twenty-five minute walk is under two kilometres, and the rung at
+        # 2.1 km is a place the old flat radius offered somebody on foot.
+        assert walking == ["g1"]
+        # Forty-five minutes of train, seven of them spent waiting for it.
+        assert training == ["g1", "g2", "g3"]
+        # Forty-five minutes of Grab, and the same rung the walk could not
+        # reach is now four rungs back.
+        assert riding == ["g1", "g2", "g3", "g4", "g5"]
+        # Nothing reaches the last rung, so no mode is quietly unbounded.
+        assert "g6" not in riding
+
+    async def test_the_distances_are_derived_from_the_pace_table(self, place_world):
+        # The figure chosen is the budget in minutes; the kilometres are worked
+        # out from ``MODES``. Written down twice they would agree until the
+        # first time a pace was tuned -- so halve the walking pace and the walk
+        # has to reach twice as far, with nothing else edited.
+        assert radius_for("walk") == TRAVEL_BUDGET_MIN["walk"] / MODES["walk"].min_per_km
+        assert await self._rungs(place_world, "walk") == ["g1"]
+
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setitem(
+                MODES, "walk", replace(MODES["walk"], min_per_km=MODES["walk"].min_per_km / 2)
+            )
+            assert radius_for("walk") == pytest.approx(3.846, abs=0.001)
+            assert await self._rungs(place_world, "walk") == ["g1", "g2"]
+
+    async def test_the_wait_comes_off_the_budget_before_the_pace_is_applied(self):
+        # Seven minutes on a platform is seven minutes of the forty-five, and no
+        # distance whatever is covered by it.
+        assert radius_for("transit") == pytest.approx(
+            (TRAVEL_BUDGET_MIN["transit"] - MODES["transit"].wait_min)
+            / MODES["transit"].min_per_km
+        )
+        assert radius_for("transit") == pytest.approx(8.44, abs=0.01)
+        assert radius_for("ride") == pytest.approx(12.5, abs=0.01)
+        assert radius_for("walk") == pytest.approx(1.92, abs=0.01)
+
+    async def test_a_radius_that_was_asked_for_still_wins(self, place_world):
+        # Somebody who asked for three kilometres asked for three kilometres,
+        # whatever they were travelling by. It narrows a ride and widens a walk,
+        # and both are the caller's to say.
+        assert await self._rungs(place_world, "ride", radius_km=3.0) == ["g1", "g2"]
+        assert await self._rungs(place_world, "walk", radius_km=9.0) == ["g1", "g2", "g3", "g4"]
+
+    async def test_one_search_measures_the_nearest_candidates_and_no_more(self, place_world):
+        # A wide radius over a dense adapter holds more places than one routing
+        # call can carry: every candidate is a coordinate pair in that call's
+        # URL, and past a few hundred the service refuses the URL outright and
+        # the whole search falls back to straight lines. So there is a guard,
+        # and it cuts by distance.
+        assert len(place_world.throng) > CANDIDATE_PLACES, "the guard has to bite here"
+        with serving(places=place_world.throng):
+            found = await find_places(
+                **place_world.origin,
+                mode="ride",
+                halal_only=False,
+                cap_sen=100_000,
+                room_sen=100_000,
+            )
+        assert found.nearby_count == CANDIDATE_PLACES
+        assert len(found.places) == CANDIDATE_PLACES
+        # The nearest of them, not the cheapest. The furthest places in this
+        # world are the cheap ones, so a guard that had quietly become a price
+        # cut would hand back exactly the ones that are missing here.
+        nearest = {f"t{index:03d}" for index in range(1, CANDIDATE_PLACES + 1)}
+        assert {place.id for place in found.places} == nearest
+        cheapest = min(place_world.throng, key=lambda place: place.estimate.sen)
+        assert cheapest.id not in nearest
+
+    async def test_the_guard_does_not_bite_on_anything_the_curated_set_holds(self):
+        # It is a guard against a denser adapter, not a trim of ordinary
+        # searches. The widest search over the shipped set is a Grab across
+        # central KL, and it has to come back whole -- otherwise the radius
+        # above is decorative: the places it reached would be eligible and never
+        # looked at.
+        found = await find_places(
+            lat=3.1466,  # Bukit Bintang, the densest corner of the set
+            lng=101.7113,
+            mode="ride",
+            halal_only=False,
+            cap_sen=1_000_000,
+            room_sen=1_000_000,
+            kind="Western",
+        )
+        assert found.nearby_count < CANDIDATE_PLACES
+        # The complaint this whole change came from: nineteen western places in
+        # the set and three of them inside five kilometres. A Grab reaches them.
+        assert found.kind_count > 3
+        assert max(place.km for place in found.places) > 5.0
+
+    async def test_a_place_the_road_puts_over_the_budget_is_not_offered(self, place_world):
+        # The straight line is the pre-filter and the road is the line. A rung
+        # 1.8 km away as the crow flies is 3 km of pavement, which is over half
+        # an hour of walking and not what a twenty-five-minute search promised.
+        ladder = place_world.ladder
+        with serving(StubRouting({"g1": 3000.0}, places=ladder), places=ladder):
+            routed = await find_places(
+                **place_world.origin,
+                mode="walk",
+                halal_only=False,
+                cap_sen=100_000,
+                room_sen=100_000,
+            )
+        assert routed.places == ()
+        # And out of the count as well as out of the list, so nothing downstream
+        # reads its absence as a ceiling or a filter.
+        assert routed.nearby_count == 0
+        # The same search with no router to ask keeps it, on the only distance
+        # there is: the straight line, which really is inside the budget.
+        assert await self._rungs(place_world, "walk") == ["g1"]
+
+    async def test_a_plan_row_from_the_widest_search_can_still_be_resolved(self, place_world):
+        # An id is a handle on a row somebody was shown, and the row a Grab
+        # search shows can be twelve kilometres out. Resolving it against a
+        # walk's radius would refuse a place that was really on the list.
+        with serving(places=place_world.ladder):
+            assert find_place("g5", **place_world.origin) is not None
+            assert find_place("g6", **place_world.origin) is None
+
+
 class TestTheNearestPlacesBeyondTheRadius:
     """A narrowed search that came back thin reaches past its own radius.
 
@@ -1289,6 +1481,11 @@ class TestTheNearestPlacesBeyondTheRadius:
     food is, for a rare one, the whole answer -- so the nearest few matching
     places from outside it come back in their own field, never in ``places``,
     because they are further away than the user asked for.
+
+    Every search here pins ``radius_km`` to the five kilometres that world was
+    laid out around, and every one of them is on foot -- which is now the only
+    mode this group appears in at all. See
+    ``TestWhichModesReachPastTheirOwnRadius``.
     """
 
     async def test_a_thin_narrowed_search_reaches_past_the_radius(self, place_world):
@@ -1300,6 +1497,7 @@ class TestTheNearestPlacesBeyondTheRadius:
                 cap_sen=100_000,
                 room_sen=100_000,
                 kind="Western",
+                radius_km=WHOLE_WORLD_KM,
             )
         # One western place in range, which is the complaint this answers.
         assert [p.name for p in found.places] == [place_world.near_western.name]
@@ -1325,6 +1523,7 @@ class TestTheNearestPlacesBeyondTheRadius:
                 cap_sen=100_000,
                 room_sen=100_000,
                 kind="Noodles",
+                radius_km=WHOLE_WORLD_KM,
             )
         assert len(found.places) == 4
         assert found.nearest_beyond_radius == ()
@@ -1343,6 +1542,7 @@ class TestTheNearestPlacesBeyondTheRadius:
                     cap_sen=cap_sen,
                     room_sen=100_000,
                     kind="Noodles",
+                    radius_km=WHOLE_WORLD_KM,
                 )
 
         three = await noodles_under(1200)
@@ -1363,6 +1563,7 @@ class TestTheNearestPlacesBeyondTheRadius:
                 halal_only=False,
                 cap_sen=100_000,
                 room_sen=100_000,
+                radius_km=WHOLE_WORLD_KM,
             )
             capped = await find_places(
                 **place_world.origin,
@@ -1370,6 +1571,7 @@ class TestTheNearestPlacesBeyondTheRadius:
                 halal_only=False,
                 cap_sen=1100,
                 room_sen=100_000,
+                radius_km=WHOLE_WORLD_KM,
             )
         assert len(whole.places) == 5
         assert whole.nearest_beyond_radius == ()
@@ -1387,6 +1589,7 @@ class TestTheNearestPlacesBeyondTheRadius:
                 cap_sen=100_000,
                 room_sen=100_000,
                 kind="Western",
+                radius_km=WHOLE_WORLD_KM,
             )
         beyond = {p.id for p in found.nearest_beyond_radius}
         assert beyond
@@ -1403,6 +1606,7 @@ class TestTheNearestPlacesBeyondTheRadius:
                 cap_sen=100_000,
                 room_sen=100_000,
                 kind="Western",
+                radius_km=WHOLE_WORLD_KM,
             )
         assert all(place.km > 5.0 for place in found.nearest_beyond_radius)
         assert all(place.km <= 5.0 for place in found.places)
@@ -1419,6 +1623,7 @@ class TestTheNearestPlacesBeyondTheRadius:
                 cap_sen=3000,
                 room_sen=100_000,
                 kind="Western",
+                radius_km=WHOLE_WORLD_KM,
             )
         assert all(place.total_sen <= 3000 for place in found.nearest_beyond_radius)
         assert place_world.dear_and_far.name not in {
@@ -1437,6 +1642,7 @@ class TestTheNearestPlacesBeyondTheRadius:
                 cap_sen=3000,
                 room_sen=100_000,
                 kind="Western",
+                radius_km=WHOLE_WORLD_KM,
             )
         assert all(place.halal for place in found.nearest_beyond_radius)
         assert place_world.non_halal_and_far.name not in {
@@ -1452,6 +1658,7 @@ class TestTheNearestPlacesBeyondTheRadius:
                 cap_sen=100_000,
                 room_sen=100_000,
                 kind="Western",
+                radius_km=WHOLE_WORLD_KM,
             )
         assert all(
             kind_key(place.kind) == "western" for place in found.nearest_beyond_radius
@@ -1469,6 +1676,7 @@ class TestTheNearestPlacesBeyondTheRadius:
                 cap_sen=100_000,
                 room_sen=100_000,
                 kind="Western",
+                radius_km=WHOLE_WORLD_KM,
             )
         assert all(p.match_basis == "tagged" for p in found.nearest_beyond_radius)
         assert all(p.match_reason == "Tagged western" for p in found.nearest_beyond_radius)
@@ -1485,12 +1693,41 @@ class TestTheNearestPlacesBeyondTheRadius:
                 cap_sen=900,
                 room_sen=100_000,
                 kind="Western",
+                radius_km=WHOLE_WORLD_KM,
             )
         # A ceiling of RM9 leaves nothing at all in range, so the group is not
         # being suppressed by a thick list: there is simply nothing within reach.
         assert found.places == ()
         assert found.nearest_beyond_radius == ()
         assert place_world.beyond_the_reach.estimate.sen <= 900
+
+    async def test_the_reach_is_held_on_the_road_as_well(self, place_world):
+        # The reach is measured the way the radius is: the straight line gets a
+        # place onto the shortlist and the road is what it is offered on. A
+        # place 5.1 km out as the crow flies and eleven by road is past twice a
+        # five-kilometre radius, whatever the great circle says -- and the group
+        # promises "a little further than you asked".
+        spread = place_world.spread
+        with serving(StubRouting({"s6": 11_000.0}, places=spread), places=spread):
+            found = await find_places(
+                **place_world.origin,
+                mode="walk",
+                halal_only=False,
+                cap_sen=100_000,
+                room_sen=100_000,
+                kind="Western",
+                radius_km=WHOLE_WORLD_KM,
+            )
+        offered = {p.name for p in found.nearest_beyond_radius}
+        assert place_world.just_past_the_line.name not in offered
+        # The rest of the group is untouched, so this is the one place being
+        # dropped rather than the whole group failing.
+        assert offered == {
+            place_world.dear_and_far.name,
+            place_world.non_halal_and_far.name,
+            "Barat Jauh Dua",
+            "Barat Jauh Tiga",
+        }
 
     async def test_it_is_held_to_four_however_many_are_out_there(self, place_world):
         with serving(places=place_world.spread):
@@ -1501,6 +1738,7 @@ class TestTheNearestPlacesBeyondTheRadius:
                 cap_sen=100_000,
                 room_sen=100_000,
                 kind="Western",
+                radius_km=WHOLE_WORLD_KM,
             )
         assert len(found.nearest_beyond_radius) == NEAREST_BEYOND_RADIUS == 4
 
@@ -1517,6 +1755,7 @@ class TestTheNearestPlacesBeyondTheRadius:
                 cap_sen=100_000,
                 room_sen=100_000,
                 kind="Western",
+                radius_km=WHOLE_WORLD_KM,
             )
         assert found.nearby_count == 5
         assert found.matching_count == 5
@@ -1531,17 +1770,24 @@ class TestTheNearestPlacesBeyondTheRadius:
 
     async def test_the_figures_are_the_real_ones_for_the_longer_journey(self, place_world):
         # The whole basis on which a place from out there can be offered at all.
-        # Priced on the road the router actually reported -- 6 km, not the 5.1 km
-        # great circle -- by the same fare table as every other row.
+        # Measured on the road the router actually reported -- 6 km, not the
+        # 5.1 km great circle -- by the same clock as every other row.
+        #
+        # The clock and not the fare, because this group only ever appears on
+        # foot (see ``_reaches_past_radius``) and walking costs nothing but
+        # time. Time is what the extra kilometres are spent in, and time is what
+        # the row has to be honest about: twelve minutes further than the great
+        # circle would have said.
         spread = place_world.spread
         with serving(StubRouting({"s6": 6000.0}, places=spread), places=spread):
             found = await find_places(
                 **place_world.origin,
-                mode="ride",
+                mode="walk",
                 halal_only=False,
                 cap_sen=100_000,
                 room_sen=100_000,
                 kind="Western",
+                radius_km=WHOLE_WORLD_KM,
             )
         routed = next(
             p for p in found.nearest_beyond_radius if p.name == place_world.just_past_the_line.name
@@ -1549,14 +1795,11 @@ class TestTheNearestPlacesBeyondTheRadius:
         assert routed.distance_basis == "road"
         assert routed.km == 6.0
         assert routed.road_km == 6.0
-        # 500 base + 190 sen/km over 6 km, and the meal on top.
-        assert routed.travel_sen == 500 + 1140
-        assert routed.total_sen == 1900 + 1640
-        # 5 min wait + 3.2 min/km over 6 km, plus the six-minute buffer.
-        assert routed.minutes == 30
-        # The straight line would have been cheaper, which is the point: this
-        # was not priced on the distance the radius was measured with.
-        assert routed.travel_sen > 500 + 969
+        # 13 min/km over 6 km of road, plus the six-minute buffer.
+        assert routed.minutes == 84
+        # The great circle would have said 72, which is the point: this was not
+        # measured on the distance the radius was drawn with.
+        assert routed.minutes > round(5.1 * MODES["walk"].min_per_km) + 6
 
     async def test_the_band_is_the_real_one_and_is_not_stamped_over(self, place_world):
         # Where ``nearest_over_cap`` forces "over" because everything in it
@@ -1571,6 +1814,7 @@ class TestTheNearestPlacesBeyondTheRadius:
                 cap_sen=100_000,
                 room_sen=100_000,
                 kind="Western",
+                radius_km=WHOLE_WORLD_KM,
             )
         nearest = found.nearest_beyond_radius[0]
         assert nearest.band == "ok"
@@ -1590,6 +1834,7 @@ class TestTheNearestPlacesBeyondTheRadius:
                 cap_sen=100_000,
                 room_sen=100_000,
                 kind="Western",
+                radius_km=WHOLE_WORLD_KM,
             )
         assert found.nearby_count == 0
         assert found.matching_count == 0
@@ -1601,6 +1846,76 @@ class TestTheNearestPlacesBeyondTheRadius:
             "Barat Jauh Tiga",
             "Barat Jauh Dua",
         ]
+
+
+class TestWhichModesReachPastTheirOwnRadius:
+    """The group above and the mode-aware radius do the same job for two modes.
+
+    The group was written when every mode searched a flat five kilometres, and
+    a Grab needed a separate box to be offered a place eight kilometres out.
+    With the radius following the mode it simply reaches that place, in
+    ``places``, priced and ranked with everything else -- so keeping both would
+    offer the same place twice, once as in range and once as further than the
+    user asked for.
+
+    What is left is walking, where the line is short, real, and worth stepping
+    past on purpose.
+    """
+
+    async def _western(self, world, mode, **kwargs):
+        with serving(places=world.spread):
+            return await find_places(
+                **world.origin,
+                mode=mode,
+                halal_only=False,
+                cap_sen=100_000,
+                room_sen=100_000,
+                kind="Western",
+                **kwargs,
+            )
+
+    async def test_a_ride_reaches_those_places_itself_instead_of_in_a_group(self, place_world):
+        found = await self._western(place_world, "ride")
+
+        # The place that used to arrive as "further away than you asked" is in
+        # the list, because a forty-five-minute Grab really does reach it.
+        assert place_world.just_past_the_line.name in {p.name for p in found.places}
+        assert len(found.places) > FEW_NEARBY
+        assert found.nearest_beyond_radius == ()
+
+    async def test_a_thin_ride_still_offers_no_group(self, place_world):
+        # Thin for the same reason the walk below is -- one western place inside
+        # the same five kilometres -- so the only thing separating the two is
+        # the mode. A mode already spending the longest journey this app
+        # suggests has nothing to offer past its own radius: further out is not
+        # "a little further", it is a different sort of afternoon.
+        riding = await self._western(place_world, "ride", radius_km=WHOLE_WORLD_KM)
+        walking = await self._western(place_world, "walk", radius_km=WHOLE_WORLD_KM)
+
+        assert [p.name for p in riding.places] == [place_world.near_western.name]
+        assert len(riding.places) <= FEW_NEARBY
+        assert riding.nearest_beyond_radius == ()
+
+        assert [p.name for p in walking.places] == [place_world.near_western.name]
+        assert len(walking.nearest_beyond_radius) == 4
+
+    async def test_transit_offers_none_either(self, place_world):
+        found = await self._western(place_world, "transit", radius_km=WHOLE_WORLD_KM)
+
+        assert len(found.places) <= FEW_NEARBY
+        assert found.nearest_beyond_radius == ()
+
+    async def test_it_follows_the_budget_table_rather_than_naming_a_mode(self, place_world):
+        # Give walking the same three quarters of an hour the other two get and
+        # it stops reaching past its radius, with nothing edited but the table.
+        # That is the right answer to that change: a mode spending the longest
+        # journey there is has no room left to reach.
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setitem(TRAVEL_BUDGET_MIN, "walk", max(TRAVEL_BUDGET_MIN.values()))
+            found = await self._western(place_world, "walk", radius_km=WHOLE_WORLD_KM)
+
+        assert [p.name for p in found.places] == [place_world.near_western.name]
+        assert found.nearest_beyond_radius == ()
 
 
 class TestTravelCost:
@@ -1885,7 +2200,7 @@ class TestWithARouter:
             place_world.near_non_halal.name
         )
 
-    async def test_it_asks_the_router_once_for_everything_that_survived_the_filters(
+    async def test_it_asks_the_router_once_for_every_candidate_the_radius_held(
         self, place_world
     ):
         stub = StubRouting({})
@@ -1900,9 +2215,13 @@ class TestWithARouter:
         assert len(stub.calls) == 1, "one search is one round trip, however many places"
         origin, destinations = stub.calls[0]
         assert origin == (place_world.origin["lat"], place_world.origin["lng"])
-        # Five of the seven are halal. The two the filter removed are never sent
-        # to the router: a place that will not be shown is not worth a distance.
-        assert len(destinations) == found.matching_count == 5
+        # All seven, including the two the halal filter is about to remove. The
+        # radius is a travel budget now, the budget is spent on the road, and
+        # only the router knows a road -- so a place has to be measured before it
+        # can be called out of range, whether or not the user eats there. Five
+        # of the seven survive the filter, and the count says so.
+        assert len(destinations) == 7
+        assert found.matching_count == 5
 
     async def test_nothing_in_range_asks_the_router_nothing_useful(self, place_world):
         stub = StubRouting({})

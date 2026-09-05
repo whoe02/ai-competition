@@ -578,6 +578,12 @@ export interface paths {
          *     narrows nothing; where it is off, or the model cannot be reached, ``kind``
          *     is the whole of the filter exactly as it has always been. ``ranking`` on the
          *     response says which of the two the client is looking at.
+         *
+         *     ``radius_km`` no longer carries a distance of its own. Left off -- which is
+         *     what every screen in this app does -- the mode decides how far the search
+         *     reaches, from a travel-time budget rather than from a flat five kilometres
+         *     that was an hour's walk and a nine-minute Grab at once. Sent, it still wins,
+         *     for a caller that means a particular distance and not a particular journey.
          */
         get: operations["get_places_v1_day_plan_places_get"];
         put?: never;
@@ -1279,10 +1285,13 @@ export interface components {
          *
          *     ``nearest_beyond_radius`` is the same shape for the other line the user drew:
          *     the nearest few matching places from outside the search radius, sent only
-         *     when a narrowed search found few places inside it. A search for Western food
-         *     from Bukit Bintang holds three places within 5 km and sixteen more outside,
-         *     the closest of them a hundred metres past the line — for a rare kind of food
-         *     that line is not a filter, it is the answer. So these come over in their own
+         *     when a narrowed search found few places inside it — and only on foot, since
+         *     how far a search reaches now follows the mode, and a search by LRT or Grab
+         *     already reaches those places itself rather than needing a second list to
+         *     reach them from. A search for Western food from Bukit Bintang holds three
+         *     places inside a walk and sixteen more outside, the closest of them a hundred
+         *     metres past the line — for a rare kind of food that line is not a filter, it
+         *     is the answer. So these come over in their own
          *     field for exactly the reason above: they are further away than was asked
          *     for, and a client that shows them owes the user a heading saying so. Their
          *     ``km``, ``minutes`` and ``travel_sen`` are the real figures for the longer
@@ -3056,7 +3065,7 @@ export interface operations {
                 mode?: "walk" | "transit" | "ride";
                 halal_only?: boolean;
                 cap_sen?: number | null;
-                radius_km?: number;
+                radius_km?: number | null;
                 kind?: string | null;
                 request?: string | null;
             };

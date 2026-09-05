@@ -105,8 +105,10 @@ class PlaceWorld:
     back. ``multi_kind`` is a separate world for another one: a place that
     serves two kinds of food. ``believed`` is a third, for what a model thinks a
     place serves beyond its tags. ``spread`` is a fourth, for the only question
-    that needs places outside the 5 km radius at all. Nothing else uses any of
-    them, so the seven stay small enough to reason about.
+    that needs places outside the 5 km radius at all. ``ladder`` is a fifth, for
+    how far each mode reaches, and ``throng`` a sixth, for how many places one
+    search will look at. Nothing else uses any of them, so the seven stay small
+    enough to reason about.
     """
 
     places: tuple[Place, ...]
@@ -114,6 +116,8 @@ class PlaceWorld:
     multi_kind: tuple[Place, ...]
     believed: tuple[Place, ...]
     spread: tuple[Place, ...]
+    ladder: tuple[Place, ...]
+    throng: tuple[Place, ...]
     origin: dict[str, float]
     out_of_range: dict[str, float]
     lone_non_halal: dict[str, float]
@@ -522,12 +526,69 @@ _SPREAD: tuple[Place, ...] = (
     _BEYOND_THE_REACH,
 )
 
+# Six places on a ladder out from the origin, for the one question the worlds
+# above cannot ask: how far each mode reaches. Every rung sits just inside or
+# just outside one of the three radii the travel budgets work out to -- about
+# 1.9 km on foot, 8.4 km by transit and 12.5 km by ride -- so a search has to
+# hold exactly the rungs its own mode reaches and none of the next one's.
+#
+# All halal, all one kind, all the same price, so nothing but distance can
+# decide what comes back.
+_LADDER: tuple[Place, ...] = tuple(
+    Place(
+        f"g{index}",
+        f"Tangga {index}",
+        "Malaysian",
+        _north(km),
+        _ORIGIN_LNG,
+        Money(1200),
+        "high",
+        True,
+        note,
+        address=f"{index} Jalan Tangga, Kuala Lumpur",
+    )
+    for index, km, note in (
+        (1, 1.8, "1.8 km out: inside a twenty-five-minute walk, and inside everything else."),
+        (2, 2.1, "2.1 km out: past the walk, well inside the train."),
+        (3, 8.2, "8.2 km out: the last rung a forty-five-minute train ride reaches."),
+        (4, 8.7, "8.7 km out: past the train, inside the Grab."),
+        (5, 12.3, "12.3 km out: the last rung a forty-five-minute Grab reaches."),
+        (6, 13.0, "13.0 km out: past all three of them."),
+    )
+)
+
+# Three hundred and twenty places packed into the twelve kilometres north of the
+# origin, for the other question a wide radius raises: not how far it reaches
+# but how much it holds. A ride reaches every one of them, and one search cannot
+# ask a router about three hundred and twenty destinations in one URL.
+#
+# The far ones are the cheap ones, on purpose. The cut is by distance, so the
+# cheapest place in this world is exactly the one a search is not going to see,
+# and a guard that had quietly become "the cheapest few hundred" would show it.
+_THRONG: tuple[Place, ...] = tuple(
+    Place(
+        f"t{index:03d}",
+        f"Kedai {index:03d}",
+        "Malaysian",
+        _north(index * 0.038),
+        _ORIGIN_LNG,
+        Money(5000 - index),
+        "high",
+        True,
+        f"{round(index * 38)} m out, and {index} sen cheaper than the first of them.",
+        address=f"{index} Jalan Ramai-Ramai, Kuala Lumpur",
+    )
+    for index in range(1, 321)
+)
+
 PLACE_WORLD = PlaceWorld(
     places=(_CHEAP, _MID, _NEAR_NON_HALAL, _PRICEY, _FAR_NON_HALAL, _NOODLES, _SECOND_CAFE),
     crowd=_CROWD,
     multi_kind=(_TWO_KINDS, _ONE_KIND, _OTHER_KIND),
     believed=(_BELIEVED_CHICKEN, _TAGGED_CHICKEN, _BOTH_WAYS, _NO_CHICKEN),
     spread=_SPREAD,
+    ladder=_LADDER,
+    throng=_THRONG,
     origin={"lat": _ORIGIN_LAT, "lng": _ORIGIN_LNG},
     # George Town, Penang: ~294 km from all seven.
     out_of_range={"lat": 5.4141, "lng": 100.3288},

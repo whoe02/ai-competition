@@ -330,10 +330,13 @@ class DayPlanResponse(ResponseModel):
 
     ``nearest_beyond_radius`` is the same shape for the other line the user drew:
     the nearest few matching places from outside the search radius, sent only
-    when a narrowed search found few places inside it. A search for Western food
-    from Bukit Bintang holds three places within 5 km and sixteen more outside,
-    the closest of them a hundred metres past the line — for a rare kind of food
-    that line is not a filter, it is the answer. So these come over in their own
+    when a narrowed search found few places inside it — and only on foot, since
+    how far a search reaches now follows the mode, and a search by LRT or Grab
+    already reaches those places itself rather than needing a second list to
+    reach them from. A search for Western food from Bukit Bintang holds three
+    places inside a walk and sixteen more outside, the closest of them a hundred
+    metres past the line — for a rare kind of food that line is not a filter, it
+    is the answer. So these come over in their own
     field for exactly the reason above: they are further away than was asked
     for, and a client that shows them owes the user a heading saying so. Their
     ``km``, ``minutes`` and ``travel_sen`` are the real figures for the longer

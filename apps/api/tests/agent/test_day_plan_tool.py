@@ -165,7 +165,7 @@ class TestAskingForOneKindOfFood:
         assert result.value["kind"] == "Cafe"
 
     async def test_a_kind_that_matches_nothing_comes_back_empty(
-        self, session, user, today, place_world
+        self, session, user, today, place_world, whole_world_in_range
     ):
         context = await context_for(session, user, today)
         result = await run_search(
@@ -328,7 +328,7 @@ class TestHowMuchTheModelIsGiven:
         assert result.value["total_under_cap"] == 13
 
     async def test_a_shorter_list_is_not_padded_and_says_its_own_length(
-        self, session, user, today, place_world
+        self, session, user, today, place_world, whole_world_in_range
     ):
         context = await context_for(session, user, today)
         result = await run_search(context, PlanArgs(cap_sen=100_000, **place_world.origin))
@@ -343,7 +343,7 @@ class TestThePriceLandscape:
     today's room anyway"."""
 
     async def test_it_states_every_kind_in_range_with_the_cheapest_of_each(
-        self, session, user, today, place_world
+        self, session, user, today, place_world, whole_world_in_range
     ):
         context = await context_for(session, user, today)
         result = await run_search(context, PlanArgs(cap_sen=100_000, **place_world.origin))
@@ -367,7 +367,7 @@ class TestThePriceLandscape:
             assert min(listed) == row["cheapest_total_sen"]
 
     async def test_a_ceiling_that_admits_nothing_still_states_what_is_there(
-        self, session, user, today, place_world
+        self, session, user, today, place_world, whole_world_in_range
     ):
         # The single reason for the whole thing. With the list empty, this is
         # all the model has to answer with, and without it the only honest reply
@@ -417,7 +417,7 @@ class TestWhyTheListIsEmpty:
         assert evidence["Nearby places"] == "none within range"
 
     async def test_a_halal_filter_that_admits_nothing_is_not_narrated_as_a_ceiling(
-        self, session, user, today, place_world
+        self, session, user, today, place_world, whole_world_in_range
     ):
         context = await context_for(session, user, today)
         result = await run_search(
@@ -529,7 +529,7 @@ class TestTheNearestPlacesBeyondTheRadius:
             )
 
     async def test_a_thin_narrowed_search_hands_over_what_is_outside(
-        self, session, user, today, place_world
+        self, session, user, today, place_world, whole_world_in_range
     ):
         result = await self._searched(session, user, today, place_world, kind="Western")
 
@@ -564,7 +564,7 @@ class TestTheNearestPlacesBeyondTheRadius:
         assert result.value["nearest_beyond_radius"] == []
 
     async def test_the_evidence_names_each_one_with_how_far_out_it_is(
-        self, session, user, today, place_world
+        self, session, user, today, place_world, whole_world_in_range
     ):
         result = await self._searched(session, user, today, place_world, kind="Western")
 
@@ -581,7 +581,7 @@ class TestTheNearestPlacesBeyondTheRadius:
         assert "Never present one as nearby" in SELECTION
 
     async def test_the_model_can_resolve_one_by_id(
-        self, session, user, today, place_world
+        self, session, user, today, place_world, whole_world_in_range
     ):
         # The planner reads every name and price back out of an id, so a group
         # the lookup did not know about would be one the model could not choose
@@ -620,7 +620,7 @@ class TestThePlacesTheKindFilterTurnedAway:
         assert narrow.value["near_misses"]
 
     async def test_each_one_carries_its_real_kind_and_the_price_that_was_measured(
-        self, session, user, today, place_world
+        self, session, user, today, place_world, whole_world_in_range
     ):
         context = await context_for(session, user, today)
         result = await run_search(
@@ -653,7 +653,7 @@ class TestThePlacesTheKindFilterTurnedAway:
         assert result.value["shown_count"] == result.value["kind_count"] == 2
         assert result.value["total_under_cap"] == 2
 
-    async def test_the_list_is_short(self, session, user, today, place_world):
+    async def test_the_list_is_short(self, session, user, today, place_world, whole_world_in_range):
         # Five other kinds are in range. A long second list stops reading as an
         # aside and starts reading as the answer, beside twelve matches and a
         # whole price landscape already going over.
@@ -666,7 +666,7 @@ class TestThePlacesTheKindFilterTurnedAway:
         assert len({p["kind"] for p in result.value["near_misses"]}) == 4
 
     async def test_the_evidence_states_the_kind_the_data_gave_each_of_them(
-        self, session, user, today, place_world
+        self, session, user, today, place_world, whole_world_in_range
     ):
         """The guardrail, and the reason the rows are emitted for all of them.
 
@@ -691,7 +691,7 @@ class TestThePlacesTheKindFilterTurnedAway:
         assert dict(rows)["Cheapest nearby"] == place_world.noodles.name
 
     async def test_a_kind_nothing_matched_still_hands_over_what_is_there(
-        self, session, user, today, place_world
+        self, session, user, today, place_world, whole_world_in_range
     ):
         # The most useful case: no Korean food here at all, and the model is
         # handed the places that are, rather than only an apology and a count.

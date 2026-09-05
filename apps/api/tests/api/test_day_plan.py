@@ -26,6 +26,67 @@ class TestDayPlanAuth:
         assert response.status_code == 401
 
 
+class TestHowFarTheSearchReaches:
+    """The client sends a mode and no distance, and the mode decides.
+
+    A flat five kilometres over the wire was an hour's walk and a nine-minute
+    Grab at once. The ``ladder`` world is six places at 1.8, 2.1, 8.2, 8.7,
+    12.3 and 13.0 km, each just inside or just outside one of the three radii
+    the travel budgets work out to.
+    """
+
+    async def _ids(self, client, session, place_world, **params) -> list[str]:
+        token = await demo_token(client, session)
+        with serving(places=place_world.ladder):
+            response = await client.get(
+                "/v1/day-plan/places",
+                params={**place_world.origin, "cap_sen": 100_000, **params},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert response.status_code == 200, response.text
+        return [place["id"] for place in response.json()["places"]]
+
+    async def test_the_mode_alone_changes_how_far_the_answer_reaches(
+        self, client, session, place_world
+    ):
+        assert await self._ids(client, session, place_world, mode="walk") == ["g1"]
+        assert await self._ids(client, session, place_world, mode="transit") == [
+            "g1",
+            "g2",
+            "g3",
+        ]
+        assert await self._ids(client, session, place_world, mode="ride") == [
+            "g1",
+            "g2",
+            "g3",
+            "g4",
+            "g5",
+        ]
+
+    async def test_walking_is_the_default_and_reaches_a_walk(
+        self, client, session, place_world
+    ):
+        # No mode and no radius, which is the barest call a client can make.
+        assert await self._ids(client, session, place_world) == ["g1"]
+
+    async def test_a_radius_in_the_query_still_wins(self, client, session, place_world):
+        assert await self._ids(
+            client, session, place_world, mode="ride", radius_km=3.0
+        ) == ["g1", "g2"]
+        assert await self._ids(
+            client, session, place_world, mode="walk", radius_km=9.0
+        ) == ["g1", "g2", "g3", "g4"]
+
+    async def test_a_radius_of_nothing_is_still_refused(self, client, session, place_world):
+        token = await demo_token(client, session)
+        response = await client.get(
+            "/v1/day-plan/places",
+            params={**place_world.origin, "radius_km": 0},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 422
+
+
 class TestDayPlanPlaces:
     async def test_returns_places_sorted_by_total_cost(self, client, session, place_world):
         token = await demo_token(client, session)
@@ -199,13 +260,17 @@ class TestFilteringByKindOfFood:
     ):
         token = await demo_token(client, session)
         headers = {"Authorization": f"Bearer {token}"}
-        params = {**place_world.origin, "cap_sen": 100_000}
+        # Pinned to the five kilometres the fixed world was laid out around, so
+        # that all seven places are what these counts are counting.
+        params = {**place_world.origin, "cap_sen": 100_000, "radius_km": 5.0}
 
         no_such_food = await client.get(
             "/v1/day-plan/places", params={**params, "kind": "Korean"}, headers=headers
         )
         by_ceiling = await client.get(
-            "/v1/day-plan/places", params={**place_world.origin, "cap_sen": 1}, headers=headers
+            "/v1/day-plan/places",
+            params={**place_world.origin, "cap_sen": 1, "radius_km": 5.0},
+            headers=headers,
         )
 
         assert no_such_food.json()["places"] == by_ceiling.json()["places"] == []
@@ -406,7 +471,10 @@ class TestWhyTheListIsEmpty:
     ):
         token = await demo_token(client, session)
         headers = {"Authorization": f"Bearer {token}"}
-        params = {**place_world.lone_non_halal, "cap_sen": 100_000}
+        # Chophouse Lima is 4.9 km from here, which is a walk nobody takes: the
+        # radius is pinned so that the halal filter is the only thing left that
+        # can empty this list.
+        params = {**place_world.lone_non_halal, "cap_sen": 100_000, "radius_km": 5.0}
 
         response = await client.get(
             "/v1/day-plan/places", params={**params, "halal_only": True}, headers=headers
@@ -564,7 +632,17 @@ class TestTheNearestPlacesBeyondTheRadius:
         with serving(places=place_world.spread):
             response = await client.get(
                 "/v1/day-plan/places",
-                params={**place_world.origin, "cap_sen": 100_000, **params},
+                # On foot, and pinned to the five kilometres this world was laid
+                # out around. Walking is the one mode that reaches past its own
+                # radius at all -- the other two spend the longest journey this
+                # app suggests getting to what is already in ``places``.
+                params={
+                    **place_world.origin,
+                    "cap_sen": 100_000,
+                    "mode": "walk",
+                    "radius_km": 5.0,
+                    **params,
+                },
                 headers={"Authorization": f"Bearer {token}"},
             )
         assert response.status_code == 200, response.text
@@ -647,9 +725,13 @@ class TestTheNearestPlacesBeyondTheRadius:
         assert place_world.non_halal_and_far.name not in names
         assert place_world.dear_and_far.name not in names
 
-    async def test_the_fare_is_the_one_for_the_longer_journey(
+    async def test_the_journey_on_the_wire_is_the_longer_one(
         self, client, session, place_world
     ):
+        # The road the router reported, not the great circle the radius was
+        # drawn with. On foot that shows up on the clock rather than in the
+        # fare, because walking costs nothing but time -- and this group only
+        # ever appears on foot.
         token = await demo_token(client, session)
         with serving(
             StubRouting({"s6": 6000.0}, places=place_world.spread), places=place_world.spread
@@ -660,7 +742,8 @@ class TestTheNearestPlacesBeyondTheRadius:
                     **place_world.origin,
                     "cap_sen": 100_000,
                     "kind": "Western",
-                    "mode": "ride",
+                    "mode": "walk",
+                    "radius_km": 5.0,
                 },
                 headers={"Authorization": f"Bearer {token}"},
             )
@@ -671,8 +754,9 @@ class TestTheNearestPlacesBeyondTheRadius:
         )
         assert routed["distance_basis"] == "road"
         assert routed["road_km"] == 6.0
-        assert routed["travel_sen"] == 1640
-        assert routed["total_sen"] == 1900 + 1640
+        # 13 min/km over 6 km of road plus the six-minute buffer, where the
+        # 5.1 km straight line would have said 72.
+        assert routed["minutes"] == 84
 
 class TestDayOnWhichNothingIsLeft:
     """A day already spent out is the state the whole product exists for."""

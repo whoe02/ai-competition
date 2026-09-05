@@ -1,4 +1,4 @@
-import { useContext, useEffect, useState, type FormEvent } from "react";
+import { useContext, useEffect, useRef, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
 
 import type { DayPlanReading, Place } from "@kira/contracts";
@@ -20,7 +20,9 @@ import {
 } from "../lib/placeSort";
 
 // No location yet beats a silent wrong one, so this is where distances and
-// travel costs are measured from until the user grants their own.
+// travel costs are measured from when the device will not say. The screen asks
+// on the way in, so this is the answer to a refusal, a timeout or a browser
+// with no geolocation at all — never a default nobody was asked about.
 const KLCC = { lat: 3.1577, lng: 101.712 };
 
 type Mode = TravelMode;
@@ -30,6 +32,19 @@ const MODES: { id: Mode; label: string }[] = [
   { id: "transit", label: "LRT" },
   { id: "ride", label: "Grab" },
 ];
+
+/**
+ * The mode whose search reaches furthest.
+ *
+ * The server decides how far each one reaches, from how long a person will
+ * spend getting there rather than from a distance — a walk is under two
+ * kilometres and a Grab is a dozen. Nothing on this screen restates those
+ * figures, because a copy of them here would disagree with the search the first
+ * time one is tuned. All this needs to know is which mode is the last resort
+ * before "nothing is within range" is really about the places rather than about
+ * the journey.
+ */
+const WIDEST_MODE: Mode = "ride";
 
 const MIN_CAP_SEN = 500;
 const CAP_STEP_SEN = 50;
@@ -569,6 +584,11 @@ export function DayPlan() {
   const [capSen, setCapSen] = useState<number | undefined>(undefined);
   const [origin, setOrigin] = useState({ ...KLCC, real: false });
   const [locState, setLocState] = useState<LocState>("idle");
+  // True until the locate this screen fires on its own has answered, one way or
+  // the other. Nothing is asked of the API while it stands: the fallback list
+  // would otherwise be on screen — header, distances, fares and all — for as
+  // long as the device takes, and then every figure on it would change.
+  const [firstFixPending, setFirstFixPending] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [ask, setAsk] = useState("");
@@ -581,7 +601,7 @@ export function DayPlan() {
   const addPlan = useAddPlanToToday();
   const interpret = useInterpretDayPlan();
 
-  const { data, isLoading, isError } = useDayPlan({
+  const { data, isLoading, isError } = useDayPlan(!firstFixPending, {
     lat: origin.lat,
     lng: origin.lng,
     mode,
@@ -596,9 +616,19 @@ export function DayPlan() {
     return () => clearTimeout(timer);
   }, [toast]);
 
-  const useMyLocation = () => {
+  /**
+   * Ask the device where we are, and say so however it turns out.
+   *
+   * `settle` is how the automatic attempt below releases the query: it runs on
+   * every path out of here, including the one where there is no geolocation to
+   * ask, so a browser that will not answer holds nothing up. A tap on the chip
+   * passes nothing, because by then a list is already on screen and the only
+   * thing a fix changes is which origin the next one is measured from.
+   */
+  const locate = (settle: () => void = () => {}) => {
     if (!navigator.geolocation) {
       setLocState("unsupported");
+      settle();
       return;
     }
     setLocState("asking");
@@ -606,11 +636,40 @@ export function DayPlan() {
       (position) => {
         setOrigin({ lat: position.coords.latitude, lng: position.coords.longitude, real: true });
         setLocState("ok");
+        settle();
       },
-      (error) => setLocState(failureFor(error.code)),
+      (error) => {
+        setLocState(failureFor(error.code));
+        settle();
+      },
       { timeout: LOCATE_TIMEOUT_MS, maximumAge: 60000 },
     );
   };
+
+  /**
+   * Asked once, when the screen opens, rather than waited for.
+   *
+   * A plan is measured from somewhere, and where the user is standing is the
+   * somewhere they meant — so this screen finds out for itself instead of
+   * planning from KLCC until it occurs to someone to tap a chip. The mode's
+   * reach is a travel-time budget, which makes the origin decide which places
+   * exist at all: a walk from the wrong start throws away a different set of
+   * shops than a Grab from it.
+   *
+   * The ref, and not the empty dependency list alone. Every chip tap and every
+   * step of the ceiling slider re-renders this component, and a badly scoped
+   * effect would raise the browser's permission dialog over a screen the user
+   * is in the middle of reading; the ref also holds against StrictMode
+   * remounting in development. Nothing re-fires it afterwards, on purpose: a
+   * refusal stays a refusal until the chip below is tapped, because being
+   * nagged for a permission already declined is worse than not being asked.
+   */
+  const asked = useRef(false);
+  useEffect(() => {
+    if (asked.current) return;
+    asked.current = true;
+    locate(() => setFirstFixPending(false));
+  }, []);
 
   // The chip and the "Near you" header both read off the origin, so falling
   // back has to clear the located state too or one of them would still claim
@@ -768,7 +827,14 @@ export function DayPlan() {
       <div className="pad" style={{ paddingTop: 90 }}>
         {askBox}
         <p className="voice" style={{ fontSize: 17 }}>
-          {isError ? "I couldn't find places just now." : "Finding what fits today…"}
+          {/* Two different waits, and a cold fix can hold the first one for
+              fifteen seconds. Saying "finding what fits today" through that
+              names the wrong thing to wait for. */}
+          {isError
+            ? "I couldn't find places just now."
+            : firstFixPending
+              ? "Finding where you are…"
+              : "Finding what fits today…"}
         </p>
         {isError && (
           <p style={{ fontSize: 13, color: "var(--muted)" }}>
@@ -1018,7 +1084,7 @@ export function DayPlan() {
             <button
               type="button"
               className={`fchip ${locState === "ok" ? "on" : ""}`}
-              onClick={useMyLocation}
+              onClick={() => locate()}
               disabled={locState === "asking"}
             >
               {locState === "asking"
@@ -1142,8 +1208,24 @@ export function DayPlan() {
                       Nothing within range of here.
                     </p>
                     <p style={{ margin: "8px 0 0", fontSize: 13, color: "var(--muted)", lineHeight: 1.5 }}>
-                      The demo set only covers central KL, so raising the ceiling will not fill this
-                      list from where you are.
+                      {/* How far "range" reaches is decided by the mode: the
+                          server searches as far as you would travel in the
+                          time, which on foot is a walk and by Grab is most of
+                          the city. So the cause of an empty list is not the
+                          same in all three, and naming the demo set under a
+                          Walk that simply did not reach would be explaining it
+                          with the wrong thing. */}
+                      {mode === WIDEST_MODE ? (
+                        <>
+                          The demo set only covers central KL, so raising the ceiling will not fill
+                          this list from where you are.
+                        </>
+                      ) : (
+                        <>
+                          A {modeLabel} search only reaches as far as you would get in the time.
+                          Raising the ceiling will not fill this list; Grab reaches further.
+                        </>
+                      )}
                     </p>
                     {origin.real && (
                       <button

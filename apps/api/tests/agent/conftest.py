@@ -6,7 +6,12 @@ import pytest
 
 from kira.agent.llm import OfflineChatModel
 from kira.seed.demo import DEMO_TODAY, seed_demo_user
+from kira.services import day_plan as day_plan_service
 from kira.services.butler_thread import ensure_thread
+
+# The distance the fixed place world was laid out around, back when every mode
+# searched a flat five kilometres of it.
+WHOLE_WORLD_KM = 5.0
 
 
 def offline_factory(**kwargs):
@@ -26,6 +31,20 @@ async def butler(session):
 @pytest.fixture
 def today():
     return DEMO_TODAY
+
+
+@pytest.fixture
+def whole_world_in_range(monkeypatch):
+    """Let every mode reach the five kilometres the fixed world was laid out in.
+
+    The planner tool takes no radius and is not going to: how far a search
+    reaches follows from the mode, and a model that could set it would be
+    deciding how far the user walks. So a tool test that needs the whole of the
+    fixed world stands the derivation aside rather than arguing with it. What
+    the derivation actually derives is a question about the search and is asked
+    of the search, in ``tests/services/test_day_plan.py``.
+    """
+    monkeypatch.setattr(day_plan_service, "radius_for", lambda mode: WHOLE_WORLD_KM)
 
 
 class ScriptedModel(OfflineChatModel):

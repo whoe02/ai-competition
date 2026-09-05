@@ -34,7 +34,7 @@ async def get_places(
     mode: Literal["walk", "transit", "ride"] = "walk",
     halal_only: bool = False,
     cap_sen: int | None = Query(default=None, gt=0),
-    radius_km: float = Query(default=5.0, gt=0),
+    radius_km: float | None = Query(default=None, gt=0),
     kind: str | None = Query(default=None, max_length=40),
     request: str | None = Query(default=None, max_length=280),
 ):
@@ -51,6 +51,12 @@ async def get_places(
     narrows nothing; where it is off, or the model cannot be reached, ``kind``
     is the whole of the filter exactly as it has always been. ``ranking`` on the
     response says which of the two the client is looking at.
+
+    ``radius_km`` no longer carries a distance of its own. Left off -- which is
+    what every screen in this app does -- the mode decides how far the search
+    reaches, from a travel-time budget rather than from a flat five kilometres
+    that was an hour's walk and a nine-minute Grab at once. Sent, it still wins,
+    for a caller that means a particular distance and not a particular journey.
     """
     dashboard = await today_dashboard(session, user, today_for())
     room_sen = dashboard.safe_today_sen

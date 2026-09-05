@@ -112,7 +112,7 @@ function sameSearch(before: DayPlanParams, now: DayPlanParams): boolean {
   );
 }
 
-export function useDayPlan(params: DayPlanParams) {
+export function useDayPlan(enabled: boolean, params: DayPlanParams) {
   const query = new URLSearchParams({
     lat: String(params.lat),
     lng: String(params.lng),
@@ -124,6 +124,12 @@ export function useDayPlan(params: DayPlanParams) {
   return useQuery({
     queryKey: ["day-plan", params] as DayPlanKey,
     queryFn: () => api.get<DayPlan>("/v1/day-plan/places?" + query),
+    // Held back while the screen is still finding out where it is planning
+    // from. A list fetched for the fallback in that gap would be a whole plan
+    // on screen — its header, its distances and its fares — for somewhere the
+    // user is not, and every figure on it would change the moment the device
+    // answered.
+    enabled,
     // The ceiling slider is part of this query's own key, so without this the
     // control unmounts into the loading state on its first step and the drag is
     // over before it began. Held across a change of origin or mode, though, the

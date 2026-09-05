@@ -258,7 +258,9 @@ class TestAModelWhoseOnlyCallIsRefused:
     )
 
     @pytest.mark.parametrize("call", REFUSED)
-    async def test_the_planner_still_runs(self, session, butler, today, place_world, call):
+    async def test_the_planner_still_runs(
+        self, session, butler, today, place_world, whole_world_in_range, call
+    ):
         result = await ask(session, butler, today, self.TURN, scripted_factory(call))
         assert result.tools_used == ["start_day_planning"]
         assert dict(result.evidence)["Safe to spend today"] == "RM52.97"

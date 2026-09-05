@@ -407,9 +407,10 @@ def _further_out(result: dict[str, Any], limit: int = 3) -> str:
     """The nearest matching places from outside the radius, said as being outside it.
 
     The planner only fills ``nearest_beyond_radius`` where a filtered search came
-    back with few places inside the radius, which for a rare kind of food is
-    most of the time: three western places within 5 km of Bukit Bintang, and
-    sixteen more just past it.
+    back with few places inside the radius, and only on foot, where the radius
+    is a twenty-five-minute walk and stepping past it is a real choice. For a
+    rare kind of food that is most searches: three western places inside a walk
+    of Bukit Bintang, and sixteen more just past it.
 
     Every one of these is further away than the user asked for, so the distance
     is on every name and the sentence says outright that the line was crossed.

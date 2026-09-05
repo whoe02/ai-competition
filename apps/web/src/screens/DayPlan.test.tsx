@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -302,6 +302,18 @@ function geolocationAt(lat: number, lng: number) {
   );
 }
 
+/** A locate that answers only when the test says so — the seconds a cold fix
+ *  really takes, held open, so what is on screen during them can be looked at. */
+function deferredGeolocationAt(lat: number, lng: number) {
+  let answer = () => {};
+  const getCurrentPosition = stubGeolocation(
+    vi.fn((success) => {
+      answer = () => success({ coords: { latitude: lat, longitude: lng } } as GeolocationPosition);
+    }),
+  );
+  return { getCurrentPosition, land: () => act(() => answer()) };
+}
+
 /** jsdom ships no clipboard, and userEvent.setup() installs a working stub of
  *  its own — so both of these have to run *after* the setup inside openSheet,
  *  or that stub silently puts a functioning clipboard back under the test. */
@@ -400,9 +412,28 @@ describe("DayPlan", () => {
     renderDayPlan();
 
     expect(await screen.findByText(/Nothing within range of here/i)).toBeInTheDocument();
-    expect(screen.getByText(/demo set only covers central KL/i)).toBeInTheDocument();
     expect(screen.queryByText(/Raise the ceiling/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Nothing under RM52.97 yet/i)).not.toBeInTheDocument();
+  });
+
+  it("names the mode's own reach on foot, and the data only once nothing wider is left", async () => {
+    // How far "within range" goes is decided by the mode: the server searches
+    // as far as the user would travel in the time, so a Walk that found nothing
+    // and a Grab that found nothing are two different sentences. Blaming the
+    // demo set under a Walk would explain an empty list with the wrong thing --
+    // and send the user past the one control that would have filled it.
+    const user = userEvent.setup();
+    vi.mocked(api.get).mockResolvedValue({ ...RESPONSE, nearby_count: 0, matching_count: 0, places: [] });
+    renderDayPlan();
+
+    expect(await screen.findByText(/A Walk search only reaches as far as/i)).toBeInTheDocument();
+    expect(screen.getByText(/Grab reaches further/i)).toBeInTheDocument();
+    expect(screen.queryByText(/demo set only covers central KL/i)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Grab" }));
+
+    expect(await screen.findByText(/demo set only covers central KL/i)).toBeInTheDocument();
+    expect(screen.queryByText(/only reaches as far as/i)).not.toBeInTheDocument();
   });
 
   it("blames the halal filter rather than the ceiling when it is what emptied the list", async () => {
@@ -632,12 +663,10 @@ describe("DayPlan", () => {
   it("says a blocked location was blocked, and what it is planning from instead", async () => {
     // The bug this guards: locState went to "denied" and nothing on the page
     // read it, so a refused permission looked exactly like an untouched chip.
+    // The refusal arrives on its own now — the screen asks on the way in.
     failingGeolocation(1);
     renderDayPlan();
     await screen.findByText("Nasi Kandar Pelita");
-    const user = userEvent.setup();
-
-    await user.click(screen.getByRole("button", { name: "Use my location" }));
 
     expect(await screen.findByText(/Location is blocked/i)).toBeInTheDocument();
     // PERMISSION_DENIED does not say who denied it, and a site permission
@@ -655,8 +684,6 @@ describe("DayPlan", () => {
     await screen.findByText("Nasi Kandar Pelita");
     const user = userEvent.setup();
 
-    await user.click(screen.getByRole("button", { name: "Use my location" }));
-
     // Different cause, different advice: settings for a block, another tap here.
     expect(await screen.findByText(/took longer than 15 seconds/i)).toBeInTheDocument();
     expect(screen.queryByText(/your system withholding it/i)).not.toBeInTheDocument();
@@ -670,10 +697,6 @@ describe("DayPlan", () => {
   it("plans from where the user is once located, and says so", async () => {
     geolocationAt(5.4141, 100.3288);
     renderDayPlan();
-    await screen.findByText("Nasi Kandar Pelita");
-    const user = userEvent.setup();
-
-    await user.click(screen.getByRole("button", { name: "Use my location" }));
 
     expect(await screen.findByRole("button", { name: "Located" })).toBeInTheDocument();
     expect(screen.getByText("Near you")).toBeInTheDocument();
@@ -685,7 +708,19 @@ describe("DayPlan", () => {
     // keeps it. It does not survive a change of origin: the header, the voice
     // line and every distance on screen would go on describing KLCC while
     // saying "where you are", 300 km from the nearest of them.
-    geolocationAt(5.4141, 100.3288);
+    //
+    // The locate on the way in times out, which is what leaves a KLCC list on
+    // screen at all; the tap is the one that finds Penang.
+    let found = false;
+    stubGeolocation(
+      vi.fn((success, error) => {
+        if (!found) {
+          error?.({ code: 3, message: "", PERMISSION_DENIED: 1, POSITION_UNAVAILABLE: 2, TIMEOUT: 3 });
+          return;
+        }
+        success({ coords: { latitude: 5.4141, longitude: 100.3288 } } as GeolocationPosition);
+      }),
+    );
     vi.mocked(api.get).mockImplementation((url: string) =>
       String(url).includes("lat=5.4141")
         ? new Promise(() => {}) // the Penang answer never lands
@@ -694,8 +729,9 @@ describe("DayPlan", () => {
     renderDayPlan();
     await screen.findByText("Nasi Kandar Pelita");
     const user = userEvent.setup();
+    found = true;
 
-    await user.click(screen.getByRole("button", { name: "Use my location" }));
+    await user.click(screen.getByRole("button", { name: "Location timed out" }));
 
     expect(await screen.findByText(/Finding what fits today/i)).toBeInTheDocument();
     expect(screen.queryByText("Nasi Kandar Pelita")).not.toBeInTheDocument();
@@ -733,11 +769,9 @@ describe("DayPlan", () => {
       }),
     );
     renderDayPlan();
-    await screen.findByText("Nasi Kandar Pelita");
+    await screen.findByRole("button", { name: "Located" });
     const user = userEvent.setup();
 
-    await user.click(screen.getByRole("button", { name: "Use my location" }));
-    await screen.findByRole("button", { name: "Located" });
     fail = true;
     await user.click(screen.getByRole("button", { name: "Located" }));
 
@@ -752,11 +786,9 @@ describe("DayPlan", () => {
     geolocationAt(5.4141, 100.3288);
     vi.mocked(api.get).mockResolvedValue({ ...RESPONSE, nearby_count: 0, matching_count: 0, places: [] });
     renderDayPlan();
+    await screen.findByRole("button", { name: "Located" });
     await screen.findByText(/Nothing within range of here/i);
     const user = userEvent.setup();
-
-    await user.click(screen.getByRole("button", { name: "Use my location" }));
-    await screen.findByRole("button", { name: "Located" });
 
     await user.click(screen.getByRole("button", { name: "Plan from KLCC instead" }));
 
@@ -775,6 +807,103 @@ describe("DayPlan", () => {
     expect(within(sheet).getAllByText("RM12.50").length).toBeGreaterThan(0);
     expect(within(sheet).getByText("Meal estimate")).toBeInTheDocument();
     expect(within(sheet).getByText("650 m by road")).toBeInTheDocument();
+  });
+});
+
+describe("DayPlan · finding the user when the screen opens", () => {
+  it("asks the device where the user is as soon as the screen opens", async () => {
+    // The complaint this answers: nothing on the screen ever tried, so every
+    // visit planned from KLCC until somebody thought to tap a chip.
+    const getCurrentPosition = geolocationAt(5.4141, 100.3288);
+    renderDayPlan();
+
+    expect(await screen.findByText("Near you")).toBeInTheDocument();
+    expect(getCurrentPosition).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", { name: "Located" })).toBeInTheDocument();
+    expect(lastRequestedUrl()).toContain("lat=5.4141");
+    expect(lastRequestedUrl()).toContain("lng=100.3288");
+  });
+
+  it("asks for no list at all while the fix is still in flight", async () => {
+    // The window this closes: a whole KLCC plan — its header, its distances,
+    // its fares — on screen for the seconds a fix takes, every figure of it
+    // replaced the moment the device answers. There is nothing yet to be right
+    // about, so nothing is drawn and nothing is fetched.
+    const { land } = deferredGeolocationAt(5.4141, 100.3288);
+    renderDayPlan();
+
+    expect(await screen.findByText(/Finding where you are/i)).toBeInTheDocument();
+    expect(api.get).not.toHaveBeenCalled();
+    expect(screen.queryByText("Near KLCC")).not.toBeInTheDocument();
+
+    land();
+
+    expect(await screen.findByText("Near you")).toBeInTheDocument();
+    const origins = vi.mocked(api.get).mock.calls.map(([url]) => String(url));
+    expect(origins.length).toBeGreaterThan(0);
+    expect(origins.every((url) => url.includes("lat=5.4141"))).toBe(true);
+  });
+
+  it("falls back to KLCC and names the refusal, with nobody tapping anything", async () => {
+    failingGeolocation(1);
+    renderDayPlan();
+
+    expect(await screen.findByText("Near KLCC")).toBeInTheDocument();
+    expect(screen.getByText(/Location is blocked/i)).toBeInTheDocument();
+    expect(screen.getByText(/planning from KLCC/i)).toBeInTheDocument();
+    expect(lastRequestedUrl()).toContain("lat=3.1577");
+    expect(screen.queryByText("Near you")).not.toBeInTheDocument();
+  });
+
+  it("names a browser that has no geolocation at all, rather than saying nothing", async () => {
+    // jsdom, plain http, some webviews: the object is simply absent, and the
+    // fallback still owes the user a reason for being the fallback.
+    renderDayPlan();
+
+    expect(
+      await screen.findByText(/This browser will not give me your location/i),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Near KLCC")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Location unavailable" })).toBeInTheDocument();
+  });
+
+  it("asks once, however many times the screen re-renders", async () => {
+    // Every chip and every step of the ceiling slider re-renders this screen.
+    // An effect scoped to any of them would put the browser's permission
+    // dialog over a screen the user is in the middle of reading.
+    const getCurrentPosition = geolocationAt(5.4141, 100.3288);
+    renderDayPlan();
+    await screen.findByRole("button", { name: "Located" });
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "LRT" }));
+    await screen.findByText("Nasi Kandar Pelita");
+    await user.click(screen.getByRole("button", { name: "Halal" }));
+    await screen.findByText("Nasi Kandar Pelita");
+    fireEvent.change(screen.getByLabelText("Spending ceiling"), { target: { value: "3000" } });
+    fireEvent.change(screen.getByLabelText("Spending ceiling"), { target: { value: "3500" } });
+    await waitFor(() => expect(lastRequestedUrl()).toContain("cap_sen=3500"));
+
+    expect(getCurrentPosition).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not ask a second time after a refusal, but the chip still does", async () => {
+    // Being nagged for a permission already declined is worse than not being
+    // asked. The tap is the one retry there is, and it has to keep working.
+    const getCurrentPosition = failingGeolocation(1);
+    renderDayPlan();
+    await screen.findByText(/Location is blocked/i);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "LRT" }));
+    await screen.findByText("Nasi Kandar Pelita");
+    fireEvent.change(screen.getByLabelText("Spending ceiling"), { target: { value: "3000" } });
+    await waitFor(() => expect(lastRequestedUrl()).toContain("cap_sen=3000"));
+    expect(getCurrentPosition).toHaveBeenCalledTimes(1);
+
+    await user.click(screen.getByRole("button", { name: "Location blocked" }));
+
+    expect(getCurrentPosition).toHaveBeenCalledTimes(2);
   });
 });
 
