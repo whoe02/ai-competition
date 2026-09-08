@@ -2,7 +2,6 @@ import type {
   GoalDetail,
   GoalGraphIntent,
   GoalGraphRunResponse,
-  GoalImpact,
   GoalPlan,
   GoalScenarios,
 } from "@kira/contracts";
@@ -69,15 +68,6 @@ export function useGoalScenarios() {
   return useMutation({
     mutationFn: (goalId: string) =>
       api.post<GoalScenarios>(`/v1/goals/${goalId}/scenarios`),
-  });
-}
-
-export function useGoalImpact() {
-  return useMutation({
-    mutationFn: ({ goalId, proposedSpendSen }: { goalId: string; proposedSpendSen: number }) =>
-      api.post<GoalImpact>(`/v1/goals/${goalId}/impact`, {
-        proposed_spend_sen: proposedSpendSen,
-      }),
   });
 }
 

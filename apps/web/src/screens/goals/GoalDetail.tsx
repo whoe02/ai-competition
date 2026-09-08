@@ -1,11 +1,10 @@
-import { useState, type FormEvent } from "react";
+import { useState } from "react";
 
 import type { GoalScenario } from "@kira/contracts";
 
 import {
   approvalFromRun,
   useGoal,
-  useGoalImpact,
   useGoalPlan,
   useGoalScenarios,
   useSelectGoalScenario,
@@ -13,7 +12,7 @@ import {
 import type { GoalApproval } from "../../api/goals";
 import { GoalApprovalSheet } from "../../components/GoalApprovalSheet";
 import { GoalPlanPreview, formatGoalDate } from "../../components/GoalPlanPreview";
-import { fmt, parseSen } from "../../lib/money";
+import { fmt } from "../../lib/money";
 import { GoalScreenHead } from "./GoalCreate";
 import { goalTypeLabel, statusLabel } from "./goalUi";
 
@@ -22,12 +21,10 @@ export function GoalDetail({ goalId, onBack }: { goalId: string; onBack: () => v
   const plan = useGoalPlan(goalId);
   const scenarioMutation = useGoalScenarios();
   const selectScenario = useSelectGoalScenario();
-  const impact = useGoalImpact();
   const [scenarios, setScenarios] = useState<GoalScenario[] | null>(null);
   const [selected, setSelected] = useState<GoalScenario | null>(null);
   const [approval, setApproval] = useState<GoalApproval | null>(null);
   const [notice, setNotice] = useState("");
-  const [spend, setSpend] = useState("");
 
   if (goal.isLoading || plan.isLoading) {
     return <GoalState title="Loading your goal…" detail="Reading the latest approved plan." />;
@@ -72,17 +69,6 @@ export function GoalDetail({ goalId, onBack }: { goalId: string; onBack: () => v
       setApproval(nextApproval);
     } catch {
       // Mutation error is rendered without changing the selected active plan.
-    }
-  };
-
-  const checkImpact = async (event: FormEvent) => {
-    event.preventDefault();
-    const proposedSpendSen = parseSen(spend);
-    if (proposedSpendSen === null) return;
-    try {
-      await impact.mutateAsync({ goalId, proposedSpendSen });
-    } catch {
-      // The result area handles this and no plan mutation is possible here.
     }
   };
 
@@ -162,23 +148,6 @@ export function GoalDetail({ goalId, onBack }: { goalId: string; onBack: () => v
           {selectScenario.isError && <p className="goal-inline-error" role="alert">KIRA could not prepare that change. The current plan remains active.</p>}
         </section>
 
-        <section className="goal-impact-section">
-          <p className="eyebrow">Purchase impact</p>
-          <h3>Would a purchase put this goal at risk?</h3>
-          <form onSubmit={(event) => void checkImpact(event)}>
-            <label>Purchase amount <span>RM</span><input aria-label="Purchase amount" inputMode="decimal" value={spend} onChange={(event) => setSpend(event.target.value)} /></label>
-            <button className="btn btn-line" disabled={impact.isPending || parseSen(spend) === null}>{impact.isPending ? "Checking…" : "Check impact"}</button>
-          </form>
-          {impact.isError && <p className="goal-inline-error" role="alert">Impact could not be checked. No plan was changed.</p>}
-          {impact.data && (
-            <div className={`goal-impact-result ${impact.data.safe_to_spend ? "safe" : "risk"}`} role="status">
-              <b>{impact.data.safe_to_spend ? "Fits safely" : "This would put the goal at risk"}</b>
-              <span>Flexible spending left: RM{fmt(impact.data.flexible_spending_remaining_sen)}</span>
-              {impact.data.goal_delay_days > 0 && <span>Projected delay: {impact.data.goal_delay_days} days</span>}
-              {impact.data.protected_money_touched && <span>Protected money would be touched.</span>}
-            </div>
-          )}
-        </section>
       </div>
 
       {approval && (
