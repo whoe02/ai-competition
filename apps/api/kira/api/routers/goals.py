@@ -20,6 +20,7 @@ from kira.api.schemas import (
     GoalImpactResponse,
     GoalMilestoneResponse,
     GoalPlanResponse,
+    PartTimeJobRecommendationResponse,
     GoalScenarioResponse,
     GoalScenariosResponse,
 )
@@ -36,6 +37,11 @@ from kira.services.goal_planning import (
     owned_goal,
     plan_from_record,
     purchase_impact,
+)
+from kira.services.part_time_recommendations import (
+    PartTimeRecommendationError,
+    approve_part_time_recommendation,
+    create_part_time_recommendation,
 )
 
 router = APIRouter(prefix="/v1/goals", tags=["goals"])
@@ -225,6 +231,37 @@ async def get_goal_plan(
     except GoalNotFound as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Goal plan not found") from exc
     return _plan_response(record)
+
+
+@router.post(
+    "/{goal_id}/part-time-recommendation",
+    response_model=PartTimeJobRecommendationResponse,
+)
+async def post_part_time_recommendation(
+    goal_id: uuid.UUID, user: CurrentUser, session: SessionDep
+) -> PartTimeJobRecommendationResponse:
+    """Ask AI for job-type wording around a deterministic income projection."""
+    try:
+        data = await create_part_time_recommendation(session, user, goal_id, _as_of_utc())
+    except GoalNotFound as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Goal plan not found") from exc
+    return PartTimeJobRecommendationResponse.model_validate(data)
+
+
+@router.post(
+    "/{goal_id}/part-time-recommendation/approve",
+    response_model=PartTimeJobRecommendationResponse,
+)
+async def approve_part_time_recommendation_route(
+    goal_id: uuid.UUID, user: CurrentUser, session: SessionDep
+) -> PartTimeJobRecommendationResponse:
+    try:
+        data = await approve_part_time_recommendation(session, user, goal_id, _as_of_utc())
+    except GoalNotFound as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Goal plan not found") from exc
+    except PartTimeRecommendationError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+    return PartTimeJobRecommendationResponse.model_validate(data)
 
 
 @router.post("/{goal_id}/scenarios", response_model=GoalScenariosResponse)

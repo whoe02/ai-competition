@@ -108,5 +108,6 @@ async def test_approved_income_split_updates_progress_versions_and_daily_reserve
     assert after.contributed_goal_reserve.sen == 50_000
     assert after.balance == before.balance
     assert safe_to_spend(after).goal_reserve.sen == 50_000
+    assert safe_to_spend(after).safe_today.sen < safe_to_spend(before).safe_today.sen
     planning_snapshot = await load_financial_snapshot(session, user, AS_OF)
     assert planning_snapshot.cash_available_sen == after.balance.sen - 50_000

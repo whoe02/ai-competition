@@ -725,6 +725,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/goals/{goal_id}/part-time-recommendation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Part Time Recommendation
+         * @description Ask AI for job-type wording around a deterministic income projection.
+         */
+        post: operations["post_part_time_recommendation_v1_goals__goal_id__part_time_recommendation_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/goals/{goal_id}/part-time-recommendation/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve Part Time Recommendation Route */
+        post: operations["approve_part_time_recommendation_route_v1_goals__goal_id__part_time_recommendation_approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/goals/{goal_id}/scenarios": {
         parameters: {
             query?: never;
@@ -1885,6 +1922,60 @@ export interface components {
             days_until: number;
             /** Protected */
             protected: boolean;
+        };
+        /**
+         * PartTimeJobRecommendationResponse
+         * @description A plan-owned reminder; approving it changes forecasts, never cash.
+         */
+        PartTimeJobRecommendationResponse: {
+            /**
+             * Goal Id
+             * Format: uuid
+             */
+            goal_id: string;
+            /** Plan Version */
+            plan_version: number;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "available" | "approved" | "not_needed" | "not_available";
+            /** Eligible */
+            eligible: boolean;
+            /** Reason */
+            reason?: string | null;
+            /** Role Title */
+            role_title?: string | null;
+            /** Summary */
+            summary?: string | null;
+            /** First Step */
+            first_step?: string | null;
+            /** Cautions */
+            cautions?: string[];
+            /** Source */
+            source?: ("llm" | "fallback") | null;
+            /** Additional Monthly Income Sen */
+            additional_monthly_income_sen?: number | null;
+            /** Monthly Income Before Sen */
+            monthly_income_before_sen?: number | null;
+            /** Monthly Income After Sen */
+            monthly_income_after_sen?: number | null;
+            /** Contribution Ratio Before Bp */
+            contribution_ratio_before_bp?: number | null;
+            /** Contribution Ratio After Bp */
+            contribution_ratio_after_bp?: number | null;
+            /** Feasible Before */
+            feasible_before: boolean;
+            /** Feasible After */
+            feasible_after?: boolean | null;
+            /** Projected Completion Before */
+            projected_completion_before?: string | null;
+            /** Projected Completion After */
+            projected_completion_after?: string | null;
+            /** Safe To Spend Changes */
+            safe_to_spend_changes: boolean;
+            /** Cash Effect */
+            cash_effect: string;
         };
         /**
          * PlaceResponse
@@ -3288,6 +3379,68 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GoalPlanResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_part_time_recommendation_v1_goals__goal_id__part_time_recommendation_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                goal_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PartTimeJobRecommendationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    approve_part_time_recommendation_route_v1_goals__goal_id__part_time_recommendation_approve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                goal_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PartTimeJobRecommendationResponse"];
                 };
             };
             /** @description Validation Error */

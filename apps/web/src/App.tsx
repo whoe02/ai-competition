@@ -35,6 +35,14 @@ export type Tab = "today" | "activity" | "butler" | "plan" | "more";
 
 const TABS: Tab[] = ["today", "activity", "butler", "plan", "more"];
 
+function statusTime(now: Date): string {
+  return new Intl.DateTimeFormat("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).format(now);
+}
+
 export function App() {
   const [tab, setTab] = useState<Tab>("today");
   const [dir, setDir] = useState(0);
@@ -42,6 +50,7 @@ export function App() {
   const [signedIn, setSignedIn] = useState(false);
   const [planView, setPlanView] = useState<PlanView>("daily");
   const [entry, setEntry] = useState(false);
+  const [now, setNow] = useState(() => new Date());
   // A sentence raised from Today or Activity, handed to the Butler to ask.
   const [pending, setPending] = useState<{ text: string; attachment?: EntryAttachment } | null>(
     null,
@@ -72,6 +81,19 @@ export function App() {
   useEffect(() => {
     const timer = setTimeout(() => setBoot(false), 2500);
     return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    let interval: number | undefined;
+    const update = () => setNow(new Date());
+    const firstTick = window.setTimeout(() => {
+      update();
+      interval = window.setInterval(update, 60_000);
+    }, 60_000 - (Date.now() % 60_000));
+    return () => {
+      window.clearTimeout(firstTick);
+      if (interval !== undefined) window.clearInterval(interval);
+    };
   }, []);
 
   useEffect(() => {
@@ -161,7 +183,7 @@ export function App() {
           )}
 
           <div className="statusbar" aria-label="Device status">
-            <span className="status-time">12:47</span>
+            <span className="status-time">{statusTime(now)}</span>
             <span className="device-notch" aria-hidden="true">
               <i className="notch-speaker" />
               <i className="notch-camera" />

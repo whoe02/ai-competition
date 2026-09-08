@@ -25,6 +25,7 @@ export type GoalMilestone = Schemas["GoalMilestoneResponse"];
 export type GoalPlan = Schemas["GoalPlanResponse"];
 export type GoalScenario = Schemas["GoalScenarioResponse"];
 export type GoalScenarios = Schemas["GoalScenariosResponse"];
+export type PartTimeJobRecommendation = Schemas["PartTimeJobRecommendationResponse"];
 export type GoalIncomeAllocation = Schemas["GoalIncomeAllocationResponse"];
 export type AppliedGoalIncomeAllocation = Schemas["AppliedGoalIncomeAllocationResponse"];
 export type NextCommitment = Schemas["NextCommitmentResponse"];

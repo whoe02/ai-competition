@@ -1,12 +1,14 @@
 import { useState } from "react";
 
-import type { GoalScenario } from "@kira/contracts";
+import type { GoalScenario, PartTimeJobRecommendation } from "@kira/contracts";
 
 import {
   approvalFromRun,
   useGoal,
   useGoalPlan,
   useGoalScenarios,
+  useApprovePartTimeRecommendation,
+  usePartTimeRecommendation,
   useSelectGoalScenario,
 } from "../../api/goalHooks";
 import type { GoalApproval } from "../../api/goals";
@@ -21,10 +23,13 @@ export function GoalDetail({ goalId, onBack }: { goalId: string; onBack: () => v
   const plan = useGoalPlan(goalId);
   const scenarioMutation = useGoalScenarios();
   const selectScenario = useSelectGoalScenario();
+  const partTimeMutation = usePartTimeRecommendation();
+  const approvePartTime = useApprovePartTimeRecommendation();
   const [scenarios, setScenarios] = useState<GoalScenario[] | null>(null);
   const [selected, setSelected] = useState<GoalScenario | null>(null);
   const [approval, setApproval] = useState<GoalApproval | null>(null);
   const [notice, setNotice] = useState("");
+  const [partTime, setPartTime] = useState<PartTimeJobRecommendation | null>(null);
 
   if (goal.isLoading || plan.isLoading) {
     return <GoalState title="Loading your goal…" detail="Reading the latest approved plan." />;
@@ -72,6 +77,24 @@ export function GoalDetail({ goalId, onBack }: { goalId: string; onBack: () => v
     }
   };
 
+  const loadPartTimeRecommendation = async () => {
+    try {
+      setPartTime(await partTimeMutation.mutateAsync(goalId));
+    } catch {
+      // The error state keeps the approved plan untouched and visible.
+    }
+  };
+
+  const approvePartTimeRecommendation = async () => {
+    try {
+      const approved = await approvePartTime.mutateAsync(goalId);
+      setPartTime(approved);
+      setNotice("Part-time income is now included in future goal forecasts. Today’s cash is unchanged.");
+    } catch {
+      // The error state explains that no forecast change was made.
+    }
+  };
+
   return (
     <div className="goal-screen">
       <GoalScreenHead eyebrow={goalTypeLabel(detail.goal_type)} title={detail.name} onBack={onBack} />
@@ -99,6 +122,51 @@ export function GoalDetail({ goalId, onBack }: { goalId: string; onBack: () => v
         </section>
 
         <GoalPlanPreview plan={currentPlan} title="Approved calculation" />
+
+        {shouldOfferPartTime(currentPlan) && (
+          <section className="goal-part-time-section" aria-label="Part-time work reminder">
+            <div className="goal-section-head">
+              <div><p className="eyebrow">Goal boost</p><h3>Could part-time work help?</h3></div>
+              <span className="goal-health danger">Optional</span>
+            </div>
+            {partTime === null && (
+              <>
+                <p className="goal-muted">Kira can suggest one flexible work type and show the forecast effect before you decide.</p>
+                <button className="btn btn-line btn-sm" disabled={partTimeMutation.isPending} onClick={() => void loadPartTimeRecommendation()}>
+                  {partTimeMutation.isPending ? "Preparing…" : "See a work idea"}
+                </button>
+              </>
+            )}
+            {partTimeMutation.isError && <p className="goal-inline-error" role="alert">Kira could not prepare a recommendation. Your plan is unchanged.</p>}
+            {partTime?.status === "not_needed" || partTime?.status === "not_available" ? (
+              <p className="goal-muted">{partTime.reason}</p>
+            ) : partTime && (
+              <div className="goal-part-time-card">
+                <p className="eyebrow">{partTime.source === "llm" ? "AI work idea" : "Work idea"}</p>
+                <h4>{partTime.role_title}</h4>
+                <p>{partTime.summary}</p>
+                <p className="goal-part-time-step"><b>First step</b>{partTime.first_step}</p>
+                <div className="goal-part-time-impact">
+                  <span>Income forecast <b>RM{fmt(partTime.monthly_income_before_sen ?? 0)} → RM{fmt(partTime.monthly_income_after_sen ?? 0)}</b></span>
+                  <span>Goal contribution share <b>{formatRatio(partTime.contribution_ratio_before_bp)} → {formatRatio(partTime.contribution_ratio_after_bp)}</b></span>
+                  <span>Plan after approval <b>{partTime.feasible_after ? "Feasible" : "Still needs adjustment"}</b></span>
+                </div>
+                {(partTime.cautions ?? []).map((caution) => <small key={caution}>{caution}</small>)}
+                {partTime.status === "available" ? (
+                  <div className="goal-part-time-actions">
+                    <button className="btn btn-primary btn-sm" disabled={approvePartTime.isPending} onClick={() => void approvePartTimeRecommendation()}>
+                      {approvePartTime.isPending ? "Approving…" : "Approve this forecast"}
+                    </button>
+                    <button className="btn btn-ghost btn-sm" onClick={() => setPartTime(null)}>Not now</button>
+                  </div>
+                ) : (
+                  <p className="goal-success" role="status">Approved for future forecasts. Safe to Spend stays unchanged until income is confirmed.</p>
+                )}
+                {approvePartTime.isError && <p className="goal-inline-error" role="alert">This recommendation could not be approved. Your forecast is unchanged.</p>}
+              </div>
+            )}
+          </section>
+        )}
 
         {currentPlan.milestones.length > 0 && (
           <section className="goal-milestones">
@@ -166,6 +234,16 @@ export function GoalDetail({ goalId, onBack }: { goalId: string; onBack: () => v
       )}
     </div>
   );
+}
+
+function shouldOfferPartTime(plan: { feasible: boolean; affordability_status: string; projected_completion_date: string | null; target_date: string }) {
+  return !plan.feasible
+    || ["high_risk", "unsustainable", "impossible"].includes(plan.affordability_status)
+    || (plan.projected_completion_date !== null && plan.projected_completion_date > plan.target_date);
+}
+
+function formatRatio(value: number | null | undefined): string {
+  return value == null ? "—" : `${(value / 100).toFixed(0)}%`;
 }
 
 function GoalState({ title, detail }: { title: string; detail: string }) {

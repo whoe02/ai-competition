@@ -143,6 +143,32 @@ class GoalPlanResponse(ResponseModel):
     affordability_status: str
 
 
+class PartTimeJobRecommendationResponse(ResponseModel):
+    """A plan-owned reminder; approving it changes forecasts, never cash."""
+
+    goal_id: uuid.UUID
+    plan_version: int
+    status: Literal["available", "approved", "not_needed", "not_available"]
+    eligible: bool
+    reason: str | None = None
+    role_title: str | None = None
+    summary: str | None = None
+    first_step: str | None = None
+    cautions: list[str] = Field(default_factory=list)
+    source: Literal["llm", "fallback"] | None = None
+    additional_monthly_income_sen: int | None = None
+    monthly_income_before_sen: int | None = None
+    monthly_income_after_sen: int | None = None
+    contribution_ratio_before_bp: int | None = None
+    contribution_ratio_after_bp: int | None = None
+    feasible_before: bool
+    feasible_after: bool | None = None
+    projected_completion_before: date | None = None
+    projected_completion_after: date | None = None
+    safe_to_spend_changes: bool
+    cash_effect: str
+
+
 class GoalCreateResponse(ResponseModel):
     goal: GoalDetailResponse
     plan: GoalPlanResponse

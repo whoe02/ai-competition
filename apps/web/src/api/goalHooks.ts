@@ -4,6 +4,7 @@ import type {
   GoalGraphRunResponse,
   GoalPlan,
   GoalScenarios,
+  PartTimeJobRecommendation,
 } from "@kira/contracts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -68,6 +69,28 @@ export function useGoalScenarios() {
   return useMutation({
     mutationFn: (goalId: string) =>
       api.post<GoalScenarios>(`/v1/goals/${goalId}/scenarios`),
+  });
+}
+
+export function usePartTimeRecommendation() {
+  return useMutation({
+    mutationFn: (goalId: string) =>
+      api.post<PartTimeJobRecommendation>(`/v1/goals/${goalId}/part-time-recommendation`),
+  });
+}
+
+export function useApprovePartTimeRecommendation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (goalId: string) =>
+      api.post<PartTimeJobRecommendation>(`/v1/goals/${goalId}/part-time-recommendation/approve`),
+    onSuccess: async (_result, goalId) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: dashboardTodayKey }),
+        queryClient.invalidateQueries({ queryKey: goalKey(goalId) }),
+        queryClient.invalidateQueries({ queryKey: goalPlanKey(goalId) }),
+      ]);
+    },
   });
 }
 
