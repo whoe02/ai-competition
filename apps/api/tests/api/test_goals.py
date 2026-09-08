@@ -1,9 +1,13 @@
 import json
+import uuid
 from contextlib import asynccontextmanager
 from datetime import date
 
+from sqlalchemy import select
+
 from kira.api.deps import stream_session_factory
 from kira.api.schemas import GoalCreateRequest
+from kira.db.models import GoalPlanRecord
 from kira.seed.demo import DEMO_EMAIL, DEMO_PASSWORD, seed_demo_user
 
 from .test_auth import register
@@ -47,7 +51,7 @@ class TestGoalContracts:
         assert plan.status_code == 200
         assert len(plan.json()["milestones"]) == 4
 
-    async def test_scenarios_and_purchase_impact(self, client):
+    async def test_scenarios_and_purchase_impact(self, client, session):
         token = await register(client)
         created = await client.post("/v1/goals", json=payload(), headers=auth(token))
         goal_id = created.json()["goal"]["goal_id"]
@@ -55,6 +59,16 @@ class TestGoalContracts:
         scenarios = await client.post(f"/v1/goals/{goal_id}/scenarios", headers=auth(token))
         assert scenarios.status_code == 200, scenarios.text
         assert [item["label"] for item in scenarios.json()["scenarios"]] == [
+            "On-time target",
+            "Cash-flow-safe",
+            "Accelerated",
+        ]
+        record = (
+            await session.execute(
+                select(GoalPlanRecord).where(GoalPlanRecord.goal_id == uuid.UUID(goal_id))
+            )
+        ).scalar_one()
+        assert [item["label"] for item in record.scenarios_data] == [
             "On-time target",
             "Cash-flow-safe",
             "Accelerated",

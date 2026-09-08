@@ -29,9 +29,9 @@ references travel with every plan.
 ## Versioning and persistence
 
 `goals` stores the definition. `goal_plans` stores append-only numbered plan
-versions. `goal_scenarios` and `goal_milestones` belong to a specific plan
-version. An approved calculation is inserted as another version; previous
-approved versions are not overwritten.
+versions, including its calculated milestone and scenario JSON. An approved
+calculation is inserted as another version; previous approved versions are not
+overwritten.
 
 The authenticated REST endpoints are:
 

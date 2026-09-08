@@ -15,9 +15,7 @@ from kira.db.models import (
     Commitment,
     Goal,
     GoalContributionRecord,
-    GoalMilestoneRecord,
     GoalPlanRecord,
-    GoalScenarioRecord,
     Transaction,
     User,
 )
@@ -198,10 +196,12 @@ async def load_financial_snapshot(
 
 def plan_from_record(record: GoalPlanRecord) -> GoalPlan:
     milestones = tuple(
-        # Rows are explicitly sorted below so database return order cannot
-        # change an API response or a reproducibility comparison.
-        GoalMilestone(milestone.percentage, milestone.amount.sen, milestone.projected_date)
-        for milestone in sorted(record.milestones, key=lambda row: row.percentage)
+        GoalMilestone(
+            int(milestone["percentage"]),
+            int(milestone["amount_sen"]),
+            date.fromisoformat(str(milestone["projected_date"])),
+        )
+        for milestone in sorted(record.milestones_data, key=lambda item: int(item["percentage"]))
     )
     return GoalPlan(
         goal_id=str(record.goal_id),
@@ -252,20 +252,18 @@ async def persist_new_plan_version(
         assumptions=list(plan.assumptions),
         evidence_refs=list(plan.evidence_refs),
         calculation_version=plan.calculation_version,
+        milestones_data=[
+            {
+                "percentage": milestone.percentage,
+                "amount_sen": milestone.amount_sen,
+                "projected_date": milestone.projected_date.isoformat(),
+            }
+            for milestone in plan.milestones
+        ],
+        scenarios_data=[],
     )
     session.add(record)
     await session.flush()
-    for milestone in plan.milestones:
-        session.add(
-            GoalMilestoneRecord(
-                plan_id=record.id,
-                percentage=milestone.percentage,
-                amount=Money(milestone.amount_sen, goal.currency),
-                projected_date=milestone.projected_date,
-            )
-        )
-    await session.flush()
-    await session.refresh(record, attribute_names=["milestones"])
     return record
 
 
@@ -361,33 +359,22 @@ async def create_scenarios(
     snapshot = await load_financial_snapshot(session, user, as_of_utc)
     scenarios = generate_goal_scenarios(definition, snapshot)
     plan_record = await current_plan_record(session, user, goal_id)
-    existing = set(
-        (
-            await session.execute(
-                select(GoalScenarioRecord.id).where(GoalScenarioRecord.plan_id == plan_record.id)
-            )
-        ).scalars()
-    )
-    for scenario in scenarios:
-        scenario_id = uuid.UUID(scenario.scenario_id)
-        if scenario_id in existing:
-            continue
-        session.add(
-            GoalScenarioRecord(
-                id=scenario_id,
-                plan_id=plan_record.id,
-                label=scenario.label,
-                feasible=scenario.feasible,
-                contribution_per_payday=Money(scenario.contribution_per_payday_sen, goal.currency),
-                target_date=scenario.target_date,
-                goal_delay_days=scenario.goal_delay_days,
-                flexible_spending_delta=Money(scenario.flexible_spending_delta_sen, goal.currency),
-                tradeoffs=list(scenario.tradeoffs),
-                risk_flags=list(scenario.risk_flags),
-                evidence_refs=list(scenario.evidence_refs),
-                calculation_version=scenario.calculation_version,
-            )
-        )
+    plan_record.scenarios_data = [
+        {
+            "scenario_id": scenario.scenario_id,
+            "label": scenario.label,
+            "feasible": scenario.feasible,
+            "contribution_per_payday_sen": scenario.contribution_per_payday_sen,
+            "target_date": scenario.target_date.isoformat(),
+            "goal_delay_days": scenario.goal_delay_days,
+            "flexible_spending_delta_sen": scenario.flexible_spending_delta_sen,
+            "tradeoffs": list(scenario.tradeoffs),
+            "risk_flags": list(scenario.risk_flags),
+            "evidence_refs": list(scenario.evidence_refs),
+            "calculation_version": scenario.calculation_version,
+        }
+        for scenario in scenarios
+    ]
     await session.commit()
     return scenarios
 

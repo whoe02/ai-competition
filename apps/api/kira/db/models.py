@@ -186,57 +186,14 @@ class GoalPlanRecord(Base):
     assumptions: Mapped[list[str]] = mapped_column(JSON, default=list)
     evidence_refs: Mapped[list[str]] = mapped_column(JSON, default=list)
     calculation_version: Mapped[str] = mapped_column(String(32))
+    # Plan-owned calculated output. These are embedded so a plan version is a
+    # self-contained record rather than requiring child tables to render it.
+    milestones_data: Mapped[list[dict[str, object]]] = mapped_column(JSON, default=list)
+    scenarios_data: Mapped[list[dict[str, object]]] = mapped_column(JSON, default=list)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     goal: Mapped[Goal] = relationship(back_populates="plans")
-    scenarios: Mapped[list[GoalScenarioRecord]] = relationship(
-        back_populates="plan", cascade="all, delete-orphan", lazy="selectin"
-    )
-    milestones: Mapped[list[GoalMilestoneRecord]] = relationship(
-        back_populates="plan", cascade="all, delete-orphan", lazy="selectin"
-    )
-
-
-class GoalScenarioRecord(Base):
-    __tablename__ = "goal_scenarios"
-
-    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=_uuid)
-    plan_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("goal_plans.id", ondelete="CASCADE"), index=True
-    )
-    label: Mapped[str] = mapped_column(String(60))
-    feasible: Mapped[bool] = mapped_column(Boolean)
-    contribution_per_payday: Mapped[Money] = mapped_column(MoneyType())
-    target_date: Mapped[date] = mapped_column(Date)
-    goal_delay_days: Mapped[int] = mapped_column(Integer)
-    flexible_spending_delta: Mapped[Money] = mapped_column(MoneyType())
-    tradeoffs: Mapped[list[str]] = mapped_column(JSON, default=list)
-    risk_flags: Mapped[list[str]] = mapped_column(JSON, default=list)
-    evidence_refs: Mapped[list[str]] = mapped_column(JSON, default=list)
-    calculation_version: Mapped[str] = mapped_column(String(32))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
-
-    plan: Mapped[GoalPlanRecord] = relationship(back_populates="scenarios")
-
-
-class GoalMilestoneRecord(Base):
-    __tablename__ = "goal_milestones"
-    __table_args__ = (
-        UniqueConstraint("plan_id", "percentage", name="uq_goal_milestones_plan_percentage"),
-    )
-
-    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=_uuid)
-    plan_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("goal_plans.id", ondelete="CASCADE"), index=True
-    )
-    percentage: Mapped[int] = mapped_column(Integer)
-    amount: Mapped[Money] = mapped_column(MoneyType())
-    projected_date: Mapped[date] = mapped_column(Date)
-
-    plan: Mapped[GoalPlanRecord] = relationship(back_populates="milestones")
-
-
 class GoalContributionRecord(Base):
     """A confirmed earmark into a goal, appended only after user approval."""
 
