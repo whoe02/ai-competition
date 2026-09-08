@@ -111,6 +111,7 @@ async def me(user: CurrentUser) -> UserResponse:
         id=user.id,
         email=user.email,
         display_name=user.display_name,
+        job_title=user.job_title,
         currency=user.currency,
         buffer_sen=user.buffer.sen,
         next_payday=user.next_payday,
@@ -129,5 +130,7 @@ async def update_financial_profile(
         user.monthly_income = Money(body.monthly_income_sen, user.currency)
     if body.next_payday is not None:
         user.next_payday = body.next_payday
+    if body.job_title is not None:
+        user.job_title = body.job_title.strip()
     await session.commit()
     return await me(user)

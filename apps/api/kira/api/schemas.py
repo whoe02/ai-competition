@@ -33,6 +33,7 @@ class UserResponse(ResponseModel):
     id: uuid.UUID
     email: EmailStr
     display_name: str
+    job_title: str = ""
     currency: str
     buffer_sen: int
     next_payday: date
@@ -44,6 +45,7 @@ class UserResponse(ResponseModel):
 class FinancialProfileUpdateRequest(BaseModel):
     monthly_income_sen: int | None = Field(default=None, strict=True, ge=0)
     next_payday: date | None = None
+    job_title: str | None = Field(default=None, max_length=100)
 
 
 class NextCommitmentResponse(ResponseModel):
@@ -143,20 +145,40 @@ class GoalPlanResponse(ResponseModel):
     affordability_status: str
 
 
+class PartTimeJobOptionResponse(ResponseModel):
+    role_title: str
+    typical_tasks: str
+    why_relevant: str
+    work_arrangement: str
+    first_step: str
+    cautions: list[str]
+
+
+class PartTimePreferencesResponse(ResponseModel):
+    available_hours_per_week: int
+    work_mode: Literal["remote", "on_site", "either"]
+    transport_limitations: str
+
+
+class PartTimeRecommendationRequest(BaseModel):
+    available_hours_per_week: int = Field(strict=True, ge=1, le=40)
+    work_mode: Literal["remote", "on_site", "either"] = "either"
+    transport_limitations: str = Field(default="", max_length=200)
+
+
 class PartTimeJobRecommendationResponse(ResponseModel):
-    """A plan-owned reminder; approving it changes forecasts, never cash."""
+    """Read-only AI work idea and an optional user-supplied scenario."""
 
     goal_id: uuid.UUID
     plan_version: int
-    status: Literal["available", "approved", "not_needed", "not_available"]
+    status: Literal["available", "not_available"]
     eligible: bool
     reason: str | None = None
-    role_title: str | None = None
-    summary: str | None = None
-    first_step: str | None = None
-    cautions: list[str] = Field(default_factory=list)
-    source: Literal["llm", "fallback"] | None = None
-    additional_monthly_income_sen: int | None = None
+    recommendations: list[PartTimeJobOptionResponse] = Field(default_factory=list)
+    overall_guidance: str | None = None
+    source: Literal["llm"] | None = None
+    preferences: PartTimePreferencesResponse
+    expected_monthly_income_sen: int | None = None
     monthly_income_before_sen: int | None = None
     monthly_income_after_sen: int | None = None
     contribution_ratio_before_bp: int | None = None
@@ -167,6 +189,10 @@ class PartTimeJobRecommendationResponse(ResponseModel):
     projected_completion_after: date | None = None
     safe_to_spend_changes: bool
     cash_effect: str
+
+
+class PartTimeRecommendationImpactRequest(BaseModel):
+    expected_monthly_income_sen: int = Field(strict=True, gt=0)
 
 
 class GoalCreateResponse(ResponseModel):

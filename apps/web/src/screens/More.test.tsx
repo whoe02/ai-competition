@@ -34,6 +34,7 @@ const PROFILE: UserResponse = {
   id: "u1",
   email: "aina@example.com",
   display_name: "Aina Rahman",
+  job_title: "AI Engineer",
   currency: "MYR",
   buffer_sen: 30_000,
   next_payday: "2026-09-25",

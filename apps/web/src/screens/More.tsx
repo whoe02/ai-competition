@@ -167,6 +167,7 @@ function IncomeProfileCard({
 }) {
   const [income, setIncome] = useState("");
   const [payday, setPayday] = useState("");
+  const [jobTitle, setJobTitle] = useState("");
   const [editing, setEditing] = useState(false);
   const [notice, setNotice] = useState("");
   const currentIncome = profile?.monthly_income_sen ?? 0;
@@ -174,6 +175,7 @@ function IncomeProfileCard({
   const edit = () => {
     setIncome(toRinggitInput(currentIncome));
     setPayday(profile?.next_payday ?? "");
+    setJobTitle(profile?.job_title ?? "");
     setNotice("");
     setEditing(true);
   };
@@ -184,9 +186,10 @@ function IncomeProfileCard({
       await onSave({
         monthly_income_sen: monthlyIncomeSen,
         ...(payday ? { next_payday: payday } : {}),
+        job_title: jobTitle.trim(),
       });
       setEditing(false);
-      setNotice("Recurring income updated. This changes forecasts, not your cash balance.");
+      setNotice("Income profile updated. Forecast changes do not alter your cash balance.");
     } catch {
       setNotice("That did not save. Your recurring income is unchanged.");
     }
@@ -204,6 +207,9 @@ function IncomeProfileCard({
           <label style={{ fontSize: 13 }}>Next payday
             <input className="mem-input" aria-label="Next payday" type="date" value={payday} onChange={(event) => setPayday(event.target.value)} />
           </label>
+          <label style={{ fontSize: 13 }}>Job title
+            <input className="mem-input" aria-label="Job title" placeholder="e.g. AI Engineer" maxLength={100} value={jobTitle} onChange={(event) => setJobTitle(event.target.value)} />
+          </label>
           <div className="mem-acts">
             <button className="btn btn-primary btn-sm" disabled={saving || parseNonNegativeSen(income) === null} onClick={() => void save()}>{saving ? "Saving…" : "Save"}</button>
             <button className="btn btn-ghost btn-sm" onClick={() => setEditing(false)}>Cancel</button>
@@ -213,7 +219,7 @@ function IncomeProfileCard({
         <>
           <p className="money" style={{ fontSize: 21, margin: "10px 0 2px" }}>RM{toRinggitInput(currentIncome)}</p>
           <p className="mem-meta">Forecast only · next payday {profile?.next_payday ?? "not set"}</p>
-          <button className="btn btn-line btn-sm" onClick={edit}>Update income</button>
+          <button className="btn btn-line btn-sm" onClick={edit}>Update profile</button>
         </>
       )}
       {notice && <p className="mem-meta" role="status">{notice}</p>}

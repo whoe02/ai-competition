@@ -745,7 +745,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/goals/{goal_id}/part-time-recommendation/approve": {
+    "/v1/goals/{goal_id}/part-time-recommendation/impact": {
         parameters: {
             query?: never;
             header?: never;
@@ -754,8 +754,8 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Approve Part Time Recommendation Route */
-        post: operations["approve_part_time_recommendation_route_v1_goals__goal_id__part_time_recommendation_approve_post"];
+        /** Preview Part Time Recommendation Route */
+        post: operations["preview_part_time_recommendation_route_v1_goals__goal_id__part_time_recommendation_impact_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1383,6 +1383,8 @@ export interface components {
             monthly_income_sen?: number | null;
             /** Next Payday */
             next_payday?: string | null;
+            /** Job Title */
+            job_title?: string | null;
         };
         /** ForesightResponse */
         ForesightResponse: {
@@ -1923,9 +1925,24 @@ export interface components {
             /** Protected */
             protected: boolean;
         };
+        /** PartTimeJobOptionResponse */
+        PartTimeJobOptionResponse: {
+            /** Role Title */
+            role_title: string;
+            /** Typical Tasks */
+            typical_tasks: string;
+            /** Why Relevant */
+            why_relevant: string;
+            /** Work Arrangement */
+            work_arrangement: string;
+            /** First Step */
+            first_step: string;
+            /** Cautions */
+            cautions: string[];
+        };
         /**
          * PartTimeJobRecommendationResponse
-         * @description A plan-owned reminder; approving it changes forecasts, never cash.
+         * @description Read-only AI work idea and an optional user-supplied scenario.
          */
         PartTimeJobRecommendationResponse: {
             /**
@@ -1939,23 +1956,20 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "available" | "approved" | "not_needed" | "not_available";
+            status: "available" | "not_available";
             /** Eligible */
             eligible: boolean;
             /** Reason */
             reason?: string | null;
-            /** Role Title */
-            role_title?: string | null;
-            /** Summary */
-            summary?: string | null;
-            /** First Step */
-            first_step?: string | null;
-            /** Cautions */
-            cautions?: string[];
+            /** Recommendations */
+            recommendations?: components["schemas"]["PartTimeJobOptionResponse"][];
+            /** Overall Guidance */
+            overall_guidance?: string | null;
             /** Source */
-            source?: ("llm" | "fallback") | null;
-            /** Additional Monthly Income Sen */
-            additional_monthly_income_sen?: number | null;
+            source?: "llm" | null;
+            preferences: components["schemas"]["PartTimePreferencesResponse"];
+            /** Expected Monthly Income Sen */
+            expected_monthly_income_sen?: number | null;
             /** Monthly Income Before Sen */
             monthly_income_before_sen?: number | null;
             /** Monthly Income After Sen */
@@ -1976,6 +1990,39 @@ export interface components {
             safe_to_spend_changes: boolean;
             /** Cash Effect */
             cash_effect: string;
+        };
+        /** PartTimePreferencesResponse */
+        PartTimePreferencesResponse: {
+            /** Available Hours Per Week */
+            available_hours_per_week: number;
+            /**
+             * Work Mode
+             * @enum {string}
+             */
+            work_mode: "remote" | "on_site" | "either";
+            /** Transport Limitations */
+            transport_limitations: string;
+        };
+        /** PartTimeRecommendationImpactRequest */
+        PartTimeRecommendationImpactRequest: {
+            /** Expected Monthly Income Sen */
+            expected_monthly_income_sen: number;
+        };
+        /** PartTimeRecommendationRequest */
+        PartTimeRecommendationRequest: {
+            /** Available Hours Per Week */
+            available_hours_per_week: number;
+            /**
+             * Work Mode
+             * @default either
+             * @enum {string}
+             */
+            work_mode: "remote" | "on_site" | "either";
+            /**
+             * Transport Limitations
+             * @default
+             */
+            transport_limitations: string;
         };
         /**
          * PlaceResponse
@@ -2184,6 +2231,11 @@ export interface components {
             email: string;
             /** Display Name */
             display_name: string;
+            /**
+             * Job Title
+             * @default
+             */
+            job_title: string;
             /** Currency */
             currency: string;
             /** Buffer Sen */
@@ -3401,7 +3453,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PartTimeRecommendationRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -3423,7 +3479,7 @@ export interface operations {
             };
         };
     };
-    approve_part_time_recommendation_route_v1_goals__goal_id__part_time_recommendation_approve_post: {
+    preview_part_time_recommendation_route_v1_goals__goal_id__part_time_recommendation_impact_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -3432,7 +3488,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PartTimeRecommendationImpactRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

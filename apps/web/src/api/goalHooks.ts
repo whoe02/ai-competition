@@ -74,23 +74,31 @@ export function useGoalScenarios() {
 
 export function usePartTimeRecommendation() {
   return useMutation({
-    mutationFn: (goalId: string) =>
-      api.post<PartTimeJobRecommendation>(`/v1/goals/${goalId}/part-time-recommendation`),
+    mutationFn: ({
+      goalId,
+      availableHoursPerWeek,
+      workMode,
+      transportLimitations,
+    }: {
+      goalId: string;
+      availableHoursPerWeek: number;
+      workMode: "remote" | "on_site" | "either";
+      transportLimitations: string;
+    }) =>
+      api.post<PartTimeJobRecommendation>(`/v1/goals/${goalId}/part-time-recommendation`, {
+        available_hours_per_week: availableHoursPerWeek,
+        work_mode: workMode,
+        transport_limitations: transportLimitations,
+      }),
   });
 }
 
-export function useApprovePartTimeRecommendation() {
-  const queryClient = useQueryClient();
+export function usePartTimeRecommendationImpact() {
   return useMutation({
-    mutationFn: (goalId: string) =>
-      api.post<PartTimeJobRecommendation>(`/v1/goals/${goalId}/part-time-recommendation/approve`),
-    onSuccess: async (_result, goalId) => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: dashboardTodayKey }),
-        queryClient.invalidateQueries({ queryKey: goalKey(goalId) }),
-        queryClient.invalidateQueries({ queryKey: goalPlanKey(goalId) }),
-      ]);
-    },
+    mutationFn: ({ goalId, expectedMonthlyIncomeSen }: { goalId: string; expectedMonthlyIncomeSen: number }) =>
+      api.post<PartTimeJobRecommendation>(`/v1/goals/${goalId}/part-time-recommendation/impact`, {
+        expected_monthly_income_sen: expectedMonthlyIncomeSen,
+      }),
   });
 }
 

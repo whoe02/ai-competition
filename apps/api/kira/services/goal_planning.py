@@ -51,11 +51,6 @@ class StalePlanVersion(Exception):
     """The approved draft was calculated from a plan that is no longer current."""
 
 
-def forecast_monthly_income_sen(user: User) -> int:
-    """Expected monthly income used only by the forward-looking goal planner."""
-    return user.monthly_income.sen + user.part_time_income.sen
-
-
 def definition_from_record(goal: Goal) -> GoalDefinition:
     if goal.target_date is None:
         raise ValueError("legacy goal has no target_date and needs replanning")
@@ -170,7 +165,7 @@ async def load_financial_snapshot(
             payday_date=user.next_payday,
             # This is a user-confirmed recurring profile amount. Actual income
             # still enters cash only through a confirmed income transaction.
-            amount_sen=forecast_monthly_income_sen(user) or None,
+            amount_sen=user.monthly_income.sen or None,
             evidence_ref=f"user-payday:{user.id}",
         ),
         commitments=tuple(

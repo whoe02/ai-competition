@@ -67,15 +67,12 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(320), unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(Text)
     display_name: Mapped[str] = mapped_column(String(80))
+    job_title: Mapped[str] = mapped_column(String(100), default="")
     currency: Mapped[str] = mapped_column(String(3), default="MYR")
     buffer: Mapped[Money] = mapped_column(MoneyType(), default=lambda: Money(0))
     # What lands on payday. Zero until a user says otherwise: safe_to_spend never
     # needed it, because it never looks past the next payday. A projection does.
     monthly_income: Mapped[Money] = mapped_column(MoneyType(), default=lambda: Money(0))
-    # Expected income from an explicitly approved part-time plan. This is kept
-    # separate from the user's stated salary/recurring income so forecasts can
-    # be transparent, and it must never be treated as cash before it is earned.
-    part_time_income: Mapped[Money] = mapped_column(MoneyType(), default=lambda: Money(0))
     next_payday: Mapped[date] = mapped_column(Date)
     cycle_start: Mapped[date] = mapped_column(Date)
     cycle_days: Mapped[int] = mapped_column(Integer, default=30)
@@ -195,8 +192,8 @@ class GoalPlanRecord(Base):
     milestones_data: Mapped[list[dict[str, object]]] = mapped_column(JSON, default=list)
     scenarios_data: Mapped[list[dict[str, object]]] = mapped_column(JSON, default=list)
     affordability_data: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
-    # AI wording and its deterministic before/after projection belong to the
-    # plan that prompted the reminder; this avoids another goal child table.
+    # AI wording belongs to the plan that prompted the reminder; this avoids
+    # another goal child table. It never represents income or an approved plan.
     part_time_recommendation_data: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

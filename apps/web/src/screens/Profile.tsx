@@ -95,6 +95,7 @@ export function Profile({
               Your money cycle
             </p>
             <Row label="Currency" value={profile?.currency ?? "—"} />
+            <Row label="Job title" value={profile?.job_title || "Not set"} />
             <Row
               label="Cycle starts"
               value={when(profile?.cycle_start)}

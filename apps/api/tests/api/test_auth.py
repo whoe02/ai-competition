@@ -89,10 +89,15 @@ class TestMe:
         updated = await client.patch(
             "/v1/auth/me",
             headers=headers,
-            json={"monthly_income_sen": 500_000, "next_payday": "2026-09-25"},
+            json={
+                "monthly_income_sen": 500_000,
+                "next_payday": "2026-09-25",
+                "job_title": "AI Engineer",
+            },
         )
         assert updated.status_code == 200, updated.text
         assert updated.json()["monthly_income_sen"] == 500_000
+        assert updated.json()["job_title"] == "AI Engineer"
         balance_after = (await client.get("/v1/dashboard/today", headers=headers)).json()[
             "balance_sen"
         ]

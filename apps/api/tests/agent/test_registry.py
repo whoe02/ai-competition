@@ -126,6 +126,20 @@ def test_reads_writes_and_workflows_partition_the_registry():
     }
 
 
+def test_butler_exposes_read_only_part_time_recommendations():
+    spec = REGISTRY.get("recommend_part_time_jobs")
+    assert spec is not None
+    assert spec.kind == "read"
+    assert spec.args_model.model_validate(
+        {
+            "goal_id": "c1564de1-8c5e-4739-907d-ca21b69c2497",
+            "available_hours_per_week": 8,
+            "work_mode": "remote",
+            "transport_limitations": "No car",
+        }
+    ).available_hours_per_week == 8
+
+
 class TestAddTransactionCategory:
     """An edited approval is user input, so the category cannot be free text."""
 

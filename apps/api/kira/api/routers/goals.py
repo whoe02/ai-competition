@@ -9,6 +9,7 @@ from fastapi import APIRouter, HTTPException, status
 
 from kira.agent.goal_graph.run import GoalRunResult, run_goal_request
 from kira.agent.goal_graph.schemas import GoalIntent
+from kira.agent.llm import get_chat_model
 from kira.api.deps import CurrentUser, SessionDep
 from kira.api.schemas import (
     GoalCreateRequest,
@@ -20,9 +21,11 @@ from kira.api.schemas import (
     GoalImpactResponse,
     GoalMilestoneResponse,
     GoalPlanResponse,
-    PartTimeJobRecommendationResponse,
     GoalScenarioResponse,
     GoalScenariosResponse,
+    PartTimeJobRecommendationResponse,
+    PartTimeRecommendationImpactRequest,
+    PartTimeRecommendationRequest,
 )
 from kira.db.models import Goal, GoalPlanRecord
 from kira.engine import GoalImpact, GoalScenario
@@ -40,8 +43,8 @@ from kira.services.goal_planning import (
 )
 from kira.services.part_time_recommendations import (
     PartTimeRecommendationError,
-    approve_part_time_recommendation,
     create_part_time_recommendation,
+    preview_part_time_recommendation,
 )
 
 router = APIRouter(prefix="/v1/goals", tags=["goals"])
@@ -238,25 +241,44 @@ async def get_goal_plan(
     response_model=PartTimeJobRecommendationResponse,
 )
 async def post_part_time_recommendation(
-    goal_id: uuid.UUID, user: CurrentUser, session: SessionDep
+    goal_id: uuid.UUID,
+    body: PartTimeRecommendationRequest,
+    user: CurrentUser,
+    session: SessionDep,
 ) -> PartTimeJobRecommendationResponse:
     """Ask AI for job-type wording around a deterministic income projection."""
     try:
-        data = await create_part_time_recommendation(session, user, goal_id, _as_of_utc())
+        data = await create_part_time_recommendation(
+            session,
+            user,
+            goal_id,
+            _as_of_utc(),
+            available_hours_per_week=body.available_hours_per_week,
+            work_mode=body.work_mode,
+            model=get_chat_model(streaming=False, temperature=0.2),
+            transport_limitations=body.transport_limitations,
+        )
     except GoalNotFound as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Goal plan not found") from exc
+    except PartTimeRecommendationError as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
     return PartTimeJobRecommendationResponse.model_validate(data)
 
 
 @router.post(
-    "/{goal_id}/part-time-recommendation/approve",
+    "/{goal_id}/part-time-recommendation/impact",
     response_model=PartTimeJobRecommendationResponse,
 )
-async def approve_part_time_recommendation_route(
-    goal_id: uuid.UUID, user: CurrentUser, session: SessionDep
+async def preview_part_time_recommendation_route(
+    goal_id: uuid.UUID,
+    body: PartTimeRecommendationImpactRequest,
+    user: CurrentUser,
+    session: SessionDep,
 ) -> PartTimeJobRecommendationResponse:
     try:
-        data = await approve_part_time_recommendation(session, user, goal_id, _as_of_utc())
+        data = await preview_part_time_recommendation(
+            session, user, goal_id, body.expected_monthly_income_sen, _as_of_utc()
+        )
     except GoalNotFound as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Goal plan not found") from exc
     except PartTimeRecommendationError as exc:
