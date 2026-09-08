@@ -8,6 +8,18 @@ type CalculatedPlan = GoalPlan | GoalPlanDraft;
 const readable = (value: string) =>
   value.replaceAll("_", " ").replace(/^./, (letter) => letter.toUpperCase());
 
+const affordabilityLabel = (value: string) => {
+  const labels: Record<string, string> = {
+    comfortable: "Comfortable",
+    stretching: "Stretching",
+    high_risk: "High risk",
+    unsustainable: "Unsustainable",
+    impossible: "Not possible",
+    income_unavailable: "Income needed",
+  };
+  return labels[value] ?? readable(value);
+};
+
 export function formatGoalDate(value: string | null): string {
   if (!value) return "Not available";
   const [year, month, day] = value.split("-").map(Number);
@@ -53,6 +65,22 @@ export function GoalPlanPreview({
         <div><dt>Target date</dt><dd>{formatGoalDate(plan.target_date)}</dd></div>
         <div><dt>Projected</dt><dd>{formatGoalDate(plan.projected_completion_date)}</dd></div>
       </dl>
+
+      {!compact && plan.monthly_income_sen !== null && (
+        <section className="goal-notes" aria-label="Monthly affordability">
+          <b>Monthly affordability · {affordabilityLabel(plan.affordability_status)}</b>
+          <span>Income: RM{fmt(plan.monthly_income_sen)}</span>
+          <span>Protected commitments: RM{fmt(plan.monthly_protected_commitments_sen)}</span>
+          <span>Goal contributions: RM{fmt(plan.monthly_goal_contributions_sen)}{plan.contribution_ratio_bp !== null ? ` (${(plan.contribution_ratio_bp / 100).toFixed(0)}%)` : ""}</span>
+          <span>Disposable for goals: RM{fmt(plan.monthly_disposable_for_goals_sen)}</span>
+        </section>
+      )}
+      {!compact && plan.monthly_income_sen === null && (
+        <div className="goal-notes risk" aria-label="Income needed for affordability">
+          <b>Income needed</b>
+          <span>Add confirmed recurring income to calculate affordability.</span>
+        </div>
+      )}
 
       {!compact && plan.risk_flags.length > 0 && (
         <div className="goal-notes risk" aria-label="Plan warnings">

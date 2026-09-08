@@ -135,6 +135,12 @@ class GoalPlanResponse(ResponseModel):
     assumptions: list[str]
     calculation_version: str
     evidence_refs: list[str]
+    monthly_income_sen: int | None
+    monthly_protected_commitments_sen: int
+    monthly_disposable_for_goals_sen: int
+    monthly_goal_contributions_sen: int
+    contribution_ratio_bp: int | None
+    affordability_status: str
 
 
 class GoalCreateResponse(ResponseModel):

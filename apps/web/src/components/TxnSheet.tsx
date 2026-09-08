@@ -93,6 +93,7 @@ export function TxnSheet({ txn, onUnconfirm, onClose, busy }: TxnSheetProps) {
 
 function IncomeGoalAllocation({ txn }: { txn: Transaction }) {
   const [applied, setApplied] = useState(Boolean(txn.goal_allocation_applied));
+  const [declined, setDeclined] = useState(false);
   const allocation = useIncomeGoalAllocation(
     txn.id,
     !applied && txn.status === "confirmed",
@@ -104,6 +105,10 @@ function IncomeGoalAllocation({ txn }: { txn: Transaction }) {
           {applied ? (
             <p style={{ fontSize: 13, lineHeight: 1.5, marginBottom: 0 }}>
               This income&apos;s approved goal contributions are already earmarked and included in Daily Planner.
+            </p>
+          ) : declined ? (
+            <p style={{ fontSize: 13, lineHeight: 1.5, marginBottom: 0 }}>
+              No goal contribution was made. This income remains available for you to allocate later.
             </p>
           ) : allocation.isLoading ? (
             <p style={{ fontSize: 13 }}>Calculating from protected bills, buffer and active goals…</p>
@@ -127,14 +132,19 @@ function IncomeGoalAllocation({ txn }: { txn: Transaction }) {
                 RM{fmt(allocation.data.allocated_sen)} would be earmarked. RM{fmt(allocation.data.unallocated_income_sen)} remains unallocated. No bill or emergency buffer is used.
               </p>
               {allocation.data.allocations.length > 0 && (
-                <button
-                  className="btn btn-brass btn-sm"
-                  style={{ width: "100%" }}
-                  disabled={approve.isPending}
-                  onClick={() => approve.mutate(txn.id, { onSuccess: () => setApplied(true) })}
-                >
-                  {approve.isPending ? "Applying…" : "Approve goal contributions"}
-                </button>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button
+                    className="btn btn-brass btn-sm"
+                    style={{ flex: 1 }}
+                    disabled={approve.isPending}
+                    onClick={() => approve.mutate(txn.id, { onSuccess: () => setApplied(true) })}
+                  >
+                    {approve.isPending ? "Applying…" : "Approve goal contributions"}
+                  </button>
+                  <button className="btn btn-line btn-sm" disabled={approve.isPending} onClick={() => setDeclined(true)}>
+                    Not now
+                  </button>
+                </div>
               )}
               {approve.isError && <p style={{ fontSize: 12.5 }}>The split was not applied. Nothing changed.</p>}
             </>

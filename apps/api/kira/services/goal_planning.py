@@ -203,6 +203,7 @@ def plan_from_record(record: GoalPlanRecord) -> GoalPlan:
         )
         for milestone in sorted(record.milestones_data, key=lambda item: int(item["percentage"]))
     )
+    affordability = record.affordability_data or {}
     return GoalPlan(
         goal_id=str(record.goal_id),
         feasible=record.feasible,
@@ -218,6 +219,18 @@ def plan_from_record(record: GoalPlanRecord) -> GoalPlan:
         assumptions=tuple(record.assumptions),
         calculation_version=record.calculation_version,
         evidence_refs=tuple(record.evidence_refs),
+        monthly_income_sen=affordability.get("monthly_income_sen"),
+        monthly_protected_commitments_sen=int(
+            affordability.get("monthly_protected_commitments_sen", 0)
+        ),
+        monthly_disposable_for_goals_sen=int(
+            affordability.get("monthly_disposable_for_goals_sen", 0)
+        ),
+        monthly_goal_contributions_sen=int(
+            affordability.get("monthly_goal_contributions_sen", 0)
+        ),
+        contribution_ratio_bp=affordability.get("contribution_ratio_bp"),
+        affordability_status=str(affordability.get("affordability_status", "income_unavailable")),
     )
 
 
@@ -261,6 +274,14 @@ async def persist_new_plan_version(
             for milestone in plan.milestones
         ],
         scenarios_data=[],
+        affordability_data={
+            "monthly_income_sen": plan.monthly_income_sen,
+            "monthly_protected_commitments_sen": plan.monthly_protected_commitments_sen,
+            "monthly_disposable_for_goals_sen": plan.monthly_disposable_for_goals_sen,
+            "monthly_goal_contributions_sen": plan.monthly_goal_contributions_sen,
+            "contribution_ratio_bp": plan.contribution_ratio_bp,
+            "affordability_status": plan.affordability_status,
+        },
     )
     session.add(record)
     await session.flush()

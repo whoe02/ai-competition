@@ -90,6 +90,12 @@ def _plan_response(record: GoalPlanRecord) -> GoalPlanResponse:
         assumptions=list(plan.assumptions),
         calculation_version=plan.calculation_version,
         evidence_refs=list(plan.evidence_refs),
+        monthly_income_sen=plan.monthly_income_sen,
+        monthly_protected_commitments_sen=plan.monthly_protected_commitments_sen,
+        monthly_disposable_for_goals_sen=plan.monthly_disposable_for_goals_sen,
+        monthly_goal_contributions_sen=plan.monthly_goal_contributions_sen,
+        contribution_ratio_bp=plan.contribution_ratio_bp,
+        affordability_status=plan.affordability_status,
     )
 
 

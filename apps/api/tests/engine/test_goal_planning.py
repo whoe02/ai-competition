@@ -100,6 +100,47 @@ class TestIncomeAllocation:
         assert sum(item.amount_sen for item in first.allocations) == 50_000
         assert all(isinstance(item.income_share_bp, int) for item in first.allocations)
 
+
+class TestGoalAffordability:
+    def test_contribution_bands_are_deterministic_and_include_other_goals(self):
+        financials = snapshot(
+            cash_available_sen=1_000_000,
+            next_income_payday=IncomePayday(date(2026, 9, 5), 520_000, "income:1"),
+            commitments=(
+                ProtectedCommitment(
+                    "bill-1", "Rent", 200_000, date(2026, 9, 20), True, "commitment:1"
+                ),
+            ),
+            active_goal_plans=(),
+        )
+        comfortable = calculate_goal_plan_for_contribution(
+            goal(target_amount_sen=600_000, target_date=date(2026, 12, 5)),
+            financials,
+            150_000,
+        )
+        assert comfortable.affordability_status == "comfortable"
+        assert comfortable.contribution_ratio_bp == 2885
+        assert comfortable.monthly_disposable_for_goals_sen == 320_000
+        assert comfortable.feasible is True
+
+        unsustainable = calculate_goal_plan_for_contribution(
+            goal(target_amount_sen=900_000, target_date=date(2026, 12, 5)),
+            financials,
+            260_001,
+        )
+        assert unsustainable.affordability_status == "unsustainable"
+        assert unsustainable.feasible is False
+        assert "goal_contributions_exceed_50_percent_of_income" in unsustainable.risk_flags
+
+        impossible = calculate_goal_plan_for_contribution(
+            goal(target_amount_sen=900_000, target_date=date(2026, 12, 5)),
+            financials,
+            320_001,
+        )
+        assert impossible.affordability_status == "impossible"
+        assert impossible.feasible is False
+        assert "goal_contributions_exceed_disposable_income" in impossible.risk_flags
+
     def test_protected_money_caps_the_income_available_to_goals(self):
         plan = allocate_income_to_goals(
             income_transaction_id="income-2",

@@ -173,6 +173,12 @@ class GoalPlan:
     assumptions: tuple[str, ...]
     calculation_version: str
     evidence_refs: tuple[str, ...]
+    monthly_income_sen: int | None = None
+    monthly_protected_commitments_sen: int = 0
+    monthly_disposable_for_goals_sen: int = 0
+    monthly_goal_contributions_sen: int = 0
+    contribution_ratio_bp: int | None = None
+    affordability_status: str = "income_unavailable"
 
 
 @dataclass(frozen=True, slots=True)
@@ -514,6 +520,56 @@ def _minimum_payday_capacity(
     return min(capacity for capacity in capacities if capacity is not None)
 
 
+def _affordability(
+    snapshot: FinancialSnapshot, goal_id: str, contribution_per_payday_sen: int
+) -> tuple[int | None, int, int, int, int | None, str, bool]:
+    """Classify all active goal claims plus this proposed claim.
+
+    The emergency buffer remains a cash-flow protection, not a recurring monthly
+    expense. Commitments due in the next income cycle are the recurring amount
+    removed from the income profile before goal affordability is assessed.
+    """
+    income = snapshot.next_income_payday.amount_sen
+    cycle_days = snapshot.pay_cycle_days
+    cycle_start = _next_payday(snapshot)
+    commitments = sum(
+        item.amount_sen
+        for item in snapshot.commitments
+        if cycle_start < item.due_date <= cycle_start + timedelta(days=cycle_days)
+    )
+    total_per_payday = contribution_per_payday_sen + sum(
+        item.next_required_reserve_sen
+        for item in snapshot.active_goal_plans
+        if item.goal_id != goal_id
+    )
+    monthly_goals = _ceil_div(total_per_payday * 30, cycle_days)
+    monthly_commitments = _ceil_div(commitments * 30, cycle_days)
+    if income is None:
+        return None, monthly_commitments, 0, monthly_goals, None, "income_unavailable", False
+    monthly_income = _ceil_div(income * 30, cycle_days)
+    disposable = max(0, monthly_income - monthly_commitments)
+    ratio = _ceil_div(monthly_goals * 10_000, monthly_income) if monthly_income else None
+    def result(status: str, blocks: bool) -> tuple[int, int, int, int, int | None, str, bool]:
+        return (
+            monthly_income,
+            monthly_commitments,
+            disposable,
+            monthly_goals,
+            ratio,
+            status,
+            blocks,
+        )
+    if monthly_goals > disposable:
+        return result("impossible", True)
+    if ratio is not None and ratio > 5_000:
+        return result("unsustainable", True)
+    if ratio is not None and ratio > 4_000:
+        return result("high_risk", False)
+    if ratio is not None and ratio >= 3_000:
+        return result("stretching", False)
+    return result("comfortable", False)
+
+
 def _milestones(
     goal: GoalDefinition, snapshot: FinancialSnapshot, contribution_sen: int
 ) -> tuple[GoalMilestone, ...]:
@@ -594,6 +650,16 @@ def calculate_goal_feasibility(goal: GoalDefinition, snapshot: FinancialSnapshot
 
     if snapshot.data_confidence == "low":
         risks.append("low_data_confidence")
+    affordability = _affordability(snapshot, goal.goal_id, required)
+    if affordability[-1]:
+        feasible = False
+        risks.append(
+            "goal_contributions_exceed_disposable_income"
+            if affordability[-2] == "impossible"
+            else "goal_contributions_exceed_50_percent_of_income"
+        )
+    elif affordability[-2] in {"stretching", "high_risk"}:
+        risks.append(f"goal_contributions_{affordability[-2]}")
     projected = calculate_projected_completion_date(goal, snapshot, required)
     if projected is not None and projected > goal.target_date:
         risks.append("projected_after_target")
@@ -614,6 +680,12 @@ def calculate_goal_feasibility(goal: GoalDefinition, snapshot: FinancialSnapshot
         assumptions=tuple(assumptions),
         calculation_version=CALCULATION_VERSION,
         evidence_refs=snapshot.evidence_refs,
+        monthly_income_sen=affordability[0],
+        monthly_protected_commitments_sen=affordability[1],
+        monthly_disposable_for_goals_sen=affordability[2],
+        monthly_goal_contributions_sen=affordability[3],
+        contribution_ratio_bp=affordability[4],
+        affordability_status=affordability[5],
     )
 
 
@@ -681,6 +753,16 @@ def calculate_goal_plan_for_contribution(
         feasible = False
     if snapshot.data_confidence == "low":
         risks.append("low_data_confidence")
+    affordability = _affordability(snapshot, effective.goal_id, contribution_per_payday_sen)
+    if affordability[-1]:
+        feasible = False
+        risks.append(
+            "goal_contributions_exceed_disposable_income"
+            if affordability[-2] == "impossible"
+            else "goal_contributions_exceed_50_percent_of_income"
+        )
+    elif affordability[-2] in {"stretching", "high_risk"}:
+        risks.append(f"goal_contributions_{affordability[-2]}")
     return GoalPlan(
         goal_id=effective.goal_id,
         feasible=feasible,
@@ -696,6 +778,12 @@ def calculate_goal_plan_for_contribution(
         assumptions=tuple(assumptions),
         calculation_version=CALCULATION_VERSION,
         evidence_refs=snapshot.evidence_refs,
+        monthly_income_sen=affordability[0],
+        monthly_protected_commitments_sen=affordability[1],
+        monthly_disposable_for_goals_sen=affordability[2],
+        monthly_goal_contributions_sen=affordability[3],
+        contribution_ratio_bp=affordability[4],
+        affordability_status=affordability[5],
     )
 
 

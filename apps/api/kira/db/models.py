@@ -190,6 +190,7 @@ class GoalPlanRecord(Base):
     # self-contained record rather than requiring child tables to render it.
     milestones_data: Mapped[list[dict[str, object]]] = mapped_column(JSON, default=list)
     scenarios_data: Mapped[list[dict[str, object]]] = mapped_column(JSON, default=list)
+    affordability_data: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 

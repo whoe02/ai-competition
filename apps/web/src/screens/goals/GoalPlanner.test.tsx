@@ -65,6 +65,12 @@ const PLAN: GoalPlan = {
   assumptions: ["confirmed income schedule"],
   calculation_version: "goal-v1",
   evidence_refs: ["income:1"],
+  monthly_income_sen: 520000,
+  monthly_protected_commitments_sen: 200000,
+  monthly_disposable_for_goals_sen: 320000,
+  monthly_goal_contributions_sen: 150000,
+  contribution_ratio_bp: 2884,
+  affordability_status: "comfortable",
 };
 
 const DRAFT = {

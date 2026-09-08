@@ -1694,6 +1694,18 @@ export interface components {
             calculation_version: string;
             /** Evidence Refs */
             evidence_refs: string[];
+            /** Monthly Income Sen */
+            monthly_income_sen: number | null;
+            /** Monthly Protected Commitments Sen */
+            monthly_protected_commitments_sen: number;
+            /** Monthly Disposable For Goals Sen */
+            monthly_disposable_for_goals_sen: number;
+            /** Monthly Goal Contributions Sen */
+            monthly_goal_contributions_sen: number;
+            /** Contribution Ratio Bp */
+            contribution_ratio_bp: number | null;
+            /** Affordability Status */
+            affordability_status: string;
         };
         /** GoalScenarioResponse */
         GoalScenarioResponse: {

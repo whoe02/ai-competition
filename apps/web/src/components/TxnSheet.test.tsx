@@ -76,4 +76,30 @@ describe("TxnSheet income allocation", () => {
     ));
     expect(await screen.findByText(/already earmarked/)).toBeInTheDocument();
   });
+
+  it("does not write a contribution when the user chooses not now", async () => {
+    const fetch = vi.fn(() =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(PLAN),
+        text: () => Promise.resolve(""),
+      } as Response),
+    );
+    vi.stubGlobal("fetch", fetch);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <TxnSheet txn={INCOME} onUnconfirm={vi.fn()} onClose={vi.fn()} busy={false} />
+      </QueryClientProvider>,
+    );
+
+    await screen.findByText(/House · important/);
+    await userEvent.click(screen.getByRole("button", { name: "Not now" }));
+    expect(await screen.findByText(/No goal contribution was made/)).toBeInTheDocument();
+    expect(fetch).not.toHaveBeenCalledWith(
+      `/v1/transactions/${INCOME.id}/goal-allocation/approve`,
+      expect.anything(),
+    );
+  });
 });
