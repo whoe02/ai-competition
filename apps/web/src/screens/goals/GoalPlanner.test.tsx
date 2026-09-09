@@ -552,7 +552,7 @@ describe("Goal Planner", () => {
     expect(screen.getAllByText("Why it fits")).toHaveLength(3);
   });
 
-  it("keeps the work reminder visible when the plan is above its recommendation limit", async () => {
+  it("keeps work recommendations available when the plan is high risk", async () => {
     const dashboard = {
       ...DASHBOARD,
       goals: [{ id: LONG_ID, name: "First home", horizon: "long", priority: "important", target_sen: 5_000_000, saved_sen: 800_000, monthly_sen: 430_000, months_left: 10, note: "" }],
@@ -578,8 +578,7 @@ describe("Goal Planner", () => {
     await user.click(await screen.findByRole("button", { name: "View plan" }));
 
     expect(await screen.findByRole("region", { name: "Part-time work reminder" })).toBeVisible();
-    expect(screen.getByText(/First revise this goal below 60%/)).toBeVisible();
-    expect(screen.queryByRole("button", { name: "See work recommendations" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "See work recommendations" })).toBeEnabled();
   });
 
   it("shows a retryable goal-home error", async () => {

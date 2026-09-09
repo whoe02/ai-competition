@@ -74,7 +74,6 @@ export function GoalDetail({
 
   const detail = goal.data;
   const currentPlan = plan.data;
-  const partTimeEligible = shouldOfferPartTime(currentPlan);
   const progress = currentPlan.target_amount_sen > 0
     ? Math.min(100, Math.round((currentPlan.current_saved_sen / currentPlan.target_amount_sen) * 100))
     : 0;
@@ -215,13 +214,7 @@ export function GoalDetail({
               <div><p className="eyebrow">Goal boost</p><h3>Could part-time work help?</h3></div>
               <span className="goal-health danger">Optional</span>
             </div>
-            {!partTimeEligible ? (
-              <p className="goal-muted">
-                {currentPlan.contribution_ratio_bp === null
-                  ? "Add confirmed monthly income before Kira prepares personalised work ideas."
-                  : "First revise this goal below 60% of monthly income. Then Kira can suggest suitable work to accelerate it."}
-              </p>
-            ) : partTime === null && (
+            {partTime === null && (
               <>
                 <p className="goal-muted">Kira uses your job title and availability to suggest three suitable ways to earn extra income.</p>
                 <div className="goal-part-time-preferences">
@@ -244,7 +237,7 @@ export function GoalDetail({
                 </button>
               </>
             )}
-            {partTimeEligible && partTimeMutation.isError && <p className="goal-inline-error" role="alert">Kira could not prepare a recommendation. Your plan is unchanged.</p>}
+            {partTimeMutation.isError && <p className="goal-inline-error" role="alert">Kira could not prepare a recommendation. Your plan is unchanged.</p>}
             {partTime?.status === "not_available" ? (
               <p className="goal-muted">{partTime.reason}</p>
             ) : partTime && (
@@ -399,12 +392,6 @@ function PartTimeRecommendationPage({
       </div>
     </div>
   );
-}
-
-function shouldOfferPartTime(plan: { remaining_amount_sen: number; contribution_ratio_bp: number | null }) {
-  return plan.remaining_amount_sen > 0
-    && plan.contribution_ratio_bp !== null
-    && plan.contribution_ratio_bp < 6_000;
 }
 
 function validAvailableHours(value: string): boolean {

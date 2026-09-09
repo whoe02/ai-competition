@@ -90,12 +90,13 @@ async def get_stored_part_time_recommendation(
 
 
 def recommendation_is_available(plan: GoalPlan) -> bool:
-    """Offer acceleration help for unfinished goals below a 60% income claim."""
-    return (
-        plan.remaining_amount_sen > 0
-        and plan.contribution_ratio_bp is not None
-        and plan.contribution_ratio_bp < 6_000
-    )
+    """Every unfinished goal may ask for read-only acceleration ideas.
+
+    Affordability changes the wording and the goal plan's approval policy; it
+    must not hide useful work ideas from someone who wants to improve a risky
+    plan. The recommender never promises income or changes the plan.
+    """
+    return plan.remaining_amount_sen > 0
 
 
 def _input_context(
@@ -255,8 +256,8 @@ async def create_part_time_recommendation(
             status="not_available",
             preferences=preferences,
             reason=(
-                "Part-time acceleration suggestions are available for unfinished goals "
-                "using less than 60% of monthly income."
+                "Part-time acceleration suggestions are available only while there is "
+                "still money left to save toward this goal."
             ),
         )
     jobs = await _job_set(
