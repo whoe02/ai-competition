@@ -850,14 +850,23 @@ def _scenario(
 def generate_goal_scenarios(
     goal: GoalDefinition, snapshot: FinancialSnapshot
 ) -> tuple[GoalScenario, ...]:
-    """Return three reproducible alternatives: on-time, cash-safe, accelerated."""
+    """Return three reproducible alternatives with distinct contribution trade-offs."""
     baseline = calculate_goal_feasibility(goal, snapshot)
     required = baseline.required_contribution_per_payday_sen
     recurring = _minimum_payday_capacity(snapshot, goal.goal_id, goal.target_date)
-    confirmed_capacity = _available_before_goal(snapshot, goal.goal_id)
+    # The on-time plan may already fit inside confirmed capacity, which used to
+    # make the "Cash-flow-safe" scenario identical. Keep one fifth of each
+    # confirmed cycle unallocated and reduce the on-time reserve by the same
+    # proportion. The result is always a real trade-off for a positive plan:
+    # more flexible cash now in exchange for a later projected completion.
+    cash_safe = required - _ceil_div(required, 5) if required else 0
     if recurring is not None:
-        confirmed_capacity = max(confirmed_capacity, recurring)
-    cash_safe = min(required, confirmed_capacity)
+        cash_safe = min(cash_safe, (recurring * 4) // 5)
+    else:
+        cash_safe = min(
+            cash_safe,
+            (_available_before_goal(snapshot, goal.goal_id) * 4) // 5,
+        )
     accelerated = required + _ceil_div(required, 4) if required else 0
     return (
         _scenario(
@@ -874,7 +883,10 @@ def generate_goal_scenarios(
             "Cash-flow-safe",
             cash_safe,
             baseline,
-            ("Preserves confirmed near-term commitments and the emergency buffer.",),
+            (
+                "Keeps a 20% cushion from confirmed cash-flow capacity; the target date "
+                "moves later if needed.",
+            ),
         ),
         _scenario(
             goal,

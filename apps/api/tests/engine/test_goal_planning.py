@@ -209,6 +209,16 @@ class TestDatesAndImpact:
 
 
 class TestReproducibility:
+    def test_cash_flow_safe_reserves_a_real_cushion(self):
+        on_time, cash_safe, accelerated = generate_goal_scenarios(goal(), snapshot())
+
+        assert on_time.contribution_per_payday_sen == 5_001
+        assert cash_safe.contribution_per_payday_sen == 4_000
+        assert cash_safe.contribution_per_payday_sen < on_time.contribution_per_payday_sen
+        assert cash_safe.flexible_spending_delta_sen == 1_001
+        assert cash_safe.goal_delay_days == 30
+        assert accelerated.contribution_per_payday_sen > on_time.contribution_per_payday_sen
+
     def test_same_inputs_return_identical_plan_and_scenarios(self):
         assert calculate_goal_feasibility(goal(), snapshot()) == calculate_goal_feasibility(
             goal(), snapshot()

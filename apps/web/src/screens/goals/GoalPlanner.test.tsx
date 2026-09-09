@@ -376,6 +376,72 @@ describe("Goal Planner", () => {
     expect(await screen.findByText("Your approved plan is now updated.")).toBeVisible();
   });
 
+  it("opens compact work recommendations from their completion notice", async () => {
+    const dashboard = {
+      ...DASHBOARD,
+      goals: [{ id: LONG_ID, name: "First home", horizon: "long", target_sen: 5_000_000, saved_sen: 800_000, monthly_sen: 150_000, months_left: 28, note: "" }],
+    } satisfies DashboardToday;
+    const recommendations = [
+      {
+        role_title: "Technical documentation specialist",
+        typical_tasks: "Write clear product guides and maintain concise technical references.",
+        why_relevant: "Your engineering background helps translate complex work into useful documentation.",
+        work_arrangement: "Remote and asynchronous",
+        first_step: "Create one public documentation sample for your portfolio.",
+        cautions: ["Set clear revision limits before accepting work."],
+      },
+      {
+        role_title: "AI quality reviewer",
+        typical_tasks: "Review model outputs against a defined quality checklist.",
+        why_relevant: "It uses your existing AI knowledge in short, contained tasks.",
+        work_arrangement: "Remote task-based work",
+        first_step: "Prepare a simple evaluation rubric for a public example.",
+        cautions: ["Avoid projects that conflict with your employer agreement."],
+      },
+      {
+        role_title: "Technical tutor",
+        typical_tasks: "Teach small beginner sessions on practical AI foundations.",
+        why_relevant: "It turns your expertise into scheduled work around your availability.",
+        work_arrangement: "Remote scheduled sessions",
+        first_step: "Outline one beginner lesson you can confidently teach.",
+        cautions: ["Keep preparation time within your weekly limit."],
+      },
+    ];
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/v1/dashboard/today")) return json(dashboard);
+      if (url.endsWith(`/v1/goals/${LONG_ID}`)) return json(DETAIL);
+      if (url.endsWith(`/v1/goals/${LONG_ID}/plan`)) return json(PLAN);
+      if (url.endsWith(`/v1/goals/${LONG_ID}/part-time-recommendation`)) {
+        return json({
+          goal_id: LONG_ID,
+          plan_version: 1,
+          status: "available",
+          eligible: true,
+          recommendations,
+          overall_guidance: "Choose only an option that fits your time and commitments.",
+          source: "llm",
+          preferences: { available_hours_per_week: 8, work_mode: "either", transport_limitations: "" },
+          feasible_before: true,
+          safe_to_spend_changes: false,
+          cash_effect: "Read-only scenario.",
+        });
+      }
+      return json({}, 404);
+    });
+    const user = userEvent.setup();
+    renderGoals();
+
+    await user.click((await screen.findAllByRole("button", { name: "View plan" }))[0]!);
+    await user.click(await screen.findByRole("button", { name: "See work recommendations" }));
+    await user.click(await screen.findByRole("button", { name: /Recommendations ready/ }));
+
+    expect(await screen.findByRole("heading", { name: "Work ideas for your goal" })).toBeVisible();
+    expect(screen.getByText("Technical documentation specialist")).toBeVisible();
+    expect(screen.getAllByText("Typical work")).toHaveLength(3);
+    expect(screen.getAllByText("Why it fits")).toHaveLength(3);
+  });
+
   it("shows a retryable goal-home error", async () => {
     vi.mocked(fetch).mockResolvedValue(json({ detail: "offline" }, 503));
     renderGoals();
