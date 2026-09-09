@@ -1,4 +1,5 @@
 # Kira — AI Money Butler
+<img width="415" height="827" alt="image" src="https://github.com/user-attachments/assets/6e18acf0-00c8-4a4f-a740-afbc1a1407ed" />
 
 Turns a financial picture into safe daily decisions. Malaysia-first: money is
 integer sen, the day planner knows KL.
