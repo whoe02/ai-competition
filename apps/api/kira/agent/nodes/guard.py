@@ -52,6 +52,7 @@ async def guard(state: ButlerState, runtime: Runtime[ButlerContext]) -> dict:
         return {
             "approved_reads": [],
             "pending_write": None,
+            "pending_writes": [],
             "pending_workflow": None,
             "refusals": [],
         }
@@ -70,6 +71,7 @@ async def guard(state: ButlerState, runtime: Runtime[ButlerContext]) -> dict:
         return {
             "approved_reads": [],
             "pending_write": None,
+            "pending_writes": [],
             "pending_workflow": None,
             "refusals": [],
             "messages": [
@@ -86,6 +88,7 @@ async def guard(state: ButlerState, runtime: Runtime[ButlerContext]) -> dict:
         return {
             "approved_reads": [],
             "pending_write": None,
+            "pending_writes": [],
             "pending_workflow": None,
             "refusals": [],
             "messages": [
@@ -95,7 +98,7 @@ async def guard(state: ButlerState, runtime: Runtime[ButlerContext]) -> dict:
         }
 
     reads: list[dict[str, Any]] = []
-    write: dict[str, Any] | None = None
+    writes: list[dict[str, Any]] = []
     workflow: dict[str, Any] | None = None
     refusals: list[str] = []
     responses: list[ToolMessage] = []
@@ -107,6 +110,17 @@ async def guard(state: ButlerState, runtime: Runtime[ButlerContext]) -> dict:
             reason = f"There is no tool called {name}."
             refusals.append(reason)
             responses.append(_refusal(call, reason))
+            continue
+
+        raw_args = call.get("args") or {}
+        # Check the unparsed payload too. Pydantic models ignore unknown keys by
+        # default; without this, adding ``buffer_sen`` to an otherwise valid
+        # call would be silently discarded before policy could see it.
+        blocked = await refusal_for(context.session, context.user, name, raw_args)
+        if blocked is not None:
+            refusals.append(blocked)
+            responses.append(_refusal(call, blocked))
+            events.emit(runtime, events.THINKING, text="That one is off limits")
             continue
 
         try:
@@ -133,43 +147,38 @@ async def guard(state: ButlerState, runtime: Runtime[ButlerContext]) -> dict:
             "args": args.model_dump(mode="json"),
         }
         if spec.is_workflow:
-            if workflow is None and write is None:
+            if workflow is None and not writes:
                 workflow = permitted
             else:
                 reason = "One financial workflow at a time."
                 refusals.append(reason)
                 responses.append(_refusal(call, reason))
         elif spec.is_write:
-            # Only the first write is ever proposed: an approval card asks about
-            # one change, and the user answering it is the point.
-            if write is None and workflow is None:
-                write = permitted
+            if workflow is None:
+                writes.append(permitted)
             else:
-                reason = "One change at a time. Ask me again once this one is decided."
+                reason = "A financial workflow and direct changes cannot share one approval."
                 refusals.append(reason)
                 responses.append(_refusal(call, reason))
         else:
             reads.append(permitted)
 
-    if workflow and reads:
-        # A specialised workflow loads its own confirmed snapshot, so running
-        # unrelated reads beside it would duplicate facts the child is about to
-        # measure properly. They are turned away rather than dropped: every
-        # call the model made has to come back with a result or the next
-        # request is malformed, and the model can simply ask again next pass
-        # now that a workflow no longer ends the turn.
-        reason = (
-            "The specialist gathers its own figures. "
-            "Ask for this afterwards if you still need it."
-        )
-        for call in reads:
-            refusals.append(reason)
-            responses.append(_refusal(call, reason))
-        reads = []
+    # Reads used to be turned away whenever a workflow was proposed beside
+    # them, on the grounds that a specialist measures its own figures and a
+    # read beside it would duplicate them. Duplication was never the cost: the
+    # panel de-duplicates rows, and the specialist's own numbers still win
+    # because it is the one that computed them. The cost was the question. "How
+    # are my goals doing, and where should I eat?" is two things, the second is
+    # a workflow, and refusing the first meant half the question came back
+    # unanswered with nothing on screen saying so. So they run together — the
+    # reads first, then the handoff, which `route_after_tools` already does.
 
     return {
         "approved_reads": reads,
-        "pending_write": write,
+        "pending_write": writes[0]
+        if len(writes) == 1
+        else ({"id": "change_set", "name": "change_set", "changes": writes} if writes else None),
+        "pending_writes": writes,
         "pending_workflow": workflow,
         "refusals": refusals,
         "messages": responses,
@@ -177,10 +186,14 @@ async def guard(state: ButlerState, runtime: Runtime[ButlerContext]) -> dict:
 
 
 def route_after_guard(state: ButlerState) -> str:
-    if state.get("pending_workflow"):
-        return "workflow"
+    # Reads first, and the order is the whole of how a read runs beside a
+    # workflow or a write: `tools` executes them and then routes on to whatever
+    # is still pending, so the specialist runs with the parent's lookups already
+    # done and an approval card is raised with its evidence already gathered.
     if state.get("approved_reads"):
         return "tools"
+    if state.get("pending_workflow"):
+        return "workflow"
     if state.get("pending_write"):
         return "approval"
     # Everything the model asked for was refused, and nothing has run this

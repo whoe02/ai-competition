@@ -347,7 +347,7 @@ class TestMatchingCount:
 
 
 class TestTheKindFilter:
-    """"I want noodles" used to be unanswerable: nothing in the search carried
+    """ "I want noodles" used to be unanswerable: nothing in the search carried
     what kind of food it was for, so every reply was the same cheapest-first
     list with the request quietly dropped out of it."""
 
@@ -392,9 +392,7 @@ class TestTheKindFilter:
         )
         assert [p.name for p in japanese.places] == [place_world.pricey.name]
 
-    async def test_a_word_nothing_matches_returns_nothing_rather_than_everything(
-        self, place_world
-    ):
+    async def test_a_word_nothing_matches_returns_nothing_rather_than_everything(self, place_world):
         """The failure this is written against.
 
         Widening back out to the whole list is the same mistake as silently
@@ -648,9 +646,7 @@ class TestAPlaceAModelBelievesSomethingAbout:
         by_id = {p.id: p for p in found.places}
         assert by_id[place_world.both_ways.id].match_basis == "tagged"
 
-    async def test_a_place_can_be_tagged_for_one_word_and_believed_for_another(
-        self, place_world
-    ):
+    async def test_a_place_can_be_tagged_for_one_word_and_believed_for_another(self, place_world):
         # The same shop, twice, under two words: the map states it is a burger
         # place and a model believes it also does chicken.
         by_tag = await self._search(place_world, "Burger")
@@ -676,9 +672,7 @@ class TestAPlaceAModelBelievesSomethingAbout:
         assert len(found.places) == 4
         assert {p.match_basis for p in found.places} == {None}
 
-    async def test_a_tag_ranks_above_a_belief_where_nothing_else_separates_them(
-        self, place_world
-    ):
+    async def test_a_tag_ranks_above_a_belief_where_nothing_else_separates_them(self, place_world):
         """Both cost RM16 and both are a walk away; one is known, one is guessed.
 
         The world hands them over belief-first, so a run that ranked on price
@@ -713,9 +707,7 @@ class TestAPlaceAModelBelievesSomethingAbout:
         assert found.kind_count == 3
         assert len(found.places) == 3
 
-    async def test_the_landscape_counts_a_belief_and_still_agrees_with_the_list(
-        self, place_world
-    ):
+    async def test_the_landscape_counts_a_belief_and_still_agrees_with_the_list(self, place_world):
         """The invariant a wider filter could quietly have broken.
 
         A row promises a filter: this many places, none cheaper than this. Count
@@ -1382,8 +1374,7 @@ class TestTheModeDecidesTheRadius:
         # Seven minutes on a platform is seven minutes of the forty-five, and no
         # distance whatever is covered by it.
         assert radius_for("transit") == pytest.approx(
-            (TRAVEL_BUDGET_MIN["transit"] - MODES["transit"].wait_min)
-            / MODES["transit"].min_per_km
+            (TRAVEL_BUDGET_MIN["transit"] - MODES["transit"].wait_min) / MODES["transit"].min_per_km
         )
         assert radius_for("transit") == pytest.approx(8.44, abs=0.01)
         assert radius_for("ride") == pytest.approx(12.5, abs=0.01)
@@ -1462,6 +1453,22 @@ class TestTheModeDecidesTheRadius:
         # The same search with no router to ask keeps it, on the only distance
         # there is: the straight line, which really is inside the budget.
         assert await self._rungs(place_world, "walk") == ["g1"]
+
+    async def test_incompatible_driving_routes_do_not_empty_a_dense_walking_plan(self, place_world):
+        places = place_world.spread[:4]
+        routed_far = {place.id: 4000.0 for place in places}
+        with serving(StubRouting(routed_far), places=places):
+            found = await find_places(
+                **place_world.origin,
+                mode="walk",
+                halal_only=False,
+                cap_sen=100_000,
+                room_sen=100_000,
+                radius_km=WHOLE_WORLD_KM,
+            )
+        assert found.nearby_count == len(places)
+        assert found.places
+        assert {place.distance_basis for place in found.places} == {"straight_line"}
 
     async def test_a_plan_row_from_the_widest_search_can_still_be_resolved(self, place_world):
         # An id is a handle on a row somebody was shown, and the row a Grab
@@ -1626,9 +1633,7 @@ class TestTheNearestPlacesBeyondTheRadius:
                 radius_km=WHOLE_WORLD_KM,
             )
         assert all(place.total_sen <= 3000 for place in found.nearest_beyond_radius)
-        assert place_world.dear_and_far.name not in {
-            p.name for p in found.nearest_beyond_radius
-        }
+        assert place_world.dear_and_far.name not in {p.name for p in found.nearest_beyond_radius}
 
     async def test_the_halal_filter_still_holds_out_there(self, place_world):
         # The nearest cheap western place out there is not halal, which makes it
@@ -1660,9 +1665,7 @@ class TestTheNearestPlacesBeyondTheRadius:
                 kind="Western",
                 radius_km=WHOLE_WORLD_KM,
             )
-        assert all(
-            kind_key(place.kind) == "western" for place in found.nearest_beyond_radius
-        )
+        assert all(kind_key(place.kind) == "western" for place in found.nearest_beyond_radius)
 
     async def test_each_of_them_says_why_it_is_on_the_list(self, place_world):
         # The same stamp the list above carries. A place offered from outside
@@ -1820,9 +1823,7 @@ class TestTheNearestPlacesBeyondTheRadius:
         assert nearest.band == "ok"
         assert nearest.share == place_world.just_past_the_line.estimate.sen / 100_000
 
-    async def test_nothing_in_range_at_all_is_still_answered_where_it_can_be(
-        self, place_world
-    ):
+    async def test_nothing_in_range_at_all_is_still_answered_where_it_can_be(self, place_world):
         # Out on the edge of this world, where nothing whatever is inside the
         # radius. "Nothing within range" stays true and the counts go on saying
         # so; the group is what stops that being the whole of the answer.
@@ -2200,9 +2201,7 @@ class TestWithARouter:
             place_world.near_non_halal.name
         )
 
-    async def test_it_asks_the_router_once_for_every_candidate_the_radius_held(
-        self, place_world
-    ):
+    async def test_it_asks_the_router_once_for_every_candidate_the_radius_held(self, place_world):
         stub = StubRouting({})
         with serving(stub):
             found = await find_places(
@@ -2431,9 +2430,7 @@ class TestAddingAPlanToToday:
         assert waiting.source == SOURCE_PLAN
         assert activity.draft_total_sen == before + 1750
         # The ledger is confirmed spending only, and an intention is not that.
-        assert added.id not in {
-            txn.id for day in activity.days for txn in day.transactions
-        }
+        assert added.id not in {txn.id for day in activity.days for txn in day.transactions}
         assert activity.spent_this_cycle_sen == 63135
 
     async def test_maps_each_band_to_a_figure_below_what_a_read_claims(self, session):
@@ -2465,7 +2462,11 @@ class TestAddingAPlanToToday:
         # seen should cost the user their tap the least, and must not be turned
         # into more certainty than anything behind it supports.
         added = await add_to_today(
-            session, user, name="Kopi Kaki", total_sen=1750, confidence="astonishing",
+            session,
+            user,
+            name="Kopi Kaki",
+            total_sen=1750,
+            confidence="astonishing",
             today=DEMO_TODAY,
         )
 

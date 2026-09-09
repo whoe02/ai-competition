@@ -45,7 +45,15 @@ class Settings(BaseSettings):
     # it and makes it answer. Every tool result now goes back to the model, so
     # a turn can chain — and something has to bound a chain by the thing the
     # user actually feels, which is the clock and not the number of passes.
-    butler_turn_budget_seconds: float = 15.0
+    #
+    # It must stay above `butler_request_timeout_seconds`, and that is not a
+    # matter of taste: at 15s against a 30s timeout, one call that hung was
+    # enough to spend the whole budget before the fallback had even been tried,
+    # and the guard would then refuse every remaining call with "time is up" —
+    # so a multi-step request truncated whenever the network was slow, which is
+    # exactly when it had gathered least. One full timeout plus the fallback
+    # and a pass to answer from it is the floor, and this is that.
+    butler_turn_budget_seconds: float = 45.0
     # The turn that chooses tools, and the turn that writes the answer, want
     # opposite things. Choosing is a classification and wants to be the same
     # every time; writing is prose and reads as a machine when it is.
@@ -83,6 +91,11 @@ class Settings(BaseSettings):
     capture_receipt_enabled: bool = True
     capture_voice_enabled: bool = True
     capture_max_bytes: int = 8 * 1024 * 1024
+    capture_ocr_provider: str = "fake"
+    capture_ocr_language: str = "en"
+    capture_voice_provider: str = "fake"
+    capture_voice_model: str = "small"
+    capture_voice_language: str = "en"
 
     # The scheduler is a separate process and stores its job metadata in the
     # same Postgres database. Asia/Kuala_Lumpur is explicit: daily financial

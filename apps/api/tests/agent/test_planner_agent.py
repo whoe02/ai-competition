@@ -51,13 +51,14 @@ async def _context(session, user, today) -> ToolContext:
     )
 
 
-async def _run(session, user, today, picker, place_world, **fields):
+async def _run(session, user, today, picker, place_world, emit=None, **fields):
     tools = await _context(session, user, today)
     ctx = AgentContext(
         tools=tools,
         thread_id=uuid.uuid4(),
         request_id=uuid.uuid4(),
         model_factory=(lambda **_: picker) if picker is not None else None,
+        emit=emit or (lambda *_, **__: None),
     )
     intent = DayPlanIntent(request="somewhere for lunch", **place_world.origin, **fields)
     return await run_day_plan_agent(ctx, intent)
@@ -75,6 +76,21 @@ class TestTheRegistryEntry:
 
 
 class TestWhatItReports:
+    async def test_a_finished_plan_opens_the_daily_map(self, session, butler, today, place_world):
+        user, _ = butler
+        emitted = []
+        picker = Picker(PlaceChoice(place_id=place_world.cheap.id, reason="cheapest"))
+        await _run(
+            session,
+            user,
+            today,
+            picker,
+            place_world,
+            emit=lambda event, **data: emitted.append((event, data)),
+        )
+
+        assert ("app_action", {"action": "set_plan_view", "plan_view": "daily"}) in emitted
+
     async def test_the_chosen_place_comes_back_resolved(
         self, session, butler, today, place_world
     ):

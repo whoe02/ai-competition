@@ -163,9 +163,7 @@ async def resolve_goal_target(
                 select(Goal)
                 .where(
                     Goal.user_id == runtime.context.user.id,
-                    Goal.status.in_(
-                        ("active", "at_risk", "needs_replan", "paused", "achieved")
-                    ),
+                    Goal.status.in_(("active", "at_risk", "needs_replan", "paused", "achieved")),
                 )
                 .order_by(Goal.created_at, Goal.id)
             )
@@ -221,9 +219,7 @@ def _definition_for_existing(goal: Goal, intent: GoalIntent) -> GoalDefinition:
         currency=goal.currency,
         target_amount_sen=intent.target_amount_sen or goal.target.sen,
         current_saved_sen=(
-            intent.current_saved_sen
-            if intent.current_saved_sen is not None
-            else goal.saved.sen
+            intent.current_saved_sen if intent.current_saved_sen is not None else goal.saved.sen
         ),
         target_date=intent.target_date,
         priority=intent.priority or goal.priority,
@@ -687,7 +683,7 @@ async def approval_interrupt(
     ).hexdigest()[:20]
     approval_round = state.get("approval_round", 0)
     call_key = f"goal-plan:{draft.base_plan_version}:{approval_round}:{args_digest}"
-    row = await butler_approvals.propose(
+    row, _ = await butler_approvals.propose(
         runtime.context.session,
         runtime.context.user,
         thread_id=runtime.context.thread_id,

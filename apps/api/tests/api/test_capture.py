@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import pytest
 
+from kira.adapters.protocols import VoiceRead
 from kira.config import get_settings
 from kira.seed.demo import DEMO_EMAIL, DEMO_PASSWORD, seed_demo_user
+from kira.services import capture
 
 
 @pytest.fixture
@@ -80,6 +82,44 @@ class TestVoice:
             "/v1/capture/voice", files={"audio": ("note.webm", b"pretend-audio")}
         )
         assert response.status_code == 503
+
+    async def test_a_spoken_question_returns_a_transcript_without_a_draft(
+        self, signed_in, monkeypatch
+    ):
+        class QuestionVoice:
+            def transcribe(self, audio: bytes) -> VoiceRead:
+                return VoiceRead(
+                    transcript="Can I afford RM60 dinner tonight?",
+                    merchant=None,
+                    amount=None,
+                    confidence=92,
+                    note="Transcribed locally with Whisper; no transaction was inferred.",
+                    is_transaction=False,
+                )
+
+        monkeypatch.setattr(
+            capture,
+            "get_adapters",
+            lambda: type("Adapters", (), {"voice": QuestionVoice()})(),
+        )
+        response = await signed_in.post(
+            "/v1/capture/voice", files={"audio": ("question.webm", b"pretend-audio")}
+        )
+
+        assert response.status_code == 200, response.text
+        assert response.json() == {
+            "kind": "voice",
+            "source": "voice",
+            "merchant": None,
+            "amount_sen": None,
+            "occurred_on": "2026-09-03",
+            "category": "uncategorised",
+            "confidence": 92,
+            "note": "Transcribed locally with Whisper; no transaction was inferred.",
+            "transcript": "Can I afford RM60 dinner tonight?",
+            "is_transaction": False,
+            "fields": [],
+        }
 
 
 class TestSavingWhatWasRead:

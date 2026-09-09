@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { DashboardToday } from "@kira/contracts";
 
@@ -116,8 +116,101 @@ describe("Today", () => {
     expect(screen.queryByLabelText("RM52.97")).not.toBeInTheDocument();
   });
 
+  it("holds the shape of the answer while it loads, so nothing jumps", () => {
+    const { container } = renderToday({ data: undefined, isLoading: true });
+    expect(container.querySelector(".sk-hero")).toBeInTheDocument();
+    expect(container.querySelectorAll(".sk-card")).toHaveLength(2);
+  });
+
   it("shows an error state rather than a stale number", () => {
     renderToday({ data: undefined, isLoading: false, isError: true });
     expect(screen.getByText(/couldn't reach your numbers/i)).toBeInTheDocument();
+  });
+
+  it("offers a retry that actually retries, not a gesture that does not exist", async () => {
+    const onRetry = vi.fn();
+    renderToday({ data: undefined, isLoading: false, isError: true, onRetry });
+    const user = userEvent.setup();
+
+    expect(screen.queryByText(/pull down/i)).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /try again/i }));
+    expect(onRetry).toHaveBeenCalledOnce();
+  });
+
+  describe("the plan invitation", () => {
+    afterEach(() => vi.useRealTimers());
+
+    function at(iso: string) {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date(iso));
+    }
+
+    it("names no place, route or appointment it has not been told about", () => {
+      at("2026-09-07T03:00:00Z"); // 11:00 in KL
+      renderToday();
+      const card = screen.getByRole("button", { name: /plan my day/i }).closest("section");
+
+      expect(card).not.toHaveTextContent(/KLCC/i);
+      expect(card).not.toHaveTextContent(/meeting/i);
+    });
+
+    it("names the meal the planner would search for, by the KL clock", () => {
+      at("2026-09-07T03:00:00Z"); // 11:00 in KL
+      renderToday();
+      expect(screen.getByText(/somewhere for lunch within reach/i)).toBeInTheDocument();
+    });
+
+    it("does not offer a meal at an hour when no one wants one", () => {
+      at("2026-09-06T16:00:00Z"); // midnight in KL
+      renderToday();
+      expect(screen.queryByText(/somewhere for/i)).not.toBeInTheDocument();
+      expect(screen.getByText(/what is within reach/i)).toBeInTheDocument();
+    });
+
+    it("states only the figure it holds", () => {
+      at("2026-09-07T03:00:00Z");
+      renderToday();
+      expect(screen.getByText(/RM52\.97 is what today has room for/i)).toBeInTheDocument();
+    });
+  });
+
+  it("groups what is waiting on you into one surface, not two competing cards", () => {
+    const { container } = renderToday({
+      briefing: {
+        id: "b1",
+        on_date: "2026-09-03",
+        summary: "Your money check is complete.",
+        proposal_count: 2,
+        pending_proposal_count: 2,
+      },
+    });
+
+    const group = container.querySelector(".alerts");
+    expect(group).toBeInTheDocument();
+    expect(group?.querySelectorAll(".alert-row")).toHaveLength(2);
+    // Transient things do not float at the height of your standing commitments.
+    expect(container.querySelectorAll(".card.card-row")).toHaveLength(0);
+  });
+
+  it("says nothing at all when nothing is waiting", () => {
+    const { container } = renderToday({ data: { ...DATA, drafts_waiting: 0 } as DashboardToday });
+    expect(container.querySelector(".alerts")).not.toBeInTheDocument();
+  });
+
+  it("keeps every goal reachable when there are more than two", () => {
+    const goals = ["Emergency top-up", "Japan trip", "New laptop", "Course fees"].map((name, i) => ({
+      ...DATA.goals[0],
+      id: `g${i}`,
+      name,
+    }));
+    const { container } = renderToday({ data: { ...DATA, goals } as DashboardToday });
+
+    goals.forEach((goal) => expect(screen.getByText(goal.name)).toBeInTheDocument());
+    expect(container.querySelector(".goals")).toHaveAttribute("data-count", "4");
+  });
+
+  it("says what to do next when there are no goals at all", () => {
+    renderToday({ data: { ...DATA, goals: [] } as DashboardToday });
+    expect(screen.getByText(/tap to plan your first one/i)).toBeInTheDocument();
   });
 });

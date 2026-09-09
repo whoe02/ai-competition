@@ -148,9 +148,7 @@ async def _compare(ctx: ToolContext, args: CompareScenariosArgs) -> ToolResult:
 
 
 async def _explain(ctx: ToolContext, args: ExplainProbabilityArgs) -> ToolResult:
-    forecast = await foresight(
-        ctx.session, ctx.user, ctx.today, driver_goal_id=args.goal_id
-    )
+    forecast = await foresight(ctx.session, ctx.user, ctx.today, driver_goal_id=args.goal_id)
     outlook = next(
         (outlook for outlook in forecast.bands.outlooks if outlook.goal_id == args.goal_id),
         None,
@@ -159,10 +157,7 @@ async def _explain(ctx: ToolContext, args: ExplainProbabilityArgs) -> ToolResult
         outlook = forecast.bands.outlooks[0]
 
     if outlook is None:
-        summary = (
-            "There is no dated goal inside this forecast horizon yet. "
-            f"{forecast.assumption}"
-        )
+        summary = f"There is no dated goal inside this forecast horizon yet. {forecast.assumption}"
         return ToolResult(
             {"summary": summary, "outlook": None, "drivers": []},
             (EvidenceRow("Forecast assumption", forecast.assumption),),

@@ -43,9 +43,12 @@ class UserResponse(ResponseModel):
 
 
 class FinancialProfileUpdateRequest(BaseModel):
+    display_name: str | None = Field(default=None, min_length=1, max_length=80)
     monthly_income_sen: int | None = Field(default=None, strict=True, ge=0)
     next_payday: date | None = None
     job_title: str | None = Field(default=None, max_length=100)
+    cycle_start: date | None = None
+    cycle_days: int | None = Field(default=None, strict=True, ge=1, le=62)
 
 
 class NextCommitmentResponse(ResponseModel):
@@ -679,17 +682,23 @@ class CaptureFieldResponse(ResponseModel):
 
 
 class CaptureResponse(ResponseModel):
-    """What a reader made of a photo or a recording. Nothing is on the ledger."""
+    """What a reader made of a photo or recording. Nothing is on the ledger.
+
+    Voice reads always carry a transcript. Transaction fields are populated
+    only when the reader has a credible expense proposal for the user to
+    review; a spoken Butler question deliberately leaves them empty.
+    """
 
     kind: str
     source: str
-    merchant: str
-    amount_sen: int
+    merchant: str | None
+    amount_sen: int | None
     occurred_on: date
     category: str
     confidence: int
     note: str
     transcript: str
+    is_transaction: bool
     fields: list[CaptureFieldResponse]
 
 
@@ -845,6 +854,8 @@ class BriefingInboxResponse(ResponseModel):
     summary: str
     proposal_count: int
     pending_proposal_count: int
+
+
 class CorrectTransactionRequest(BaseModel):
     """What the user says a draft should have read. Every field is optional.
 

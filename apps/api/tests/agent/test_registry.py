@@ -117,13 +117,17 @@ def test_every_module_contributes_at_least_one_spec():
 
 def test_reads_writes_and_workflows_partition_the_registry():
     assert (
-        len(REGISTRY.reads()) + len(REGISTRY.writes()) + len(REGISTRY.workflows())
+        len(REGISTRY.reads())
+        + len(REGISTRY.writes())
+        + len(REGISTRY.workflows())
+        + len(REGISTRY.ui())
         == len(REGISTRY)
     )
     assert {spec.name for spec in REGISTRY.workflows()} == {
         "start_goal_planning",
         "start_day_planning",
     }
+    assert {spec.name for spec in REGISTRY.ui()} == {"control_app"}
 
 
 def test_butler_exposes_read_only_part_time_recommendations():

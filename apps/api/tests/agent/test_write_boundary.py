@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from sqlalchemy import func, select
 
-from kira.agent.run import resume_approval, run_turn
+from kira.agent import events
+from kira.agent.policy import UNTOUCHABLE_FIELDS, refusal_for
+from kira.agent.run import resume_approval, run_turn, stream_resume, stream_turn
+from kira.agent.tools import REGISTRY
 from kira.db.models import (
     APPROVAL_APPLIED,
     APPROVAL_PENDING,
@@ -46,7 +49,61 @@ async def a_draft(session, user, today, amount=1890) -> Transaction:
     return txn
 
 
+async def test_every_write_is_summarised_and_protected_fields_are_always_refused(session, butler):
+    user, _ = butler
+    for spec in REGISTRY.writes():
+        assert spec.summarise is not None
+        for field in UNTOUCHABLE_FIELDS:
+            assert await refusal_for(session, user, spec.name, {field: 1}) is not None
+
+
 class TestAWriteStopsAtTheBoundary:
+    async def test_correction_waits_for_approval_and_keeps_the_entry_a_draft(
+        self, session, butler, today
+    ):
+        user, thread = butler
+        draft = await a_draft(session, user, today)
+        factory = scripted_factory(
+            (
+                "correct_draft",
+                {
+                    "transaction_id": str(draft.id),
+                    "amount_sen": 1990,
+                },
+            )
+        )
+        result = await run_turn(
+            session,
+            user,
+            thread,
+            text="Correct that receipt to RM19.90",
+            today=today,
+            model_factory=factory,
+        )
+        assert result.approval["tool"] == "correct_draft"
+        assert draft.amount.sen == 1890
+        approval = (
+            await session.execute(
+                select(ButlerApproval).where(
+                    ButlerApproval.thread_id == thread.id,
+                    ButlerApproval.tool == "correct_draft",
+                )
+            )
+        ).scalar_one()
+        result = await resume_approval(
+            session,
+            user,
+            thread,
+            graph_thread=approval.graph_thread_id,
+            decision={"action": "accept"},
+            today=today,
+            model_factory=factory,
+        )
+        assert result.applied["tool"] == "correct_draft"
+        await session.refresh(draft)
+        assert draft.amount.sen == 1990
+        assert draft.status == TXN_DRAFT
+
     async def test_it_raises_one_approval_and_changes_nothing(self, session, butler, today):
         user, thread = butler
         draft = await a_draft(session, user, today)
@@ -58,9 +115,7 @@ class TestAWriteStopsAtTheBoundary:
             thread,
             text="Confirm that lunch",
             today=today,
-            model_factory=scripted_factory(
-                ("confirm_draft", {"transaction_id": str(draft.id)})
-            ),
+            model_factory=scripted_factory(("confirm_draft", {"transaction_id": str(draft.id)})),
         )
 
         assert result.approval is not None
@@ -68,6 +123,59 @@ class TestAWriteStopsAtTheBoundary:
         assert await count(session, ButlerApproval, status=APPROVAL_PENDING) == 1
         assert await count(session, Transaction, status=TXN_CONFIRMED) == confirmed_before
         assert draft.status == TXN_DRAFT
+
+    async def test_the_card_is_raised_once_and_not_again_on_the_decision(
+        self, session, butler, today
+    ):
+        """Resuming replays the node, and a replayed card is a second click.
+
+        The user answered the question; putting it back on screen invites an
+        answer to an approval that is already settled, which the API can only
+        refuse.
+        """
+        user, thread = butler
+        draft = await a_draft(session, user, today)
+        factory = scripted_factory(("confirm_draft", {"transaction_id": str(draft.id)}))
+
+        raised = [
+            event
+            async for event in stream_turn(
+                session,
+                user,
+                thread,
+                text="Confirm that lunch",
+                message_id=draft.id,
+                today=today,
+                model_factory=factory,
+            )
+            if event["type"] == events.APPROVAL
+        ]
+        assert len(raised) == 1
+
+        approval = (
+            await session.execute(
+                select(ButlerApproval).where(
+                    ButlerApproval.thread_id == thread.id,
+                )
+            )
+        ).scalar_one()
+        replayed = [
+            event
+            async for event in stream_resume(
+                session,
+                user,
+                thread,
+                graph_thread=approval.graph_thread_id,
+                decision={"action": "accept"},
+                today=today,
+                model_factory=factory,
+            )
+            if event["type"] == events.APPROVAL
+        ]
+        assert replayed == []
+        await session.refresh(approval)
+        assert approval.status == APPROVAL_APPLIED
+        assert await count(session, ButlerApproval) == 1
 
     async def test_the_summary_is_what_the_user_will_read(self, session, butler, today):
         user, thread = butler
@@ -78,9 +186,7 @@ class TestAWriteStopsAtTheBoundary:
             thread,
             text="Bin that draft",
             today=today,
-            model_factory=scripted_factory(
-                ("discard_draft", {"transaction_id": str(draft.id)})
-            ),
+            model_factory=scripted_factory(("discard_draft", {"transaction_id": str(draft.id)})),
         )
         assert str(draft.id) in result.approval["summary"]
         assert result.approval["summary"].startswith("Discard")
@@ -106,18 +212,14 @@ class TestAWriteStopsAtTheBoundary:
 
 
 class TestDeciding:
-    async def test_accepting_applies_it_and_writes_an_audit_event(
-        self, session, butler, today
-    ):
+    async def test_accepting_applies_it_and_writes_an_audit_event(self, session, butler, today):
         user, thread = butler
         draft = await a_draft(session, user, today)
         factory = scripted_factory(("confirm_draft", {"transaction_id": str(draft.id)}))
         first = await run_turn(
             session, user, thread, text="Confirm it", today=today, model_factory=factory
         )
-        approval = (
-            await session.execute(select(ButlerApproval).limit(1))
-        ).scalar_one()
+        approval = (await session.execute(select(ButlerApproval).limit(1))).scalar_one()
 
         result = await resume_approval(
             session,
@@ -143,9 +245,7 @@ class TestDeciding:
         user, thread = butler
         draft = await a_draft(session, user, today)
         factory = scripted_factory(("confirm_draft", {"transaction_id": str(draft.id)}))
-        await run_turn(
-            session, user, thread, text="Confirm it", today=today, model_factory=factory
-        )
+        await run_turn(session, user, thread, text="Confirm it", today=today, model_factory=factory)
         approval = (await session.execute(select(ButlerApproval).limit(1))).scalar_one()
 
         result = await resume_approval(
@@ -199,13 +299,13 @@ class TestDeciding:
 
 
 class TestProtectedResources:
-    async def test_a_protected_bill_is_refused_before_anything_runs(
-        self, session, butler, today
-    ):
+    async def test_a_protected_bill_is_refused_before_anything_runs(self, session, butler, today):
         user, thread = butler
         rent = (
-            await session.execute(select(Commitment).where(Commitment.protected.is_(True)))
-        ).scalars().first()
+            (await session.execute(select(Commitment).where(Commitment.protected.is_(True))))
+            .scalars()
+            .first()
+        )
         result = await run_turn(
             session,
             user,
@@ -246,7 +346,7 @@ class TestProtectedResources:
         assert result.approval is None
         assert await count(session, ButlerApproval) == 0
 
-    async def test_only_one_write_is_proposed_at_a_time(self, session, butler, today):
+    async def test_multiple_writes_are_one_change_set(self, session, butler, today):
         user, thread = butler
         first = await a_draft(session, user, today)
         second = await a_draft(session, user, today, amount=1400)
@@ -262,7 +362,79 @@ class TestProtectedResources:
             ),
         )
         assert await count(session, ButlerApproval) == 1
-        assert result.approval["args"]["transaction_id"] == str(first.id)
+        assert result.approval["tool"] == "change_set"
+        assert [line["args"]["transaction_id"] for line in result.approval["changes"]] == [
+            str(first.id),
+            str(second.id),
+        ]
+
+        approval = (
+            await session.execute(
+                select(ButlerApproval).where(ButlerApproval.thread_id == thread.id)
+            )
+        ).scalar_one()
+        applied = await resume_approval(
+            session,
+            user,
+            thread,
+            graph_thread=approval.graph_thread_id,
+            decision={"action": "accept"},
+            today=today,
+            model_factory=scripted_factory(),
+        )
+        await session.refresh(first)
+        await session.refresh(second)
+        assert applied.applied["tool"] == "change_set"
+        assert applied.applied["count"] == 2
+        assert first.status == TXN_CONFIRMED
+        assert second.status == TXN_CONFIRMED
+
+    async def test_a_failing_line_rolls_back_the_whole_change_set(self, session, butler, today):
+        user, thread = butler
+        draft = await a_draft(session, user, today)
+        already_confirmed = (
+            (
+                await session.execute(
+                    select(Transaction).where(
+                        Transaction.user_id == user.id,
+                        Transaction.status == TXN_CONFIRMED,
+                    )
+                )
+            )
+            .scalars()
+            .first()
+        )
+        factory = scripted_factory(
+            ("confirm_draft", {"transaction_id": str(draft.id)}),
+            ("confirm_draft", {"transaction_id": str(already_confirmed.id)}),
+        )
+        await run_turn(
+            session,
+            user,
+            thread,
+            text="confirm these together",
+            today=today,
+            model_factory=factory,
+        )
+        approval = (
+            await session.execute(
+                select(ButlerApproval).where(ButlerApproval.thread_id == thread.id)
+            )
+        ).scalar_one()
+        result = await resume_approval(
+            session,
+            user,
+            thread,
+            graph_thread=approval.graph_thread_id,
+            decision={"action": "accept"},
+            today=today,
+            model_factory=scripted_factory(),
+        )
+        await session.refresh(draft)
+        await session.refresh(approval)
+        assert result.applied is None
+        assert draft.status == TXN_DRAFT
+        assert approval.status != APPROVAL_PENDING
 
     async def test_bad_arguments_are_refused_with_a_reason(self, session, butler, today):
         user, thread = butler
@@ -273,9 +445,7 @@ class TestProtectedResources:
             thread,
             text="Add a transaction",
             today=today,
-            model_factory=scripted_factory(
-                ("add_transaction", {"merchant": "", "amount_sen": -1})
-            ),
+            model_factory=scripted_factory(("add_transaction", {"merchant": "", "amount_sen": -1})),
         )
         assert result.approval is None
         assert await count(session, ButlerApproval) == 0
@@ -307,11 +477,7 @@ class TestAddingAPlaceToToday:
 
     async def plans(self, session) -> list[Transaction]:
         return list(
-            (
-                await session.execute(
-                    select(Transaction).where(Transaction.source == SOURCE_PLAN)
-                )
-            )
+            (await session.execute(select(Transaction).where(Transaction.source == SOURCE_PLAN)))
             .scalars()
             .all()
         )
@@ -576,9 +742,7 @@ class TestApprovalIdempotence:
         user, thread = butler
         draft = await a_draft(session, user, today)
         factory = scripted_factory(("confirm_draft", {"transaction_id": str(draft.id)}))
-        await run_turn(
-            session, user, thread, text="Confirm it", today=today, model_factory=factory
-        )
+        await run_turn(session, user, thread, text="Confirm it", today=today, model_factory=factory)
         approval = (await session.execute(select(ButlerApproval).limit(1))).scalar_one()
         await resume_approval(
             session,
@@ -642,18 +806,24 @@ class TestAnEditIsRecordedAsWhatRan:
         )
 
         landed = (
-            await session.execute(select(Transaction).where(Transaction.source == SOURCE_PLAN))
-        ).scalars().one()
+            (await session.execute(select(Transaction).where(Transaction.source == SOURCE_PLAN)))
+            .scalars()
+            .one()
+        )
         assert (landed.merchant, landed.amount) == ("Omakase Empat", Money(5000))
 
         # All three say the same thing, and it is the thing that happened.
         assert result.applied["summary"].startswith("Add Omakase Empat for RM50.00")
         assert approval.summary.startswith("Add Omakase Empat for RM50.00")
         event = (
-            await session.execute(
-                select(AuditEvent).where(AuditEvent.action == "butler.add_place_to_today")
+            (
+                await session.execute(
+                    select(AuditEvent).where(AuditEvent.action == "butler.add_place_to_today")
+                )
             )
-        ).scalars().one()
+            .scalars()
+            .one()
+        )
         assert event.detail["summary"].startswith("Add Omakase Empat for RM50.00")
         assert event.detail["args"]["name"] == "Omakase Empat"
 

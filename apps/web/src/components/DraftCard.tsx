@@ -98,7 +98,7 @@ export function DraftCard({
     <div className="draft">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <span className="tag" style={{ color: "var(--brass)" }}>
+          <span className="tag" style={{ color: "var(--accent)" }}>
             <SourceIcon source={draft.source} size={11} /> {sourceLabel(draft.source)}
           </span>
           <b style={{ display: "block", fontSize: 15.5, letterSpacing: "-.02em", marginTop: 5 }}>

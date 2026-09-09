@@ -59,6 +59,9 @@ CHAT = "chat"
 JUST_TALK = "just_talk"
 GOALS = "start_goal_planning"
 PART_TIME = "recommend_part_time_jobs"
+# The route for a plain "set me a goal of ...", as opposed to the combined
+# dinner-and-goal question `PLACES_THEN_GOAL` already covers.
+GOAL_WORKFLOW = "goal_workflow"
 
 # Only ever attached to a call this node added, so a transcript says plainly
 # which calls the model asked for and which one it did not.
@@ -66,6 +69,8 @@ CALL_ID = "insisted-start_day_planning"
 CHAT_CALL_ID = "insisted-just-talk"
 GOAL_CALL_ID = "insisted-goal-impact"
 PART_TIME_CALL_ID = "insisted-part-time-recommendations"
+GOAL_PLAN_CALL_ID = "insisted-goal-planning"
+_USER_SAID = "User: "
 
 
 def _last_ai(messages: Sequence[BaseMessage]) -> AIMessage | None:
@@ -108,6 +113,19 @@ def _report(messages: Sequence[BaseMessage], name: str) -> dict | None:
     return None
 
 
+def _goal_request_with_context(text: str, history: str) -> str:
+    """Carry the originating target into terse answers such as “make it long term”."""
+    from kira.agent.llm import _GOAL_WORKFLOW
+
+    earlier = [
+        line[len(_USER_SAID) :] for line in history.splitlines() if line.startswith(_USER_SAID)
+    ]
+    for said in reversed(earlier[-4:]):
+        if _GOAL_WORKFLOW.search(said):
+            return f"{said}. Follow-up: {text}"
+    return text
+
+
 async def insist(state: ButlerState, runtime: Runtime[ButlerContext]) -> dict:
     messages = state.get("messages", [])
     reply = _last_ai(messages)
@@ -128,8 +146,7 @@ async def insist(state: ButlerState, runtime: Runtime[ButlerContext]) -> dict:
     # cannot become a dashboard simply because a model changed its mind.
     if route.name == CHAT:
         if any(
-            isinstance(message, ToolMessage) and message.name == JUST_TALK
-            for message in messages
+            isinstance(message, ToolMessage) and message.name == JUST_TALK for message in messages
         ):
             return {}
         spec = REGISTRY.get(JUST_TALK)
@@ -193,9 +210,10 @@ async def insist(state: ButlerState, runtime: Runtime[ButlerContext]) -> dict:
     call_id = CALL_ID
     if route.name in ("goal_workflow", "goal_impact"):
         desired = GOALS
-        arguments = _goal_workflow_args(text, attachment)
+        goal_request = _goal_request_with_context(text, state.get("history_block", ""))
+        arguments = _goal_workflow_args(goal_request, attachment)
         thinking = "Calculating the goal from your confirmed figures"
-        call_id = GOAL_CALL_ID
+        call_id = GOAL_PLAN_CALL_ID if route.name == GOAL_WORKFLOW else GOAL_CALL_ID
     elif route.name == "part_time_jobs":
         desired = PART_TIME
         arguments = _part_time_args(text, state.get("history_block", ""))
@@ -245,9 +263,7 @@ async def insist(state: ButlerState, runtime: Runtime[ButlerContext]) -> dict:
     # `arguments` also builds date-bearing calls, so it is handed the date the
     # prompt states — the same one the offline model reads.
     arguments = (
-        route.arguments(text, attachment, _today_from(state["messages"]))
-        if route.arguments
-        else {}
+        route.arguments(text, attachment, _today_from(state["messages"])) if route.arguments else {}
     )
     events.emit(runtime, events.THINKING, text="Checking what is actually near you")
 

@@ -28,7 +28,7 @@ export function TxnSheet({ txn, onUnconfirm, onClose, busy }: TxnSheetProps) {
     <>
       <div className="sheet-head">
         <div>
-          <span className="tag" style={{ color: "var(--brass)" }}>
+          <span className="tag" style={{ color: "var(--accent)" }}>
             <SourceIcon source={txn.source} size={11} /> On your ledger
           </span>
           <h2 style={{ margin: "6px 0 0", fontSize: 21, letterSpacing: "-.03em" }}>
@@ -76,7 +76,7 @@ export function TxnSheet({ txn, onUnconfirm, onClose, busy }: TxnSheetProps) {
 
       <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
         <button
-          className="btn btn-brass btn-sm"
+          className="btn btn-accent btn-sm"
           style={{ flex: 1 }}
           disabled={busy || (income && Boolean(txn.goal_allocation_applied))}
           onClick={() => onUnconfirm(txn.id)}

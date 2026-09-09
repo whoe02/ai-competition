@@ -138,9 +138,10 @@ function distanceText(place: Place, nameTheBasis: boolean): string {
  * not both, so the point takes the query and the name goes where the user
  * actually reads it — on the link.
  */
-function mapsUrl(place: Place): string {
+function mapsUrl(place: Place, mode: Mode): string {
   const point = encodeURIComponent(`${place.lat},${place.lng}`);
-  return `https://www.google.com/maps/search/?api=1&query=${point}`;
+  const travelMode = mode === "walk" ? "walking" : mode === "transit" ? "transit" : "driving";
+  return `https://www.google.com/maps/dir/?api=1&destination=${point}&travelmode=${travelMode}`;
 }
 
 type CopyFailure = "unsupported" | "refused";
@@ -290,7 +291,7 @@ function PlaceRow({
               place.band === "over"
                 ? "var(--clay)"
                 : place.band === "tight"
-                  ? "var(--brass)"
+                  ? "var(--accent)"
                   : "var(--muted)",
           }}
         >
@@ -304,7 +305,7 @@ function PlaceRow({
         <span className="money" style={{ fontSize: 18, display: "block" }}>
           RM{fmt(place.total_sen)}
         </span>
-        <span className="tag" style={{ color: "var(--brass)" }}>Est · {place.confidence}</span>
+        <span className="tag" style={{ color: "var(--accent)" }}>Est · {place.confidence}</span>
       </span>
     </button>
   );
@@ -312,6 +313,7 @@ function PlaceRow({
 
 type DetailSheetProps = {
   place: Place;
+  mode: Mode;
   modeLabel: string;
   roomSen: number;
   /** The ceiling this list was built against, as the server reported it. */
@@ -338,6 +340,7 @@ type DetailSheetProps = {
 
 function DetailSheet({
   place,
+  mode,
   modeLabel,
   roomSen,
   capSen,
@@ -416,7 +419,7 @@ function DetailSheet({
           breakdown of the wrong trip. */}
       {beyondRadius && (
         <p
-          style={{ margin: "-6px 0 14px", fontSize: 12.5, lineHeight: 1.5, color: "var(--brass)" }}
+          style={{ margin: "-6px 0 14px", fontSize: 12.5, lineHeight: 1.5, color: "var(--accent)" }}
         >
           This one is outside the area I searched — {formatKm(place.km)} from where you are. It is
           here because there was little enough nearby to be worth showing you what is a bit further
@@ -431,7 +434,7 @@ function DetailSheet({
           the rest of it is a guess nobody has checked against a menu. */}
       {believedKind !== null && (
         <p
-          style={{ margin: "-6px 0 14px", fontSize: 12.5, lineHeight: 1.5, color: "var(--brass)" }}
+          style={{ margin: "-6px 0 14px", fontSize: 12.5, lineHeight: 1.5, color: "var(--accent)" }}
         >
           {place.kind} is what the map calls this place — it is not tagged {believedKind}. It is on
           a {believedKind} list because the demo set records a guess that it does {believedKind}{" "}
@@ -495,12 +498,12 @@ function DetailSheet({
         <a
           className="btn btn-line btn-sm"
           style={{ flex: 1, textDecoration: "none" }}
-          href={mapsUrl(place)}
+          href={mapsUrl(place, mode)}
           target="_blank"
           rel="noopener"
-          aria-label={`Open ${place.name} in Google Maps`}
+          aria-label={`Navigate to ${place.name} in Google Maps`}
         >
-          Open in Maps
+          Navigate in Maps
         </a>
         <button
           type="button"
@@ -535,7 +538,7 @@ function DetailSheet({
         </button>
         <button
           type="button"
-          className="btn btn-brass btn-sm"
+          className="btn btn-accent btn-sm"
           style={{ flex: 1 }}
           disabled={adding}
           onClick={() => onAdd(place)}
@@ -557,6 +560,77 @@ function DetailSheet({
         </p>
       )}
     </Sheet>
+  );
+}
+
+type PlanMapProps = {
+  origin: { lat: number; lng: number };
+  places: Place[];
+  selectedId: string | null;
+  onSelect: (place: Place) => void;
+};
+
+/**
+ * A real geographic overview without adding a second map SDK to the bundle.
+ * OpenStreetMap supplies the base layer; the same coordinates returned by the
+ * planner position accessible pins over it. Selecting a pin opens the existing
+ * place sheet, whose navigation link uses the exact coordinate and travel mode.
+ */
+function PlanMap({ origin, places, selectedId, onSelect }: PlanMapProps) {
+  const shown = places.slice(0, 16);
+  const latitudes = [origin.lat, ...shown.map((place) => place.lat)];
+  const longitudes = [origin.lng, ...shown.map((place) => place.lng)];
+  const rawMinLat = Math.min(...latitudes);
+  const rawMaxLat = Math.max(...latitudes);
+  const rawMinLng = Math.min(...longitudes);
+  const rawMaxLng = Math.max(...longitudes);
+  const latPad = Math.max((rawMaxLat - rawMinLat) * 0.16, 0.0012);
+  const lngPad = Math.max((rawMaxLng - rawMinLng) * 0.16, 0.0012);
+  const minLat = rawMinLat - latPad;
+  const maxLat = rawMaxLat + latPad;
+  const minLng = rawMinLng - lngPad;
+  const maxLng = rawMaxLng + lngPad;
+  const x = (lng: number) => ((lng - minLng) / (maxLng - minLng)) * 100;
+  const y = (lat: number) => ((maxLat - lat) / (maxLat - minLat)) * 100;
+  const bbox = encodeURIComponent(`${minLng},${minLat},${maxLng},${maxLat}`);
+  const marker = encodeURIComponent(`${origin.lat},${origin.lng}`);
+
+  return (
+    <section className="mapcard plan-map" aria-label="Nearby places map">
+      <iframe
+        title="OpenStreetMap of nearby places"
+        src={`https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${marker}`}
+        loading="lazy"
+      />
+      <div className="map-veil" aria-hidden="true" />
+      <span
+        className="plan-map-origin"
+        style={{ left: `${x(origin.lng)}%`, top: `${y(origin.lat)}%` }}
+        aria-label="Your planning origin"
+      />
+      {shown.map((place, index) => (
+        <span key={place.id}>
+          <button
+            type="button"
+            className={`plan-map-pin pin-${place.band} ${selectedId === place.id ? "selected" : ""}`}
+            style={{ left: `${x(place.lng)}%`, top: `${y(place.lat)}%` }}
+            aria-label={`Map pin ${index + 1}`}
+            aria-describedby={`map-place-${place.id}`}
+            title={place.name}
+            onClick={() => onSelect(place)}
+          >
+            {index + 1}
+          </button>
+          <span id={`map-place-${place.id}`} className="sr-only">
+            {place.name}, RM{fmt(place.total_sen)}. Opens details and navigation.
+          </span>
+        </span>
+      ))}
+      <div className="plan-map-caption">
+        <b>Tap a pin</b>
+        <span>Details, cost and turn-by-turn navigation</span>
+      </div>
+    </section>
   );
 }
 
@@ -783,7 +857,7 @@ export function DayPlan() {
         />
         <button
           type="submit"
-          className="btn btn-brass btn-sm"
+          className="btn btn-accent btn-sm"
           disabled={interpret.isPending || ask.trim() === ""}
         >
           {interpret.isPending ? "Reading…" : "Set filters"}
@@ -905,6 +979,7 @@ export function DayPlan() {
   // together now. A caption drawn from the list alone would be claiming a
   // basis for rows in a group it never looked at.
   const onScreen = [...results, ...overCap, ...beyond];
+  const mapPlaces = Array.from(new Map(onScreen.map((place) => [place.id, place])).values());
   const straightLineCount = onScreen.filter(
     (place) => place.distance_basis === "straight_line",
   ).length;
@@ -1020,7 +1095,7 @@ export function DayPlan() {
             />
             <div className="cap-ticks">
               <span>RM{fmt(minCapSen)}</span>
-              <span style={{ color: capVerdict.ok ? "var(--brass-lit)" : "var(--clay)" }}>
+              <span style={{ color: capVerdict.ok ? "var(--accent-lit)" : "var(--clay)" }}>
                 {capVerdict.label}
               </span>
               <span>RM{fmt(maxCapSen)}</span>
@@ -1171,6 +1246,20 @@ export function DayPlan() {
               straight line. The road is longer than that, and the travel costs here are priced on
               the short figure.
             </p>
+          </Reveal>
+        )}
+
+        {mapPlaces.length > 0 && (
+          <Reveal delay={58} style={{ marginTop: 16 }}>
+            <PlanMap
+              origin={origin}
+              places={mapPlaces}
+              selectedId={selectedId}
+              onSelect={(place) => {
+                addPlan.reset();
+                setSelectedId(place.id);
+              }}
+            />
           </Reveal>
         )}
 
@@ -1415,6 +1504,7 @@ export function DayPlan() {
       {selected && (
         <DetailSheet
           place={selected}
+          mode={mode}
           modeLabel={modeLabel}
           roomSen={roomSen}
           capSen={data.cap_sen}

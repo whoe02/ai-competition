@@ -1,12 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 
 import type { ButlerThread, Capture, Category, HindsightResponse } from "@kira/contracts";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { api } from "../api/client";
 
 import {
   ask,
   decide,
   type ApprovalView,
+  type AppAction,
+  type ChangeSetLine,
   type ButlerEvent,
   type EvidenceRow,
   type GoalPlanPreview,
@@ -20,6 +23,7 @@ import {
 } from "../api/hooks";
 import { IcArrow, IcCam, IcImg, IcMic } from "../components/Icons";
 import { ScanSheet } from "../components/ScanSheet";
+import { OnScreen } from "../components/Sheet";
 import { TrackRecord } from "../components/TrackRecord";
 import { VoiceSheet } from "../components/VoiceSheet";
 import { takeButlerHandoff } from "../lib/butlerHandoff";
@@ -70,6 +74,7 @@ function approvalView(
   before?: unknown,
   after?: unknown,
   basePlanVersion?: number,
+  changes?: ChangeSetLine[],
 ): ApprovalView {
   return {
     id,
@@ -81,11 +86,12 @@ function approvalView(
     basePlanVersion:
       basePlanVersion ??
       (typeof args.base_plan_version === "number" ? args.base_plan_version : undefined),
+    changes: changes ?? (Array.isArray(args.changes) ? args.changes as ChangeSetLine[] : undefined),
   };
 }
 
 const PROMPTS = [
-  "Can I afford RM60 dinner tonight?",
+    "Can I afford RM60 dinner tonight?",
   "Why did safe-to-spend drop?",
   "How is my wedding goal doing?",
   "What bills are due?",
@@ -100,6 +106,9 @@ type ButlerProps = {
   /** A question raised elsewhere — the entry sheet — for this screen to ask. */
   pending?: { text: string; attachment?: Attachment } | null;
   onPendingAsked?: () => void;
+  onThreadStarted?: (id: string) => void;
+  onOpenConversation?: (id: string | null) => void;
+  onAppAction?: (action: AppAction) => void;
 };
 
 export function Butler({
@@ -109,6 +118,9 @@ export function Butler({
   record,
   pending,
   onPendingAsked,
+  onThreadStarted,
+  onOpenConversation,
+  onAppAction,
 }: ButlerProps) {
   const queryClient = useQueryClient();
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -118,10 +130,18 @@ export function Butler({
   const [attachment, setAttachment] = useState<Attachment>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const loaded = useRef(false);
+  const sending = useRef(false);
+  const activeThread = useRef<string | undefined>(thread?.id);
+  const conversations = useQuery({
+    queryKey: ["butler", "conversations"],
+    queryFn: () => api.get<Pick<ButlerThread, "id" | "title">[]>("/v1/butler/threads"),
+    enabled: Boolean(onOpenConversation),
+  });
 
   // The thread is the record; the local turns are this session's view of it.
   useEffect(() => {
     if (!thread || loaded.current) return;
+    activeThread.current = thread.id;
     loaded.current = true;
     const pending = thread.pending_approvals;
     setTurns(
@@ -150,12 +170,12 @@ export function Butler({
   }, [turns, live]);
 
   useEffect(() => {
-    if (!pending || live) return;
+    if (!pending || live || isLoading) return;
     onPendingAsked?.();
     send(pending.text, pending.attachment ?? null);
     // Deliberately keyed on the question alone: re-running when `send` changes
     // identity would ask it twice.
-  }, [pending]);
+  }, [pending, isLoading]);
 
   const consume = async (events: AsyncGenerator<ButlerEvent>) => {
     let state: Live = { ...EMPTY };
@@ -181,7 +201,13 @@ export function Butler({
       queryClient.invalidateQueries({ queryKey: activityKey }),
       queryClient.invalidateQueries({ queryKey: memoriesKey }),
       queryClient.invalidateQueries({ queryKey: butlerThreadKey }),
+      queryClient.invalidateQueries({ queryKey: ["butler", "conversations"] }),
       queryClient.invalidateQueries({ queryKey: briefingTodayKey }),
+      queryClient.invalidateQueries({ queryKey: ["goals"] }),
+      queryClient.invalidateQueries({ queryKey: ["auth", "me"] }),
+      queryClient.invalidateQueries({ queryKey: ["foresight"] }),
+      queryClient.invalidateQueries({ queryKey: ["hindsight"] }),
+      queryClient.invalidateQueries({ queryKey: ["day-plan"] }),
     ]);
   };
 
@@ -201,6 +227,9 @@ export function Butler({
         case "token":
           state = { ...state, text: state.text + event.text };
           break;
+        case "app_action":
+          onAppAction?.(event);
+          break;
         case "approval":
           state = {
             ...state,
@@ -212,21 +241,35 @@ export function Butler({
               event.before,
               event.after,
               event.base_plan_version,
+              event.changes,
             ),
           };
           break;
-        case "done":
+        case "done": {
+          // The mid-stream approval event carries the arguments a card needs to
+          // be editable, but `done` is what says a proposal is still standing.
+          // The graph replays its pending approval even on the turn that
+          // rejected it, and a rejected change must not reappear as a new card.
+          const standing = event.approval
+            ? state.approval?.id === event.approval.approval_id
+              ? state.approval
+              : approvalView(event.approval.approval_id, event.approval.summary, "")
+            : null;
           setTurns((previous) => [
             ...previous,
             {
               role: "kira",
-              text: event.answer || state.text,
+              // `answer` is the server's sanitised final text. Never resurrect
+              // raw streamed text when it is intentionally empty: that was how
+              // a fenced start_goal_planning(...) call reappeared in chat.
+              text: event.answer,
               evidence: event.evidence?.length ? event.evidence : state.evidence,
-              approval: state.approval,
+              approval: standing,
               applied: Boolean(event.applied),
             },
           ]);
           break;
+        }
         case "error":
           setTurns((previous) => [
             ...previous,
@@ -240,7 +283,8 @@ export function Butler({
 
   const send = (question: string, attached: Attachment = attachment) => {
     const trimmed = question.trim();
-    if (!trimmed || live) return;
+    if (!trimmed || live || sending.current || isLoading) return;
+    sending.current = true;
     setSheet(null);
     setAttachment(null);
     setText("");
@@ -248,7 +292,28 @@ export function Butler({
       ...previous,
       { role: "user", text: trimmed, evidence: [], attachment: attached },
     ]);
-    void consume(ask(trimmed, attached ?? undefined));
+    setLive({ ...EMPTY, thinking: "Starting your conversation" });
+    void (async () => {
+      try {
+        if (!activeThread.current && onThreadStarted) {
+          const created = await api.post<ButlerThread>("/v1/butler/threads", {});
+          activeThread.current = created.id;
+          // The optimistic user message already exists; do not replace it with
+          // the new thread's initially empty server response.
+          loaded.current = true;
+          onThreadStarted(created.id);
+        }
+        await consume(ask(trimmed, attached ?? undefined, activeThread.current));
+      } catch {
+        setTurns((previous) => [...previous, {
+          role: "kira", text: "I couldn’t start this conversation. Please try again.", evidence: [],
+        }]);
+        setText(trimmed);
+        setLive(null);
+      } finally {
+        sending.current = false;
+      }
+    })();
   };
 
   /**
@@ -296,9 +361,26 @@ export function Butler({
         </div>
       </div>
 
+      {onOpenConversation && (
+        <div className="conversation-controls">
+          <button className="chip" disabled={busy} onClick={() => onOpenConversation(null)}>
+            New conversation
+          </button>
+          <select aria-label="Conversation history" disabled={busy}
+            value={thread?.id ?? activeThread.current ?? ""}
+            onChange={(event) => { if (event.target.value) onOpenConversation(event.target.value); }}>
+            <option value="">Conversation history</option>
+            {(conversations.data ?? []).map((item) => (
+              <option key={item.id} value={item.id}>{item.title}</option>
+            ))}
+          </select>
+          {conversations.isError && <span>Couldn’t load previous conversations.</span>}
+        </div>
+      )}
+
       <div
         className="pad"
-        style={{ paddingBottom: 176, display: "flex", flexDirection: "column", gap: 20 }}
+        style={{ paddingBottom: 208, display: "flex", flexDirection: "column", gap: 20 }}
       >
         <TrackRecord data={record} />
 
@@ -312,8 +394,9 @@ export function Butler({
               margin: "6px 0 0",
             }}
           >
-            I answer from your confirmed transactions only, and I show you the numbers I used.
-            I can&rsquo;t move money — that isn&rsquo;t mine to do.
+            Ask about your money, record an expense, or plan your next goal.
+            We can work through it together. I&rsquo;ll show you the calculation and ask
+            you to confirm before changing anything.
           </p>
         )}
 
@@ -361,7 +444,9 @@ export function Butler({
           </div>
         )}
 
-        <div ref={endRef} />
+        {/* The scroll target, not a spacer: its scroll-margin keeps the last
+            thing said clear of the composer standing over the thread. */}
+        <div className="thread-end" ref={endRef} />
 
         {turns.length === 0 && !isLoading && (
           <div className="chips" style={{ marginTop: 4 }}>
@@ -374,15 +459,21 @@ export function Butler({
         )}
       </div>
 
-      <div className="composer">
+      <OnScreen>
+        <div className="composer">
         {attachment && <AttachmentTag attachment={attachment} />}
-        <input
+        <textarea
+          rows={2}
+          maxLength={2000}
           value={text}
-          placeholder="Ask, speak, or show me a receipt…"
+          placeholder="Ask, speak, or scan…"
           aria-label="Ask Kira"
           onChange={(event) => setText(event.target.value)}
           onKeyDown={(event) => {
-            if (event.key === "Enter") send(text);
+            if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+              event.preventDefault();
+              send(text);
+            }
           }}
         />
         <button
@@ -401,10 +492,11 @@ export function Butler({
         >
           <IcMic size={18} w={1.9} />
         </button>
-        <button className="send" onClick={() => send(text)} disabled={busy} aria-label="Send">
+        <button className="send" onClick={() => send(text)} disabled={busy || !text.trim()} aria-label="Send">
           <IcArrow size={18} w={2.1} />
         </button>
-      </div>
+        </div>
+      </OnScreen>
 
       {sheet === "scan" && (
         <ScanSheet
@@ -428,7 +520,7 @@ function Answer({ text }: { text: string }) {
   return (
     <>
       <p className="kira-say">{head}</p>
-      {rest.length > 0 && <p className="kira-sub">{rest.join(" ")}</p>}
+      {rest.length > 0 && <div className="kira-sub butler-answer-body">{rest.join("\n")}</div>}
     </>
   );
 }
@@ -440,17 +532,17 @@ function Answer({ text }: { text: string }) {
 function Evidence({ rows }: { rows: EvidenceRow[] }) {
   if (rows.length === 0) return null;
   return (
-    <div className="evidence">
-      <span className="eyebrow on-ink" style={{ marginBottom: 2 }}>
+    <details className="evidence">
+      <summary className="eyebrow on-ink" style={{ marginBottom: 2 }}>
         What I used
-      </span>
+      </summary>
       {rows.map(([label, value], index) => (
         <div className="ev-row" key={`${label}-${index}`}>
           <span>{label}</span>
           <b>{value}</b>
         </div>
       ))}
-    </div>
+    </details>
   );
 }
 
@@ -464,10 +556,21 @@ type FieldSpec = { label: string; kind: "text" | "money" | "date" | "category" }
 
 const EDITABLE: Record<string, FieldSpec | undefined> = {
   merchant: { label: "Merchant", kind: "text" },
+  display_name: { label: "Display name", kind: "text" },
   amount_sen: { label: "Total", kind: "money" },
+  monthly_income_sen: { label: "Monthly income", kind: "money" },
+  saved_sen: { label: "Saved", kind: "money" },
   occurred_on: { label: "Date", kind: "date" },
+  due_date: { label: "Due date", kind: "date" },
+  target_date: { label: "Target date", kind: "date" },
+  next_payday: { label: "Next payday", kind: "date" },
+  cycle_start: { label: "Cycle start", kind: "date" },
+  cycle_days: { label: "Cycle days", kind: "text" },
   category: { label: "Category", kind: "category" },
   name: { label: "Name", kind: "text" },
+  kind: { label: "Account type", kind: "text" },
+  status: { label: "Status", kind: "text" },
+  note: { label: "Note", kind: "text" },
   monthly_sen: { label: "Monthly", kind: "money" },
   target_sen: { label: "Target", kind: "money" },
 };
@@ -489,6 +592,9 @@ function Approval({
   if (proposal.tool === "apply_goal_plan_change" && proposal.after) {
     return <GoalPlanApproval approval={proposal} busy={busy} onDecide={onDecide} />;
   }
+  if (proposal.tool === "change_set" && proposal.changes) {
+    return <ChangeSetApproval proposal={proposal} categories={categories} busy={busy} onDecide={onDecide} />;
+  }
   return (
     <GenericApproval
       proposal={proposal}
@@ -496,6 +602,61 @@ function Approval({
       busy={busy}
       onDecide={onDecide}
     />
+  );
+}
+
+function ChangeSetApproval({
+  proposal, categories, busy, onDecide,
+}: {
+  proposal: ApprovalView;
+  categories?: Category[];
+  busy: boolean;
+  onDecide: (action: "accept" | "edit" | "reject", args?: Record<string, unknown>) => void;
+}) {
+  const [changes, setChanges] = useState(() => proposal.changes ?? []);
+  const update = (index: number, patch: Partial<ChangeSetLine>) =>
+    setChanges((prior) => prior.map((line, position) =>
+      position === index ? { ...line, ...patch } : line));
+  const updateArg = (index: number, key: string, value: unknown) =>
+    update(index, { args: { ...(changes[index]?.args ?? {}), [key]: value } });
+  const changed = JSON.stringify(changes) !== JSON.stringify(proposal.changes);
+
+  return (
+    <div className="approval">
+      <span className="eyebrow on-ink" style={{ color: "var(--accent-lit)" }}>
+        {changes.length} proposed changes · applied together
+      </span>
+      <div style={{ marginTop: 11, display: "grid", gap: 12 }}>
+        {changes.map((line, index) => {
+          const fields = Object.keys(line.args).flatMap((key) => {
+            const spec = EDITABLE[key];
+            return spec ? [{ key, spec }] : [];
+          });
+          return (
+            <div key={line.id} style={{ opacity: line.enabled ? 1 : 0.5 }}>
+              <label style={{ display: "flex", gap: 9, alignItems: "flex-start" }}>
+                <input type="checkbox" checked={line.enabled} disabled={busy}
+                  onChange={(event) => update(index, { enabled: event.target.checked })} />
+                <span style={{ fontSize: 14, lineHeight: 1.45 }}>{line.summary}</span>
+              </label>
+              {line.enabled && fields.map(({ key, spec }) => (
+                <ProposalField key={key} name={key} spec={spec} value={line.args[key]}
+                  categories={categories} disabled={busy}
+                  onChange={(value) => updateArg(index, key, value)} />
+              ))}
+            </div>
+          );
+        })}
+      </div>
+      <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+        <button className="btn btn-accent btn-sm" style={{ flex: 1 }} disabled={busy || !changes.some((line) => line.enabled)}
+          onClick={() => changed ? onDecide("edit", { changes }) : onDecide("accept")}>Approve selected</button>
+        <button className="btn btn-sm btn-ghost" disabled={busy} onClick={() => onDecide("reject")}>Reject all</button>
+      </div>
+      <p style={{ margin: "11px 0 0", fontSize: 11.5, color: "rgba(233,237,233,.45)" }}>
+        Every enabled line is rechecked, then all are applied atomically.
+      </p>
+    </div>
   );
 }
 
@@ -521,13 +682,16 @@ function GenericApproval({
 
   return (
     <div className="approval">
-      <span className="eyebrow on-ink" style={{ color: "var(--brass-lit)" }}>
+      <span className="eyebrow on-ink" style={{ color: "var(--accent-lit)" }}>
         Proposed change · not applied
       </span>
       {fields.length === 0 ? (
         <p style={{ margin: "10px 0 0", fontSize: 14.5, lineHeight: 1.5 }}>{proposal.summary}</p>
       ) : (
         <div style={{ marginTop: 11 }}>
+          <p style={{ margin: "0 0 10px", fontSize: 14.5, lineHeight: 1.5 }}>
+            {proposal.summary}
+          </p>
           {fields.map(({ key, spec }) => (
             <ProposalField
               key={key}
@@ -543,7 +707,7 @@ function GenericApproval({
       )}
       <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
         <button
-          className="btn btn-brass btn-sm"
+          className="btn btn-accent btn-sm"
           style={{ flex: 1 }}
           disabled={busy}
           onClick={() => (touched ? onDecide("edit", args) : onDecide("accept"))}
@@ -585,7 +749,7 @@ function GoalPlanApproval({
 
   return (
     <div className="approval">
-      <span className="eyebrow on-ink" style={{ color: "var(--brass-lit)" }}>
+      <span className="eyebrow on-ink" style={{ color: "var(--accent-lit)" }}>
         Proposed change · not applied
       </span>
       <p style={{ margin: "10px 0 0", fontSize: 14.5, lineHeight: 1.5 }}>
@@ -630,7 +794,7 @@ function GoalPlanApproval({
       <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
         {editing ? (
           <button
-            className="btn btn-brass btn-sm"
+            className="btn btn-accent btn-sm"
             style={{ flex: 1 }}
             disabled={busy || !validEdit}
             onClick={() =>
@@ -645,7 +809,7 @@ function GoalPlanApproval({
           </button>
         ) : (
           <button
-            className="btn btn-brass btn-sm"
+            className="btn btn-accent btn-sm"
             style={{ flex: 1 }}
             disabled={busy}
             onClick={() => onDecide("accept")}
@@ -817,7 +981,7 @@ function AttachmentTag({ attachment }: { attachment: Attachment }) {
   return (
     <span className="att">
       {attachment.kind === "voice" ? <IcMic size={14} /> : <IcImg size={14} />}
-      {attachment.kind === "voice" ? "Voice note" : "Receipt"} · {attachment.merchant}
+      {attachment.kind === "voice" ? "Voice note" : "Receipt"} · {attachment.merchant ?? "transcript"}
     </span>
   );
 }

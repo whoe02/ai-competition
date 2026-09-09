@@ -29,7 +29,6 @@ class ButlerState(TypedDict, total=False):
     memory_block: str
     history_block: str
     attachment_block: str
-    memory_ids: list[str]
     # Evidence rows as executed tools returned them: [[label, value], …].
     # compose renders the panel from this and nothing else.
     evidence: list[list[str]]
@@ -38,10 +37,11 @@ class ButlerState(TypedDict, total=False):
     attachment: dict[str, Any] | None
     # Set by the guard when a call is refused, and fed back to the model.
     refusals: list[str]
-    # What the guard permitted this turn: reads to execute, and at most one
-    # write, which only the approval path can run.
+    # What the guard permitted this turn. Writes are retained in model order
+    # and presented as one atomic change-set.
     approved_reads: list[dict[str, Any]]
     pending_write: dict[str, Any] | None
+    pending_writes: list[dict[str, Any]]
     # A typed handoff to a specialised subgraph. It is validated by the same
     # guard as a tool call, but never executed as a free-form model tool.
     pending_workflow: dict[str, Any] | None
@@ -97,7 +97,6 @@ def initial_state(
         memory_block=memory_block,
         history_block="",
         attachment_block="",
-        memory_ids=[],
         evidence=[],
         tools_used=[],
         iterations=0,
@@ -105,6 +104,7 @@ def initial_state(
         refusals=[],
         approved_reads=[],
         pending_write=None,
+        pending_writes=[],
         pending_workflow=None,
         pending_approval=None,
         applied=None,

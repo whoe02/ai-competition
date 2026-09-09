@@ -4,13 +4,6 @@ import { fmt } from "../lib/money";
 
 export type Band = "free" | "goal" | "commit" | "buffer";
 
-const SWATCH: Record<Band, string> = {
-  free: "linear-gradient(180deg,#FBF7EC,#DFCFA4)",
-  goal: "linear-gradient(180deg,#E0BB74,#B58F45)",
-  commit: "linear-gradient(180deg,#7FA298,#5B7C74)",
-  buffer: "#43635C",
-};
-
 type ClaimLineProps = {
   data: DashboardToday;
   picked: Band | null;
@@ -38,52 +31,44 @@ export function ClaimLine({ data, picked, onPick }: ClaimLineProps) {
     { k: "buffer", v: data.buffer_sen, cls: "seg-buffer", label: "Buffer", sub: "Protected, not spendable" },
   ];
 
+  // Nothing picked reads as the headline claim; a pick swaps in that band's own
+  // figure. One line either way — the 2x2 legend it replaces only repeated what
+  // "Show the working" already lists in full.
+  const shown = segments.find((segment) => segment.k === picked) ?? segments[0]!;
+  const total = segments.reduce((sum, segment) => sum + Math.max(segment.v, 0), 0) || 1;
+
   return (
     <div>
-      <div className="claim" role="img" aria-label="How your balance is claimed">
-        {segments.map((segment, index) => (
-          <button
-            key={segment.k}
-            className={`claim-seg ${segment.cls}`}
-            style={{
-              flexGrow: Math.max(segment.v, 0),
-              animationDelay: `${0.35 + index * 0.09}s`,
-              opacity: picked && picked !== segment.k ? 0.45 : 1,
-            }}
-            onClick={() => onPick(picked === segment.k ? null : segment.k)}
-            aria-label={`${segment.label} RM${fmt(segment.v)}`}
-          />
-        ))}
+      <div className="claim">
+        {segments.map((segment, index) => {
+          const share = Math.max(segment.v, 0) / total;
+          return (
+            <button
+              key={segment.k}
+              className={`claim-seg ${segment.cls} ${picked === segment.k ? "is-picked" : ""}`}
+              style={{
+                flexGrow: Math.max(segment.v, 0),
+                animationDelay: `${0.35 + index * 0.09}s`,
+                opacity: picked && picked !== segment.k ? 0.32 : 1,
+              }}
+              onClick={() => onPick(picked === segment.k ? null : segment.k)}
+              aria-pressed={picked === segment.k}
+              aria-label={`${segment.label} RM${fmt(segment.v)}`}
+            >
+              {/* The share only reads inside a band wide enough to hold it; the
+                  rest stay bare rather than crowding a 2-character label. */}
+              {share >= 0.15 && <i className="claim-pct">{Math.round(share * 100)}%</i>}
+            </button>
+          );
+        })}
       </div>
-      <div className="claim-legend">
-        {segments.map((segment) => (
-          <button
-            key={segment.k}
-            className="leg"
-            onClick={() => onPick(picked === segment.k ? null : segment.k)}
-            style={{ opacity: picked && picked !== segment.k ? 0.38 : 1 }}
-          >
-            <i style={{ background: SWATCH[segment.k] }} />
-            <span>
-              <span className="leg-l">{segment.label}</span>
-              <span className="leg-v">{fmt(segment.v)}</span>
-            </span>
-          </button>
-        ))}
-      </div>
-      {picked && (
-        <p
-          className="voice"
-          style={{
-            margin: "13px 0 0",
-            fontSize: 13.5,
-            color: "rgba(233,237,233,.7)",
-            animation: "fadeUp .5s var(--spring) both",
-          }}
-        >
-          {segments.find((segment) => segment.k === picked)?.sub}.
-        </p>
-      )}
+      <p className="claim-cap">
+        <span>
+          <i className={`claim-dot ${shown.cls}`} aria-hidden="true" />
+          {shown.label} <b>{fmt(shown.v)}</b> of {fmt(data.balance_sen)}
+        </span>
+        <span className="claim-cap-r">{picked ? shown.sub : "tap a band"}</span>
+      </p>
     </div>
   );
 }

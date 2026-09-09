@@ -7,6 +7,7 @@ import { VoiceSheet } from "./VoiceSheet";
 
 const READ = {
   kind: "voice",
+  is_transaction: true,
   source: "voice",
   merchant: "Grab — office to KLCC",
   amount_sen: 1400,
@@ -21,6 +22,20 @@ const READ = {
     { label: "Date", value: "3 Sep 2026", confidence: 71 },
     { label: "Category", value: "Transport", confidence: 60 },
   ],
+};
+
+const QUESTION = {
+  kind: "voice",
+  is_transaction: false,
+  source: "voice",
+  merchant: null,
+  amount_sen: null,
+  occurred_on: "2026-09-03",
+  category: "uncategorised",
+  confidence: 92,
+  note: "Transcribed locally with Whisper; no transaction was inferred.",
+  transcript: "Can I afford RM60 dinner tonight?",
+  fields: [],
 };
 
 function setup(onAsk = vi.fn()) {
@@ -85,5 +100,24 @@ describe("VoiceSheet", () => {
 
     await user.click(screen.getByRole("button", { name: /Ask Kira/ }));
     expect(onAsk).toHaveBeenCalledWith(READ.transcript, expect.objectContaining({ kind: "voice" }));
+  });
+
+  it("sends a spoken question to Kira without offering a ledger draft", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve(QUESTION),
+      text: () => Promise.resolve(""),
+    } as unknown as Response);
+    const { user, onAsk } = setup();
+    await user.click(screen.getByRole("button", { name: "Use a sample" }));
+
+    await waitFor(() => expect(screen.getByText(QUESTION.transcript)).toBeInTheDocument());
+    expect(screen.queryByRole("button", { name: "Save as draft" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /Ask Kira about this/ }));
+    expect(onAsk).toHaveBeenCalledWith(
+      QUESTION.transcript,
+      expect.objectContaining({ is_transaction: false, merchant: null, amount_sen: null }),
+    );
   });
 });

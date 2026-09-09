@@ -23,7 +23,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from kira.agent import place_relevance
+from kira.agent import events, place_relevance
 from kira.agent.llm import get_chat_model
 from kira.config import get_settings
 
@@ -162,8 +162,7 @@ def _selection_block(payload: dict[str, Any], currency: str) -> str:
     ]
     if payload["places"]:
         blocks.append(
-            "Places under the ceiling, cheapest first:\n"
-            + _lines(payload["places"], currency)
+            "Places under the ceiling, cheapest first:\n" + _lines(payload["places"], currency)
         )
     else:
         blocks.append("Nothing came in under the ceiling.")
@@ -215,8 +214,12 @@ async def _choose(ctx, payload: dict[str, Any]) -> PlaceChoice | None:
     from langchain_core.messages import HumanMessage, SystemMessage
 
     factory = ctx.model_factory
-    model = factory(streaming=False) if factory is not None else get_chat_model(
-        streaming=False, temperature=get_settings().butler_reasoning_temperature
+    model = (
+        factory(streaming=False)
+        if factory is not None
+        else get_chat_model(
+            streaming=False, temperature=get_settings().butler_reasoning_temperature
+        )
     )
     try:
         picker = model.with_structured_output(PlaceChoice)
@@ -269,6 +272,16 @@ async def run_day_plan_agent(ctx, intent):
         # returned. Cheapest first is the order the service already put them
         # in, so the fallback is a real recommendation rather than an apology.
         pick = payload["places"][0]
+
+    # A day plan is spatial. Once its grounded search is ready, open the Daily
+    # Plan screen that owns the map, filters and navigation links. This is a
+    # reversible UI command, not a write, so it needs no approval and cannot
+    # alter the ledger.
+    ctx.emit(
+        events.APP_ACTION,
+        action="set_plan_view",
+        plan_view="daily",
+    )
 
     return AgentReport(
         findings=_findings(payload, chosen, pick, found),

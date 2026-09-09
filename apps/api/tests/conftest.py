@@ -17,6 +17,13 @@ os.environ.setdefault("BUTLER_OFFLINE", "true")
 # below hands the planner a router that answers nothing, and the tests that
 # care about road distance hand it one that answers known metres.
 os.environ.setdefault("ROUTING_ENABLED", "false")
+# And the same for the capture providers. A developer whose .env selects
+# PaddleOCR and Whisper -- the sensible thing to have there -- was otherwise
+# running the whole suite against them, which means every test that touches the
+# adapter registry fails on an ImportError for a heavy optional dependency it
+# never wanted. The fakes are what the assertions are written against anyway.
+os.environ.setdefault("CAPTURE_OCR_PROVIDER", "fake")
+os.environ.setdefault("CAPTURE_VOICE_PROVIDER", "fake")
 
 import math
 from collections.abc import Iterator, Sequence

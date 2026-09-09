@@ -13,6 +13,7 @@ from kira.adapters.fakes import (
     NoRouting,
     ScriptedLlm,
 )
+from kira.adapters.local_capture import PaddleOcrAdapter, WhisperVoiceAdapter
 from kira.adapters.osrm import OsrmRouting
 from kira.adapters.protocols import (
     LlmAdapter,
@@ -59,12 +60,26 @@ def choose_routing() -> RoutingAdapter:
     return OsrmRouting(settings.osrm_base_url, settings.routing_timeout_seconds)
 
 
+def choose_ocr() -> OcrAdapter:
+    settings = get_settings()
+    if settings.capture_ocr_provider.lower() == "paddleocr":
+        return PaddleOcrAdapter(settings.capture_ocr_language)
+    return FakeOcr()
+
+
+def choose_voice() -> VoiceAdapter:
+    settings = get_settings()
+    if settings.capture_voice_provider.lower() == "whisper":
+        return WhisperVoiceAdapter(settings.capture_voice_model, settings.capture_voice_language)
+    return FakeVoice()
+
+
 @lru_cache
 def get_adapters() -> Adapters:
     """Use offline fakes until real providers are deliberately configured."""
     return Adapters(
-        ocr=FakeOcr(),
-        voice=FakeVoice(),
+        ocr=choose_ocr(),
+        voice=choose_voice(),
         maps=FakeMaps(),
         routing=choose_routing(),
         storage=InMemoryStorage(),

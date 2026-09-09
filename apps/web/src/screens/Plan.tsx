@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { DayPlan } from "./DayPlan";
 import { GoalPlanner } from "./goals/GoalPlanner";
 
-export type PlanView = "daily" | "goals";
+export type PlanView = "daily" | "goals" | "foresight";
 
 type PlanProps = {
   initialView?: PlanView;
@@ -34,7 +34,7 @@ export function Plan({
             aria-hidden="true"
             style={{
               transform:
-                view === "goals" ? "translateX(calc(100% + 5px))" : "translateX(0)",
+                view !== "daily" ? "translateX(calc(100% + 5px))" : "translateX(0)",
             }}
           />
           <button
@@ -50,10 +50,10 @@ export function Plan({
           </button>
           <button
             id="plan-goals-tab"
-            className={`seg-btn ${view === "goals" ? "on" : ""}`}
+            className={`seg-btn ${view !== "daily" ? "on" : ""}`}
             type="button"
             role="tab"
-            aria-selected={view === "goals"}
+            aria-selected={view !== "daily"}
             aria-controls="plan-goals-panel"
             onClick={() => selectView("goals")}
           >

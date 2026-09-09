@@ -72,12 +72,27 @@ async def propose(
     evidence: list[list[str]],
     graph_thread_id: str,
     tool_call_id: str,
-) -> ButlerApproval:
+) -> tuple[ButlerApproval, bool]:
     """Record the proposal, or return the one already recorded.
 
     A resumed graph replays the node from its start, so this has to be
     idempotent on (graph thread, tool call) or a single question would be
     asked twice.
+
+    Returns the row and whether this call is the one that created it. The
+    replay is silent about the row but not about the card: a caller that
+    announces the proposal has to know it is on the second pass, or it puts
+    the card back on screen while it is applying the decision the user
+    already gave.
+
+    Only a *pending* row is the replay. A settled one with the same key is a
+    different question that happens to share a name: a turn may now propose a
+    second change after the first is approved, and nothing obliges a model to
+    give the two calls different ids — small ones reuse "call_0" freely. Keying
+    on the pair alone, the second write would silently adopt the first's
+    settled row, and a change the user never saw a card for would be recorded
+    as one they had already approved. So the key is the pair *and* still being
+    open, which is the only state in which a replay can find itself.
     """
     existing = (
         await session.execute(
@@ -85,11 +100,12 @@ async def propose(
                 ButlerApproval.user_id == user.id,
                 ButlerApproval.graph_thread_id == graph_thread_id,
                 ButlerApproval.tool_call_id == tool_call_id,
+                ButlerApproval.status == APPROVAL_PENDING,
             )
         )
     ).scalar_one_or_none()
     if existing is not None:
-        return existing
+        return existing, False
 
     approval = ButlerApproval(
         user_id=user.id,
@@ -104,7 +120,7 @@ async def propose(
     )
     session.add(approval)
     await session.flush()
-    return approval
+    return approval, True
 
 
 async def get(session: AsyncSession, user: User, approval_id: uuid.UUID) -> ButlerApproval:

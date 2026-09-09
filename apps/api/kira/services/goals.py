@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
+from datetime import date
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from kira.db.models import HORIZON_LONG, HORIZON_SHORT, Goal, User
+from kira.db.models import HORIZON_LONG, HORIZON_SHORT, Goal, GoalContributionRecord, User
 from kira.engine import months_to_goal
 from kira.money import Money
 
@@ -37,6 +38,8 @@ class GoalView:
     monthly_sen: int
     months_left: int
     note: str
+    target_date: date | None
+    status: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,6 +65,8 @@ def _view(goal: Goal) -> GoalView:
         monthly_sen=goal.monthly.sen,
         months_left=months_to_goal(goal.target, goal.saved, goal.monthly),
         note=goal.note,
+        target_date=goal.target_date,
+        status=goal.status,
     )
 
 
@@ -90,7 +95,9 @@ async def list_goals(session: AsyncSession, user: User) -> tuple[GoalView, ...]:
             )
             .order_by(Goal.name)
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return tuple(_view(goal) for goal in goals)
 
 
@@ -205,6 +212,8 @@ async def update_goal(
     monthly_sen: int | None = None,
     saved_sen: int | None = None,
     note: str | None = None,
+    target_date: date | None = None,
+    status: str | None = None,
 ) -> GoalView:
     goal = await _owned(session, user, goal_id)
     if name is not None:
@@ -225,5 +234,38 @@ async def update_goal(
         goal.saved = Money(saved_sen, user.currency)
     if note is not None:
         goal.note = note
+    if target_date is not None:
+        goal.target_date = target_date
+    if status is not None:
+        if status not in ("active", "paused", "achieved", "cancelled"):
+            raise InvalidGoal("status must be active, paused, achieved or cancelled")
+        goal.status = status
+    await session.flush()
+    return _view(goal)
+
+
+async def record_contribution(
+    session: AsyncSession,
+    user: User,
+    goal_id: uuid.UUID,
+    *,
+    amount_sen: int,
+    contributed_on: date,
+    source: str = "manual",
+) -> GoalView:
+    """Append a contribution and update the goal projection in one service call."""
+    if amount_sen <= 0:
+        raise InvalidGoal("a contribution must be positive")
+    goal = await _owned(session, user, goal_id)
+    session.add(
+        GoalContributionRecord(
+            user_id=user.id,
+            goal_id=goal.id,
+            amount=Money(amount_sen, user.currency),
+            contributed_on=contributed_on,
+            source=source,
+        )
+    )
+    goal.saved = Money(min(goal.target.sen, goal.saved.sen + amount_sen), user.currency)
     await session.flush()
     return _view(goal)

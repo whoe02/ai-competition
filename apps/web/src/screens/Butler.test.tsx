@@ -148,6 +148,56 @@ function setup(thread: ButlerThread | undefined = EMPTY_THREAD) {
 }
 
 describe("Butler", () => {
+  it("forwards app actions from the event stream to the app shell", async () => {
+    const onAppAction = vi.fn();
+    vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(streamed(sse(
+      { type: "app_action", action: "navigate", tab: "activity", category: "food" },
+      { type: "done", answer: "Here is food this month.", approval: null },
+    )))));
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={client}>
+      <Butler thread={EMPTY_THREAD} isLoading={false} onAppAction={onAppAction} />
+    </QueryClientProvider>);
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText("Ask Kira"), "Show food{Enter}");
+    await waitFor(() => expect(onAppAction).toHaveBeenCalledWith(expect.objectContaining({
+      action: "navigate", tab: "activity", category: "food",
+    })));
+  });
+
+  it("creates a new conversation before sending and offers a fresh start", async () => {
+    const started = vi.fn();
+    const open = vi.fn();
+    vi.stubGlobal("fetch", vi.fn((url, options) => {
+      if (url === "/v1/butler/threads" && options?.method === "POST") {
+        return Promise.resolve(new Response(JSON.stringify({ ...EMPTY_THREAD, id: "new-chat" }), {
+          headers: { "content-type": "application/json" }, status: 201,
+        }));
+      }
+      if (url === "/v1/butler/threads") {
+        return Promise.resolve(new Response(JSON.stringify([]), {
+          headers: { "content-type": "application/json" },
+        }));
+      }
+      return Promise.resolve(streamed(ANSWER));
+    }));
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={client}>
+      <Butler thread={undefined} isLoading={false}
+        onThreadStarted={started} onOpenConversation={open} />
+    </QueryClientProvider>);
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText("Ask Kira"), "Can I afford RM20 lunch?{Enter}");
+    await waitFor(() => expect(started).toHaveBeenCalledWith("new-chat"));
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith(
+      "/v1/butler/threads/new-chat/messages", expect.objectContaining({ method: "POST" }),
+    ));
+    await waitFor(() => expect(screen.getByRole("button", { name: "New conversation" })).toBeEnabled());
+    expect(screen.getByText("What I used").closest("details")).not.toHaveAttribute("open");
+    await user.click(screen.getByRole("button", { name: "New conversation" }));
+    expect(open).toHaveBeenCalledWith(null);
+  });
+
   beforeEach(() => {
     // A fresh Response per call: a stream can only be read once.
     vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(streamed(ANSWER))));
@@ -159,8 +209,8 @@ describe("Butler", () => {
 
   it("says what it will and will not do before anything is asked", () => {
     setup();
-    expect(screen.getByText(/move money/)).toBeInTheDocument();
-    expect(screen.getByText(/I show you the numbers I used/)).toBeInTheDocument();
+    expect(screen.getByText(/confirm before changing anything/)).toBeInTheDocument();
+    expect(screen.getByText(/show you the calculation/)).toBeInTheDocument();
   });
 
   it("offers the demo questions as starting points", () => {
@@ -344,6 +394,45 @@ describe("Butler approvals", () => {
       expect(screen.getByText("Rejected. Nothing changed.")).toBeInTheDocument(),
     );
     expect(screen.queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
+  });
+
+  it("keeps a rejected change gone when the graph replays it as pending", async () => {
+    // What the server actually sends on a reject: the graph's pending approval
+    // is replayed as a progress event, and only `done` says it is settled.
+    const settled = sse(
+      {
+        type: "approval",
+        approval_id: "a1",
+        tool: "remember",
+        module: "memory",
+        summary: "Remember: I split rent with Aida.",
+        args: {},
+      },
+      {
+        type: "done",
+        answer: "Rejected. Nothing changed.",
+        evidence: [],
+        tools_used: [],
+        approval: null,
+      },
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(streamed(PROPOSAL))
+        .mockResolvedValue(streamed(settled)),
+    );
+    const user = setup();
+    await user.type(screen.getByLabelText("Ask Kira"), "Remember that{Enter}");
+    await waitFor(() => screen.getByRole("button", { name: "Reject" }));
+
+    await user.click(screen.getByRole("button", { name: "Reject" }));
+    await waitFor(() =>
+      expect(screen.getByText("Rejected. Nothing changed.")).toBeInTheDocument(),
+    );
+    expect(screen.queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Proposed change · not applied")).not.toBeInTheDocument();
   });
 });
 
@@ -557,7 +646,7 @@ describe("Butler · a question handed over from another screen", () => {
 
     await waitFor(() =>
       expect(fetch).toHaveBeenCalledWith(
-        "/v1/butler/messages",
+        "/v1/butler/threads/t1/messages",
         expect.objectContaining({ body: JSON.stringify({ text: HANDED, attachment: null }) }),
       ),
     );
@@ -600,14 +689,14 @@ describe("Butler · a question handed over from another screen", () => {
     cleanup();
     setup();
 
-    await waitFor(() => expect(screen.getByText(/move money/)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/confirm before changing anything/)).toBeInTheDocument());
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 
   it("asks nothing when nothing was handed over", async () => {
     setup();
 
-    await waitFor(() => expect(screen.getByText(/move money/)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/confirm before changing anything/)).toBeInTheDocument());
     expect(fetch).not.toHaveBeenCalled();
   });
 });

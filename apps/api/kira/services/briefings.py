@@ -138,7 +138,7 @@ async def nightly_briefing(session: AsyncSession, user: User, on_date: date) -> 
     if draft_hit is not None:
         graph_thread_id = f"briefing:{on_date.isoformat()}"
         for draft in drafts:
-            await butler_approvals.propose(
+            _row, _created = await butler_approvals.propose(
                 session,
                 user,
                 thread_id=thread.id,

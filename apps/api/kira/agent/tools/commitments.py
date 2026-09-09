@@ -15,9 +15,7 @@ MODULE = "commitments"
 
 
 class ListArgs(BaseModel):
-    upcoming_only: bool = Field(
-        default=True, description="Only bills still due on or after today."
-    )
+    upcoming_only: bool = Field(default=True, description="Only bills still due on or after today.")
 
 
 class CreateCommitmentArgs(BaseModel):
@@ -108,8 +106,7 @@ SPECS = (
         kind="read",
         label="Reading your bills",
         description=(
-            "The user's committed bills, what each costs and how many days until each "
-            "is due."
+            "The user's committed bills, what each costs and how many days until each is due."
         ),
         args_model=ListArgs,
         handler=_list,

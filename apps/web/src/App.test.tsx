@@ -171,7 +171,10 @@ beforeEach(() => {
           headers: { "content-type": "application/json" },
         });
       }
-      if (url.endsWith("/v1/butler/thread")) {
+      if (url.endsWith("/v1/butler/threads") && init?.method !== "POST") {
+        return new Response(JSON.stringify([]), { headers: { "content-type": "application/json" } });
+      }
+      if (url.endsWith("/v1/butler/thread") || url.endsWith("/v1/butler/threads") || url.endsWith("/v1/butler/threads/t1")) {
         return new Response(
           JSON.stringify({ id: "t1", title: "Butler", messages: [], pending_approvals: [] }),
           { status: 200, headers: { "content-type": "application/json" } },
@@ -189,7 +192,7 @@ beforeEach(() => {
           headers: { "content-type": "application/json" },
         });
       }
-      if (url.endsWith("/v1/butler/messages")) {
+      if (url.endsWith("/v1/butler/messages") || url.endsWith("/v1/butler/threads/t1/messages")) {
         const done = {
           type: "done",
           answer: "I have written it up as a draft for you to check.",

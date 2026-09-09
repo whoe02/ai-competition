@@ -44,6 +44,29 @@ def parse(body: str) -> list[dict]:
 
 
 class TestThread:
+    async def test_separate_conversations_keep_messages_and_approvals_separate(self, butler_client):
+        first = (await butler_client.post("/v1/butler/threads")).json()
+        second = (await butler_client.post("/v1/butler/threads")).json()
+        assert first["id"] != second["id"]
+        await butler_client.post(
+            f"/v1/butler/threads/{first['id']}/messages",
+            json={"text": "I spent RM20 at the mamak"},
+        )
+        old = (await butler_client.get(f"/v1/butler/threads/{first['id']}")).json()
+        fresh = (await butler_client.get(f"/v1/butler/threads/{second['id']}")).json()
+        assert old["messages"]
+        assert old["pending_approvals"]
+        assert fresh["messages"] == []
+        assert fresh["pending_approvals"] == []
+        titles = {row["id"]: row["title"] for row in (
+            await butler_client.get("/v1/butler/threads")
+        ).json()}
+        assert titles[first["id"]] == "I spent RM20 at the mamak"
+
+    async def test_new_conversation_requires_authentication(self, client):
+        assert (await client.post("/v1/butler/threads")).status_code == 401
+        assert (await client.get("/v1/butler/threads")).status_code == 401
+
     async def test_it_requires_a_token(self, client):
         assert (await client.get("/v1/butler/thread")).status_code == 401
 

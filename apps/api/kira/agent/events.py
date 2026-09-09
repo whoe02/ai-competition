@@ -14,6 +14,7 @@ TOOL = "tool"
 EVIDENCE = "evidence"
 TOKEN = "token"
 APPROVAL = "approval"
+APP_ACTION = "app_action"
 DONE = "done"
 ERROR = "error"
 

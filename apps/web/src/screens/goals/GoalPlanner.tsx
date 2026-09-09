@@ -210,7 +210,7 @@ function GoalCard({
   const danger = detail.data?.status === "at_risk" || detail.data?.status === "needs_replan" || plan.data?.feasible === false;
 
   return (
-    <article className={`goal-card ${primary ? "primary" : "compact"}`}>
+    <article data-goal-id={goal.id} className={`goal-card ${primary ? "primary" : "compact"}`}>
       <button
         className="goal-card-delete"
         aria-label={`Delete ${goal.name}`}
@@ -232,7 +232,7 @@ function GoalCard({
         </div>
       )}
       {(detail.isError || plan.isError) && <p className="goal-card-warning">Some plan details are temporarily unavailable.</p>}
-      <button className={`btn ${primary ? "btn-brass" : "btn-line"} goal-full-button`} onClick={onView}>View plan</button>
+      <button className={`btn ${primary ? "btn-accent" : "btn-line"} goal-full-button`} onClick={onView}>View plan</button>
     </article>
   );
 }

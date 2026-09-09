@@ -35,7 +35,7 @@ async def tools(state: ButlerState, runtime: Runtime[ButlerContext]) -> dict:
 
     for call in permitted:
         spec = REGISTRY.get(call["name"])
-        if spec is None or spec.is_write:  # pragma: no cover - the guard filtered these
+        if spec is None or spec.is_write or spec.is_workflow:  # pragma: no cover
             continue
         events.emit(
             runtime, events.TOOL, tool=spec.name, module=spec.module, label=spec.human_label()
@@ -57,6 +57,8 @@ async def tools(state: ButlerState, runtime: Runtime[ButlerContext]) -> dict:
             ToolMessage(content=_json(result.value), name=spec.name, tool_call_id=call["id"])
         )
         used.append(spec.name)
+        if spec.is_ui and isinstance(result.value, dict) and result.value.get("app_action"):
+            events.emit(runtime, events.APP_ACTION, **result.value["app_action"])
         for row in result.evidence:
             pair = row.as_pair()
             if pair not in evidence:

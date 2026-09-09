@@ -7,6 +7,7 @@ import { ScanSheet } from "./ScanSheet";
 
 const READ = {
   kind: "receipt",
+  is_transaction: true,
   source: "receipt",
   merchant: "Nasi Kandar Pelita",
   amount_sen: 1890,

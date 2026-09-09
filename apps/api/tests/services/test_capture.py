@@ -35,8 +35,9 @@ class OneReceipt:
 
 
 class OneNote:
-    def __init__(self, transcript: str) -> None:
+    def __init__(self, transcript: str, *, is_transaction: bool = True) -> None:
         self.transcript = transcript
+        self.is_transaction = is_transaction
 
     def transcribe(self, audio: bytes) -> VoiceRead:
         return VoiceRead(
@@ -45,6 +46,7 @@ class OneNote:
             amount=Money(1200),
             confidence=80,
             note="",
+            is_transaction=self.is_transaction,
         )
 
 
@@ -88,3 +90,13 @@ class TestVoiceCategory:
         reading(voice=OneNote("Bought panadol at the pharmacy"))
         read = capture.transcribe(b"wav", today=TODAY, max_bytes=10_000)
         assert read.category == "health"
+
+    def test_a_spoken_question_is_kept_as_a_transcript_not_a_draft(self, reading):
+        reading(voice=OneNote("Can I afford RM60 dinner tonight?", is_transaction=False))
+        read = capture.transcribe(b"wav", today=TODAY, max_bytes=10_000)
+
+        assert read.transcript == "Can I afford RM60 dinner tonight?"
+        assert read.is_transaction is False
+        assert read.merchant is None
+        assert read.amount_sen is None
+        assert read.fields == ()

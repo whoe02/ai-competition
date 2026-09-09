@@ -16,7 +16,7 @@ from pydantic import BaseModel
 
 from kira.agent import prompt
 from kira.agent.nodes.delegate import delegate, route_after_delegate
-from kira.agent.nodes.guard import guard, route_after_tools
+from kira.agent.nodes.guard import guard, route_after_guard, route_after_tools
 from kira.agent.state import initial_state
 from kira.agent.tools import REGISTRY
 from kira.agent.tools.spec import (
@@ -224,9 +224,17 @@ class TestTheGuardBoundsTheLoop:
         state.update(extra)
         return state
 
-    async def test_reads_beside_a_specialist_are_refused_not_dropped(
+    async def test_a_read_beside_a_specialist_runs_rather_than_being_refused(
         self, session, butler, today
     ):
+        """Two things were asked for, so two things happen.
+
+        The read used to be turned away here on the grounds that the specialist
+        measures its own figures. What that actually cost was the second half of
+        every question shaped like "how are my goals doing, and where should I
+        eat" — the specialist answered the outing and the goals came back
+        refused, with nothing on screen saying so.
+        """
         state = self._state(
             ("start_goal_planning", {"action": "create"}),
             ("list_goals", {}),
@@ -234,11 +242,38 @@ class TestTheGuardBoundsTheLoop:
         update = await guard(state, self._runtime(session, butler, today))
 
         assert update["pending_workflow"]["name"] == "start_goal_planning"
+        assert update["approved_reads"] == [{"id": "c1", "name": "list_goals", "args": {}}]
+        # Nothing refused means nothing to answer with a refusal: the read's own
+        # result is what closes its call out.
+        assert update["refusals"] == []
+        assert update["messages"] == []
+
+    async def test_the_read_runs_first_and_the_handoff_follows_it(
+        self, session, butler, today
+    ):
+        """Order matters, and it is the routing that carries it.
+
+        `tools` runs the reads and then hands on to whatever is still pending,
+        so the specialist starts with the parent's lookups already done rather
+        than racing them.
+        """
+        state = self._state(
+            ("start_goal_planning", {"action": "create"}),
+            ("list_goals", {}),
+        )
+        update = await guard(state, self._runtime(session, butler, today))
+
+        assert route_after_guard(update) == "tools"
+        assert route_after_tools({**update, "tools_used": ["list_goals"]}) == "workflow"
+
+    async def test_a_specialist_alone_still_goes_straight_to_the_handoff(
+        self, session, butler, today
+    ):
+        state = self._state(("start_goal_planning", {"action": "create"}))
+        update = await guard(state, self._runtime(session, butler, today))
+
         assert update["approved_reads"] == []
-        # The dropped read used to leave its call unanswered, which was
-        # harmless only while a workflow ended the turn. It no longer does.
-        answered = {message.tool_call_id for message in update["messages"]}
-        assert answered == {"c1"}
+        assert route_after_guard(update) == "workflow"
 
     async def test_a_blown_budget_stops_the_looking(self, session, butler, today):
         state = self._state(
@@ -287,7 +322,12 @@ class TestTheTwoTurnsReadDifferentPrompts:
         # The register rules, the ringgit formatting and the "never say as an
         # AI" clause bear on nothing this turn does, and more prose on it
         # measurably pushed a live model out of calling tools at all.
-        assert "two registers" not in text
+        #
+        # Both markers are sentences only VOICE has, so the pair of them says
+        # "the voice block is not here" rather than "one phrase is missing".
+        # They are matched by the composing test below, which asserts the same
+        # two are present.
+        assert "never apologise for what you are" not in text
         assert "RM1,234.56" not in text
         assert "list_goals" in text
         assert "Balance RM10.00" in text
@@ -297,7 +337,8 @@ class TestTheTwoTurnsReadDifferentPrompts:
             context="Balance RM10.00", memory="", history="", evidence="- Balance: RM10.00"
         )
         assert "Tools available this turn" not in text
-        assert "two registers" in text
+        assert "never apologise for what you are" in text
+        assert "RM1,234.56" in text
         assert "- Balance: RM10.00" in text
         assert "Write the answer now." in text
 

@@ -21,11 +21,19 @@ class ReceiptRead:
 
 @dataclass(frozen=True, slots=True)
 class VoiceRead:
+    """A speech-to-text read, optionally with a spend proposal.
+
+    A spoken turn may be a money question just as easily as a transaction.
+    Transcription must therefore succeed even where no safe transaction can be
+    inferred; only a positive ``is_transaction`` can be offered as a draft.
+    """
+
     transcript: str
-    merchant: str
-    amount: Money
+    merchant: str | None
+    amount: Money | None
     confidence: int
     note: str
+    is_transaction: bool
 
 
 @dataclass(frozen=True, slots=True)

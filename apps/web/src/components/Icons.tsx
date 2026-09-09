@@ -1,8 +1,8 @@
 import type { ReactNode } from "react";
 
-type IconProps = { size?: number; w?: number };
+type IconProps = { size?: number; w?: number; className?: string };
 
-function Svg({ d, size = 20, w = 1.6 }: IconProps & { d: ReactNode }) {
+function Svg({ d, size = 20, w = 1.6, className }: IconProps & { d: ReactNode }) {
   return (
     <svg
       width={size}
@@ -13,6 +13,7 @@ function Svg({ d, size = 20, w = 1.6 }: IconProps & { d: ReactNode }) {
       strokeWidth={w}
       strokeLinecap="round"
       strokeLinejoin="round"
+      className={className}
       aria-hidden="true"
     >
       {d}
@@ -53,6 +54,15 @@ export const IcGear = (p: IconProps) => (
         <path d="M12 3.8v2.4m0 11.6v2.4M3.8 12h2.4m11.6 0h2.4M6.2 6.2l1.7 1.7m8.2 8.2 1.7 1.7m0-11.6-1.7 1.7m-8.2 8.2-1.7 1.7" />
       </>
     }
+  />
+);
+export const IcInbox = (p: IconProps) => (
+  <Svg
+    {...p}
+    d={<>
+      <path d="M4 13.2 6.3 5.6h11.4L20 13.2v4.4a1.2 1.2 0 0 1-1.2 1.2H5.2A1.2 1.2 0 0 1 4 17.6z" />
+      <path d="M4 13.2h4l1.2 2.2h5.6l1.2-2.2h4" />
+    </>}
   />
 );
 export const IcLock = (p: IconProps) => (

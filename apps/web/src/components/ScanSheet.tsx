@@ -35,6 +35,9 @@ export function ScanBody({ onClose, onAsk }: ScanSheetProps) {
   const read = useReadCapture("receipt");
   const draft = useCreateDraft();
   const result = read.data;
+  const canSave = Boolean(
+    result?.is_transaction && result.merchant && result.amount_sen !== null,
+  );
 
   const onFile = async (file: File | undefined) => {
     if (!file) return;
@@ -127,29 +130,31 @@ export function ScanBody({ onClose, onAsk }: ScanSheetProps) {
           </div>
           <p className="sheet-note">{result.note}</p>
           <div style={{ display: "flex", gap: 9, marginTop: 18 }}>
+            {canSave && (
+              <button
+                className="btn btn-sm btn-ghost"
+                style={{ flex: 1 }}
+                disabled={draft.isPending}
+                onClick={() =>
+                  draft.mutate(
+                    {
+                      merchant: result.merchant!,
+                      amount_sen: result.amount_sen!,
+                      occurred_on: result.occurred_on,
+                      category: result.category,
+                      source: result.source,
+                      confidence: result.confidence,
+                      note: result.note,
+                    },
+                    { onSuccess: onClose },
+                  )
+                }
+              >
+                Save as draft
+              </button>
+            )}
             <button
-              className="btn btn-sm btn-ghost"
-              style={{ flex: 1 }}
-              disabled={draft.isPending}
-              onClick={() =>
-                draft.mutate(
-                  {
-                    merchant: result.merchant,
-                    amount_sen: result.amount_sen,
-                    occurred_on: result.occurred_on,
-                    category: result.category,
-                    source: result.source,
-                    confidence: result.confidence,
-                    note: result.note,
-                  },
-                  { onSuccess: onClose },
-                )
-              }
-            >
-              Save as draft
-            </button>
-            <button
-              className="btn btn-brass btn-sm"
+              className="btn btn-accent btn-sm"
               style={{ flex: 1 }}
               onClick={() =>
                 onAsk("What does this receipt do to my day?", {

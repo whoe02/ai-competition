@@ -92,6 +92,28 @@ async def test_goal_creation_still_opens_review_when_online_model_declines_tools
     assert result.approval["after"]["contribution_ratio_bp"] is not None
 
 
+async def test_long_term_goal_reaches_the_same_approval_boundary_as_a_ledger_write(
+    session, butler, today
+):
+    user, thread = butler
+
+    result = await run_turn(
+        session,
+        user,
+        thread,
+        text="Set a 1 million savings goal as a long-term goal.",
+        today=today,
+        model_factory=offline_factory,
+    )
+
+    assert result.approval is not None
+    assert result.approval["tool"] == "apply_goal_plan_change"
+    assert result.approval["after"]["target_amount_sen"] == 100_000_000
+    assert result.approval["after"]["current_saved_sen"] == 0
+    assert result.approval["after"]["target_date"] == today.replace(year=today.year + 5).isoformat()
+    assert "start_goal_planning" not in result.answer
+
+
 async def test_part_time_request_in_butler_asks_for_missing_availability(
     session, butler, today
 ):

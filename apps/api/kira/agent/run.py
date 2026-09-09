@@ -76,9 +76,7 @@ def _config(graph_thread: str) -> dict[str, Any]:
 
 
 async def _collect(graph, payload, config, context) -> AsyncIterator[dict[str, Any]]:
-    async for event in graph.astream(
-        payload, config=config, context=context, stream_mode="custom"
-    ):
+    async for event in graph.astream(payload, config=config, context=context, stream_mode="custom"):
         yield event
 
 
@@ -86,11 +84,7 @@ async def _result(graph, config) -> TurnResult:
     state = await graph.aget_state(config)
     values = state.values or {}
     interrupts = getattr(state, "interrupts", ()) or ()
-    approval = (
-        dict(interrupts[0].value)
-        if interrupts
-        else values.get("pending_approval")
-    )
+    approval = dict(interrupts[0].value) if interrupts else values.get("pending_approval")
     return TurnResult(
         answer=values.get("answer") or (PROPOSAL_LEAD if approval else ""),
         evidence=list(values.get("evidence") or []),
@@ -208,6 +202,17 @@ async def stream_resume(
         "answer": result.answer,
         "evidence": result.evidence,
         "tools_used": result.tools_used,
-        "approval": None,
+        # Not hardcoded to None any more, and it cannot be. A resume used to
+        # run to the end of the turn no matter what, so there was never a card
+        # standing when it finished. Now an applied write goes back to the
+        # model, and the next thing the model proposes may be another write —
+        # a second card, raised on this very stream. `done` is what the client
+        # reads as "a proposal is still standing", so reporting None here would
+        # emit the card mid-stream and then wipe it one event later.
+        #
+        # It stays None on the ordinary path: a run that reached END has no
+        # interrupt, and `_result` only finds one when the graph is genuinely
+        # parked on a fresh proposal.
+        "approval": result.approval,
         "applied": result.applied,
     }

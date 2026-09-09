@@ -26,6 +26,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+capture = [
+  "Pillow>=11.0",
+  "paddlepaddle>=3.0",
+  "paddleocr>=3.0",
+  "faster-whisper>=1.1",
+]
 dev = [
   "pytest>=8.3",
   "pytest-asyncio>=0.24",

@@ -8,6 +8,7 @@ whole of the "controls all modules, present and future" requirement.
 from __future__ import annotations
 
 from kira.agent.tools import (
+    briefing,
     capture,
     chat,
     commitments,
@@ -20,6 +21,8 @@ from kira.agent.tools import (
     income,
     ledger,
     memory,
+    resource,
+    ui,
 )
 from kira.agent.tools.spec import (
     AgentContext,
@@ -36,16 +39,19 @@ from kira.agent.tools.spec import (
 MODULES = (
     chat,
     dashboard,
+    briefing,
     ledger,
     income,
     goals,
     goal_workflow,
     commitments,
     memory,
+    resource,
     capture,
     foresight,
     hindsight,
     day_plan,
+    ui,
 )
 
 

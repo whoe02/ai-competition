@@ -364,6 +364,21 @@ beforeEach(() => {
 });
 
 describe("DayPlan", () => {
+  it("shows a geographic map whose pins open turn-by-turn navigation", async () => {
+    renderDayPlan();
+
+    await screen.findByText("Nasi Kandar Pelita");
+    const map = screen.getByRole("region", { name: "Nearby places map" });
+    const frame = within(map).getByTitle("OpenStreetMap of nearby places");
+    expect(frame).toHaveAttribute("src", expect.stringContaining("openstreetmap.org/export/embed"));
+
+    const user = userEvent.setup();
+    await user.click(within(map).getByRole("button", { name: "Map pin 1" }));
+    const sheet = screen.getByRole("dialog", { name: "Nasi Kandar Pelita" });
+    const navigate = within(sheet).getByRole("link", { name: /Navigate to Nasi Kandar Pelita/i });
+    expect(navigate).toHaveAttribute("href", expect.stringContaining("travelmode=walking"));
+  });
+
   it("lists ranked places with their cost and band", async () => {
     renderDayPlan();
 
@@ -1268,15 +1283,15 @@ describe("DayPlan · finding the shop again", () => {
     expect(within(sheet).getByText("Ampang, Kuala Lumpur")).toBeInTheDocument();
   });
 
-  it("points Maps at the coordinates rather than searching for the name", async () => {
+  it("starts navigation to the coordinates rather than searching for the name", async () => {
     renderDayPlan();
     await screen.findByText("Nasi Kandar Pelita");
 
     const { sheet } = await openSheet("Nasi Kandar Pelita");
-    const link = within(sheet).getByRole("link", { name: /Open Nasi Kandar Pelita in Google Maps/ });
+    const link = within(sheet).getByRole("link", { name: /Navigate to Nasi Kandar Pelita in Google Maps/ });
     expect(link).toHaveAttribute(
       "href",
-      "https://www.google.com/maps/search/?api=1&query=3.1591%2C101.7132",
+      "https://www.google.com/maps/dir/?api=1&destination=3.1591%2C101.7132&travelmode=walking",
     );
     expect(link).toHaveAttribute("target", "_blank");
     expect(link).toHaveAttribute("rel", "noopener");
@@ -1303,8 +1318,8 @@ describe("DayPlan · finding the shop again", () => {
     }
 
     expect(hrefs).toEqual([
-      "https://www.google.com/maps/search/?api=1&query=3.1591%2C101.7132",
-      "https://www.google.com/maps/search/?api=1&query=3.1102%2C101.6784",
+      "https://www.google.com/maps/dir/?api=1&destination=3.1591%2C101.7132&travelmode=walking",
+      "https://www.google.com/maps/dir/?api=1&destination=3.1102%2C101.6784&travelmode=walking",
     ]);
   });
 

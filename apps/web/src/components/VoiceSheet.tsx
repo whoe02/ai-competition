@@ -40,6 +40,9 @@ export function VoiceBody({ onClose, onAsk }: VoiceSheetProps) {
   const read = useReadCapture("voice");
   const draft = useCreateDraft();
   const result = read.data;
+  const canSave = Boolean(
+    result?.is_transaction && result.merchant && result.amount_sen !== null,
+  );
 
   useEffect(() => () => stopTracks(recorder.current), []);
 
@@ -155,50 +158,54 @@ export function VoiceBody({ onClose, onAsk }: VoiceSheetProps) {
           <p className="sheet-note">
             I heard it at {result.confidence}% confidence. {result.note}
           </p>
-          <div style={{ marginTop: 6 }}>
-            {result.fields.map((field) => (
-              <div className="field" key={field.label}>
-                <span className="field-l">{field.label}</span>
-                <span className="field-v">{field.value}</span>
-                <span className="field-c">
-                  <i style={{ width: `${field.confidence}%` }} />
-                  <span>{field.confidence}%</span>
-                </span>
-              </div>
-            ))}
-          </div>
+          {canSave && (
+            <div style={{ marginTop: 6 }}>
+              {result.fields.map((field) => (
+                <div className="field" key={field.label}>
+                  <span className="field-l">{field.label}</span>
+                  <span className="field-v">{field.value}</span>
+                  <span className="field-c">
+                    <i style={{ width: `${field.confidence}%` }} />
+                    <span>{field.confidence}%</span>
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </>
       )}
 
       <div style={{ display: "flex", gap: 9, marginTop: 20 }}>
         {result ? (
           <>
+            {canSave && (
+              <button
+                className="btn btn-sm btn-ghost"
+                disabled={draft.isPending}
+                onClick={() =>
+                  draft.mutate(
+                    {
+                      merchant: result.merchant!,
+                      amount_sen: result.amount_sen!,
+                      occurred_on: result.occurred_on,
+                      category: result.category,
+                      source: result.source,
+                      confidence: result.confidence,
+                      note: result.note,
+                    },
+                    { onSuccess: onClose },
+                  )
+                }
+              >
+                Save as draft
+              </button>
+            )}
             <button
-              className="btn btn-sm btn-ghost"
-              disabled={draft.isPending}
-              onClick={() =>
-                draft.mutate(
-                  {
-                    merchant: result.merchant,
-                    amount_sen: result.amount_sen,
-                    occurred_on: result.occurred_on,
-                    category: result.category,
-                    source: result.source,
-                    confidence: result.confidence,
-                    note: result.note,
-                  },
-                  { onSuccess: onClose },
-                )
-              }
-            >
-              Save as draft
-            </button>
-            <button
-              className="btn btn-brass btn-sm"
+              className="btn btn-accent btn-sm"
               style={{ flex: 1 }}
               onClick={() => onAsk(result.transcript, result)}
             >
-              Ask Kira <IcArrow size={14} />
+              {canSave ? "Ask Kira" : "Ask Kira about this"} <IcArrow size={14} />
             </button>
           </>
         ) : stage === "listening" ? (
@@ -206,7 +213,7 @@ export function VoiceBody({ onClose, onAsk }: VoiceSheetProps) {
             <button className="btn btn-sm btn-ghost" style={{ flex: 1 }} onClick={onClose}>
               Cancel
             </button>
-            <button className="btn btn-brass btn-sm" style={{ flex: 1 }} onClick={stop}>
+            <button className="btn btn-accent btn-sm" style={{ flex: 1 }} onClick={stop}>
               <IcStop size={13} /> Stop
             </button>
           </>
@@ -220,7 +227,7 @@ export function VoiceBody({ onClose, onAsk }: VoiceSheetProps) {
             >
               Use a sample
             </button>
-            <button className="btn btn-brass btn-sm" style={{ flex: 1 }} onClick={() => void start()}>
+            <button className="btn btn-accent btn-sm" style={{ flex: 1 }} onClick={() => void start()}>
               <IcMic size={14} /> Record
             </button>
           </>

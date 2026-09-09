@@ -62,19 +62,15 @@ async def refusal_for(
     return None
 
 
-async def _commitment(
-    session: AsyncSession, user: User, commitment_id: Any
-) -> Commitment | None:
+async def _commitment(session: AsyncSession, user: User, commitment_id: Any) -> Commitment | None:
     try:
-        identifier = commitment_id if isinstance(commitment_id, uuid.UUID) else uuid.UUID(
-            str(commitment_id)
+        identifier = (
+            commitment_id if isinstance(commitment_id, uuid.UUID) else uuid.UUID(str(commitment_id))
         )
     except (ValueError, AttributeError, TypeError):
         return None
     return (
         await session.execute(
-            select(Commitment).where(
-                Commitment.id == identifier, Commitment.user_id == user.id
-            )
+            select(Commitment).where(Commitment.id == identifier, Commitment.user_id == user.id)
         )
     ).scalar_one_or_none()

@@ -38,12 +38,8 @@ _KINDS = ", ".join(day_plan_service.known_kinds())
 
 
 class PlanArgs(BaseModel):
-    lat: float = Field(
-        default=_KLCC_LAT, description="Latitude to search from. Defaults to KLCC."
-    )
-    lng: float = Field(
-        default=_KLCC_LNG, description="Longitude to search from. Defaults to KLCC."
-    )
+    lat: float = Field(default=_KLCC_LAT, description="Latitude to search from. Defaults to KLCC.")
+    lng: float = Field(default=_KLCC_LNG, description="Longitude to search from. Defaults to KLCC.")
     mode: Literal["walk", "transit", "ride"] = Field(
         default="walk", description="How the user would travel there."
     )
@@ -114,12 +110,8 @@ class AddPlaceArgs(BaseModel):
             "total_sen from the plan, not the meal on its own."
         ),
     )
-    lat: float = Field(
-        default=_KLCC_LAT, description="The latitude the plan was built from."
-    )
-    lng: float = Field(
-        default=_KLCC_LNG, description="The longitude the plan was built from."
-    )
+    lat: float = Field(default=_KLCC_LAT, description="The latitude the plan was built from.")
+    lng: float = Field(default=_KLCC_LNG, description="The longitude the plan was built from.")
 
 
 async def run_search(

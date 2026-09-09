@@ -42,9 +42,7 @@ RULES: tuple[Rule, ...] = (
     Rule(
         "preference",
         "how to answer",
-        re.compile(
-            r"\bi (?:prefer|like|want|hate|don'?t like)\s+(?P<body>[^.!?]{3,200})", re.I
-        ),
+        re.compile(r"\bi (?:prefer|like|want|hate|don'?t like)\s+(?P<body>[^.!?]{3,200})", re.I),
         85,
     ),
     Rule(

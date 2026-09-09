@@ -256,7 +256,7 @@ export function ManualBody({
           Cancel
         </button>
         <button
-          className="btn btn-brass btn-sm"
+          className="btn btn-accent btn-sm"
           style={{ flex: 1 }}
           disabled={!ready || draft.isPending}
           onClick={save}

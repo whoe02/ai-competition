@@ -28,6 +28,7 @@ from kira.services.auth import (
     verify_password,
 )
 from kira.services.clock import today_for
+from kira.services.profile import update_profile
 
 router = APIRouter(prefix="/v1/auth", tags=["auth"])
 
@@ -126,11 +127,6 @@ async def update_financial_profile(
     body: FinancialProfileUpdateRequest, user: CurrentUser, session: SessionDep
 ) -> UserResponse:
     """Update the recurring income forecast; it never creates cash by itself."""
-    if body.monthly_income_sen is not None:
-        user.monthly_income = Money(body.monthly_income_sen, user.currency)
-    if body.next_payday is not None:
-        user.next_payday = body.next_payday
-    if body.job_title is not None:
-        user.job_title = body.job_title.strip()
+    await update_profile(session, user, **body.model_dump(exclude_none=True))
     await session.commit()
     return await me(user)

@@ -75,9 +75,7 @@ async def delegate(state: ButlerState, runtime: Runtime[ButlerContext]) -> dict:
         }
 
     context = runtime.context
-    events.emit(
-        runtime, events.TOOL, tool=spec.name, module=spec.module, label=spec.human_label()
-    )
+    events.emit(runtime, events.TOOL, tool=spec.name, module=spec.module, label=spec.human_label())
 
     agent_context = AgentContext(
         tools=await tool_context(runtime, state.get("attachment")),

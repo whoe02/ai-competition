@@ -67,10 +67,7 @@ class Relevance(BaseModel):
 
     relevant: list[RelevantPlace] = Field(
         default_factory=list,
-        description=(
-            "Every place that answers the request, best first. Empty if none of "
-            "them do."
-        ),
+        description=("Every place that answers the request, best first. Empty if none of them do."),
     )
 
 
@@ -161,9 +158,7 @@ def clear_cache() -> None:
     _cache.clear()
 
 
-async def rank(
-    request: str, places: Sequence[EvaluatedPlace]
-) -> tuple[Judgement, ...] | None:
+async def rank(request: str, places: Sequence[EvaluatedPlace]) -> tuple[Judgement, ...] | None:
     """Which of these places answer that request, or None if nothing could say.
 
     A ``PlaceRanker``. Every return of None means the caller should fall back to

@@ -15,6 +15,7 @@ type EntrySheetProps = {
   onAsk: (text: string, attachment?: EntryAttachment) => void;
   /** The category vocabulary, when it has been fetched. The manual form needs it. */
   categories?: Category[];
+  initialText?: string;
 };
 
 type Mode = "type" | "say" | "show";
@@ -45,7 +46,7 @@ const ROUTES: { id: Route; label: string; hint: string }[] = [
  *
  * Either way it becomes a draft they confirm. Neither writes to the ledger.
  */
-export function EntrySheet({ onClose, onAsk, categories }: EntrySheetProps) {
+export function EntrySheet({ onClose, onAsk, categories, initialText = "" }: EntrySheetProps) {
   const [route, setRoute] = useState<Route>("ask");
   const [mode, setMode] = useState<Mode>("type");
 
@@ -89,7 +90,7 @@ export function EntrySheet({ onClose, onAsk, categories }: EntrySheetProps) {
             ))}
           </div>
 
-          {mode === "type" && <TypeBody onAsk={onAsk} onClose={onClose} />}
+          {mode === "type" && <TypeBody onAsk={onAsk} onClose={onClose} initialText={initialText} />}
           {mode === "say" && <VoiceBody onClose={onClose} onAsk={onAsk} />}
           {mode === "show" && <ScanBody onClose={onClose} onAsk={onAsk} />}
         </>
@@ -108,11 +109,13 @@ export function EntrySheet({ onClose, onAsk, categories }: EntrySheetProps) {
 function TypeBody({
   onAsk,
   onClose,
+  initialText,
 }: {
   onAsk: (text: string) => void;
   onClose: () => void;
+  initialText: string;
 }) {
-  const [text, setText] = useState("");
+  const [text, setText] = useState(initialText);
 
   const send = () => {
     const trimmed = text.trim();
@@ -159,7 +162,7 @@ function TypeBody({
         <button className="btn btn-sm btn-ghost" style={{ flex: 1 }} onClick={onClose}>
           Cancel
         </button>
-        <button className="btn btn-brass btn-sm" style={{ flex: 1 }} onClick={send}>
+        <button className="btn btn-accent btn-sm" style={{ flex: 1 }} onClick={send}>
           Tell Kira <IcArrow size={14} />
         </button>
       </div>

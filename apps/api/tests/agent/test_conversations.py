@@ -78,6 +78,17 @@ async def compose_prompt(session, butler, today, text) -> str:
     return COMPOSED[-1]
 
 
+async def test_conversational_reply_retains_the_previous_message(session, butler, today):
+    user, thread = butler
+    await butler_thread.append(
+        session, user, thread, role=ROLE_USER,
+        content="Please call me Sam and keep explanations simple.",
+    )
+    composed = await compose_prompt(session, butler, today, "Thanks")
+    assert "Please call me Sam and keep explanations simple." in composed
+    assert "Balance RM" not in composed
+
+
 async def say(session, butler, today, text, **kwargs):
     """One turn with the conversation on the thread, the way the API runs it.
 
@@ -236,6 +247,7 @@ class TestAttachments:
 
     RECEIPT = {
         "kind": "receipt",
+        "is_transaction": True,
         "merchant": "Nasi Kandar Pelita",
         "amount_sen": 1890,
         "occurred_on": "2026-09-03",
@@ -270,6 +282,28 @@ class TestAttachments:
             attachment=self.RECEIPT,
         )
         assert dict(result.evidence)["Left after it"] == "RM34.07"
+
+    async def test_a_spoken_question_routes_by_its_transcript(self, session, butler, today):
+        voice_question = {
+            "kind": "voice",
+            "is_transaction": False,
+            "merchant": None,
+            "amount_sen": None,
+            "transcript": "Can I afford RM60 dinner tonight?",
+            "confidence": 92,
+            "fields": [],
+        }
+        result = await ask(
+            session,
+            butler,
+            today,
+            voice_question["transcript"],
+            attachment=voice_question,
+        )
+
+        assert "calculate_safe_to_spend" in result.tools_used
+        assert "inspect_attachment" not in result.tools_used
+        assert dict(result.evidence)["Safe to spend today"] == "RM52.97"
 
     async def test_without_an_attachment_it_says_so(self, session, butler, today):
         result = await ask(session, butler, today, "What did that receipt say?")

@@ -423,9 +423,7 @@ def evaluate_place(
     # calling round() would round halves to even, which money.py forbids outright
     # -- at 150 m of a ride that is 528 sen where the fare is 529.
     metres = round(km * 1000)
-    travel_sen = (
-        0 if km < 0.12 else cost.base_sen + round_half_up(cost.per_km_sen * metres, 1000)
-    )
+    travel_sen = 0 if km < 0.12 else cost.base_sen + round_half_up(cost.per_km_sen * metres, 1000)
     minutes = round(cost.wait_min + km * cost.min_per_km) + 6
     total_sen = place.estimate.sen + travel_sen
     share = total_sen / room_sen if room_sen > 0 else None
@@ -1110,9 +1108,7 @@ async def _nearest_beyond_radius(
     # asked for has nothing left to recommend it: the extra kilometres were
     # spent to find a better answer, not a vaguer one.
     affordable = [
-        place
-        for place in matched
-        if place.total_sen <= cap_sen and place.match_strength != "weak"
+        place for place in matched if place.total_sen <= cap_sen and place.match_strength != "weak"
     ]
     nearest = sorted(affordable, key=lambda place: (place.km, place.total_sen, place.id))
     # The band is left exactly as it was evaluated, which is where this parts
@@ -1266,6 +1262,18 @@ async def find_places(
     # says. Where the router said nothing, ``km`` is the straight line and this
     # line has already been passed.
     nearby = [place for place in priced if place.km <= radius_km]
+    # The public OSRM endpoint exposes driving geometry only. Around KLCC its
+    # one-way roads can turn every sub-2km walking candidate into a 3–4km car
+    # route, producing an empty walking plan even though venues are genuinely
+    # nearby. If that incompatible geometry eliminates the entire walking set,
+    # degrade to straight-line estimates (labelled as such) rather than return
+    # a false “nothing nearby”.
+    if mode == "walk" and len(in_radius) >= 3 and not nearby:
+        priced = [
+            evaluate_place(place, lat, lng, mode, room_sen, road_metres=None)
+            for place in candidates
+        ]
+        nearby = [place for place in priced if place.km <= radius_km]
     evaluated = [place for place in nearby if not halal_only or place.halal]
 
     # The landscape is built here, before the kind filter and before the
@@ -1307,9 +1315,7 @@ async def find_places(
     # of. Everything else below still works over the whole of what is in range.
     shown_to_the_model = evaluated[:RANKED_PLACES]
     judgements = (
-        None
-        if rank is None or not request.strip()
-        else await rank(request, shown_to_the_model)
+        None if rank is None or not request.strip() else await rank(request, shown_to_the_model)
     )
 
     if judgements is None:

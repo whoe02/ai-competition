@@ -9,13 +9,14 @@ from __future__ import annotations
 import uuid
 from datetime import date
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from kira.agent.tools.spec import EvidenceRow, ToolContext, ToolResult, ToolSpec, money_str
 from kira.categories import UNCATEGORISED, slugs
 from kira.db.models import INCOME_OTHER, INCOME_SALARY, SOURCE_MANUAL, TXN_INCOME
 from kira.money import Money
 from kira.services import transactions as ledger
+from kira.services.profile import update_profile
 
 MODULE = "ledger"
 
@@ -34,6 +35,42 @@ class TransactionArgs(BaseModel):
     transaction_id: uuid.UUID = Field(description="The transaction's id.")
 
 
+class CorrectDraftArgs(TransactionArgs):
+    merchant: str | None = Field(default=None, min_length=1, max_length=120)
+    amount_sen: int | None = Field(default=None, gt=0)
+    category: str | None = None
+    note: str | None = Field(default=None, max_length=280)
+
+    @model_validator(mode="after")
+    def valid_correction(self):
+        keys = ("merchant", "amount_sen", "category", "note")
+        if all(getattr(self, key) is None for key in keys):
+            raise ValueError("Provide at least one correction")
+        if self.category is not None and self.category not in slugs():
+            raise ValueError("Choose a known category")
+        if self.merchant is not None and not self.merchant.strip():
+            raise ValueError("Merchant cannot be blank")
+        return self
+
+
+async def _correct(ctx: ToolContext, args: CorrectDraftArgs) -> ToolResult:
+    view = await ledger.correct_draft(
+        ctx.session,
+        ctx.user,
+        args.transaction_id,
+        **args.model_dump(exclude={"transaction_id"}, exclude_none=True),
+    )
+    return _settled(view, ctx.currency)
+
+
+def _summarise_correction(args: CorrectDraftArgs) -> str:
+    fields = args.model_dump(exclude={"transaction_id"}, exclude_none=True)
+    if "amount_sen" in fields:
+        fields["total"] = f"RM{Money(fields.pop('amount_sen')).ringgit_str()}"
+    changes = ", ".join(f"{key}: {value}" for key, value in fields.items())
+    return f"Correct draft {args.transaction_id} — {changes}. It remains a draft."
+
+
 class AddTransactionArgs(BaseModel):
     merchant: str = Field(min_length=1, max_length=120, description="Who was paid.")
     amount_sen: int = Field(gt=0, description="The amount in sen (RM1 is 100 sen).")
@@ -47,18 +84,15 @@ class AddTransactionArgs(BaseModel):
         if value not in slugs():
             raise ValueError(f"category must be one of: {', '.join(slugs())}")
         return value
+
     note: str = Field(default="", max_length=280, description="Anything worth recording.")
 
 
 class AddIncomeArgs(BaseModel):
-    source_name: str = Field(
-        min_length=1, max_length=120, description="Who or what paid the user."
-    )
+    source_name: str = Field(min_length=1, max_length=120, description="Who or what paid the user.")
     amount_sen: int = Field(gt=0, description="The received amount in integer sen.")
     occurred_on: date = Field(description="The day the income arrived, as YYYY-MM-DD.")
-    income_type: str = Field(
-        default=INCOME_OTHER, description="Either salary or other."
-    )
+    income_type: str = Field(default=INCOME_OTHER, description="Either salary or other.")
     note: str = Field(default="", max_length=280)
 
     @field_validator("income_type")
@@ -128,9 +162,7 @@ async def _list_activity(ctx: ToolContext, args: ActivityArgs) -> ToolResult:
     }
     currency = ctx.currency
     evidence = [
-        EvidenceRow(
-            "Spent this cycle", money_str(Money(activity.spent_this_cycle_sen, currency))
-        ),
+        EvidenceRow("Spent this cycle", money_str(Money(activity.spent_this_cycle_sen, currency))),
         EvidenceRow("Drafts waiting", str(len(activity.drafts))),
     ]
     if activity.drafts:
@@ -224,13 +256,13 @@ async def _add_income(ctx: ToolContext, args: AddIncomeArgs) -> ToolResult:
     )
 
 
-async def _update_income_profile(
-    ctx: ToolContext, args: UpdateIncomeProfileArgs
-) -> ToolResult:
-    ctx.user.monthly_income = Money(args.monthly_income_sen, ctx.currency)
-    if args.next_payday is not None:
-        ctx.user.next_payday = args.next_payday
-    await ctx.session.flush()
+async def _update_income_profile(ctx: ToolContext, args: UpdateIncomeProfileArgs) -> ToolResult:
+    await update_profile(
+        ctx.session,
+        ctx.user,
+        monthly_income_sen=args.monthly_income_sen,
+        next_payday=args.next_payday,
+    )
     return ToolResult(
         {
             "monthly_income_sen": ctx.user.monthly_income.sen,
@@ -267,12 +299,25 @@ def _summarise_income(args: AddIncomeArgs) -> str:
 def _summarise_income_profile(args: UpdateIncomeProfileArgs) -> str:
     payday = f" and next payday {args.next_payday.isoformat()}" if args.next_payday else ""
     return (
-        f"Set recurring monthly income to RM{Money(args.monthly_income_sen).ringgit_str()}"
-        f"{payday}."
+        f"Set recurring monthly income to RM{Money(args.monthly_income_sen).ringgit_str()}{payday}."
     )
 
 
 SPECS = (
+    ToolSpec(
+        name="correct_draft",
+        module=MODULE,
+        kind="write",
+        label="Correcting a draft",
+        description=(
+            "Correct a waiting draft's merchant, amount, category or note. First use "
+            "list_activity to resolve its ID. Only pass fields the user wants changed. "
+            "Confirmed entries must first be returned to drafts with unconfirm_transaction."
+        ),
+        args_model=CorrectDraftArgs,
+        handler=_correct,
+        summarise=_summarise_correction,
+    ),
     ToolSpec(
         name="list_activity",
         module=MODULE,

@@ -29,6 +29,25 @@ export type ApprovalView = {
   before?: GoalPlanPreview | null;
   after?: GoalPlanPreview | null;
   basePlanVersion?: number;
+  changes?: ChangeSetLine[];
+};
+
+export type ChangeSetLine = {
+  id: string;
+  tool: string;
+  summary: string;
+  args: Record<string, unknown>;
+  enabled: boolean;
+};
+
+export type AppAction = {
+  action: "navigate" | "open_sheet" | "focus_goal" | "set_plan_view";
+  tab?: "today" | "activity" | "butler" | "plan" | "more";
+  category?: string;
+  sheet?: "entry";
+  prefill?: Record<string, unknown>;
+  goal_id?: string;
+  plan_view?: "daily" | "goals" | "foresight";
 };
 
 export type ButlerEvent =
@@ -37,6 +56,7 @@ export type ButlerEvent =
   | { type: "tool"; tool: string; module: string; label: string }
   | { type: "evidence"; rows: EvidenceRow[] }
   | { type: "token"; text: string }
+  | ({ type: "app_action" } & AppAction)
   | {
       type: "approval";
       approval_id: string;
@@ -47,6 +67,7 @@ export type ButlerEvent =
       before?: GoalPlanPreview | null;
       after?: GoalPlanPreview | null;
       base_plan_version?: number;
+      changes?: ChangeSetLine[];
     }
   | {
       type: "done";
@@ -96,8 +117,8 @@ export async function* readTurn(
   }
 }
 
-export const ask = (text: string, attachment?: unknown) =>
-  readTurn("/v1/butler/messages", { text, attachment: attachment ?? null });
+export const ask = (text: string, attachment?: unknown, threadId?: string) =>
+  readTurn(threadId ? `/v1/butler/threads/${threadId}/messages` : "/v1/butler/messages", { text, attachment: attachment ?? null });
 
 export const decide = (
   approval: Pick<ButlerApproval, "id">,

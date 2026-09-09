@@ -15,6 +15,7 @@ from calendar import monthrange
 from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass
 from datetime import date
+from decimal import Decimal
 from typing import Any, ClassVar
 
 from langchain_core.callbacks import (
@@ -60,14 +61,22 @@ _ONES = (
     "zero one two three four five six seven eight nine ten eleven twelve thirteen "
     "fourteen fifteen sixteen seventeen eighteen nineteen"
 ).split()
-_TENS = {"twenty": 20, "thirty": 30, "forty": 40, "fifty": 50,
-         "sixty": 60, "seventy": 70, "eighty": 80, "ninety": 90}
+_TENS = {
+    "twenty": 20,
+    "thirty": 30,
+    "forty": 40,
+    "fifty": 50,
+    "sixty": 60,
+    "seventy": 70,
+    "eighty": 80,
+    "ninety": 90,
+}
 _NUMBER_WORDS = {word: value for value, word in enumerate(_ONES)} | _TENS
 _WORD = re.compile(r"[a-z]+", re.I)
 
 
 def _spoken_sen(text: str) -> int | None:
-    """"twelve fifty" is RM12.50 — the way an amount arrives when it is spoken.
+    """ "twelve fifty" is RM12.50 — the way an amount arrives when it is spoken.
 
     Speech gives words, not digits, so the offline reader has to hear them. Two
     numbers read as ringgit and sen; one reads as whole ringgit.
@@ -95,6 +104,8 @@ def _spoken_sen(text: str) -> int | None:
     if len(numbers) >= 2 and numbers[1] < 100:
         return numbers[0] * 100 + numbers[1]
     return numbers[0] * 100
+
+
 # A comma with three digits behind it is a thousands separator and belongs to
 # the whole part; a comma with one or two is the decimal point half the world
 # writes. Told apart by what follows rather than assumed, because this app
@@ -105,6 +116,11 @@ _GROUPING = re.compile(r",(?=\d{3})")
 
 
 def _amount_sen(text: str) -> int | None:
+    # Scale first: `_AMOUNT` matches the "RM1" of "RM1 million" quite happily
+    # and would return RM1.00 without ever seeing the word that mattered.
+    scaled = _scaled_sen(text)
+    if scaled is not None:
+        return scaled
     match = _AMOUNT.search(text)
     if match:
         return _matched_amount_sen(match)
@@ -124,8 +140,63 @@ def _matched_amount_sen(match: re.Match[str]) -> int:
     return int(whole) * 100 + int((minor + "00")[:2] or 0)
 
 
+# "1 million" is not RM1, and it was. `_AMOUNT` reads the digits and stops, so
+# a savings goal of a million ringgit entered the goal graph as RM1.00; the
+# spoken reader was no better, hearing "one million" as the word "one" and
+# dropping the scale on the floor. Both Malay forms are here because both are
+# what a KL user actually types.
+_SCALE = {
+    "k": 1_000,
+    "thousand": 1_000,
+    "ribu": 1_000,
+    "m": 1_000_000,
+    "mil": 1_000_000,
+    "million": 1_000_000,
+    "juta": 1_000_000,
+    "b": 1_000_000_000,
+    "billion": 1_000_000_000,
+}
+
+# A digit run or a number word, then the scale. The word alternation is built
+# from the same table the spoken reader uses, so "one million" and "1 million"
+# cannot drift apart.
+_SCALED = re.compile(
+    r"(?:rm|myr)?\s*(\d{1,4}(?:,\d{3})*(?:\.\d{1,3})?|"
+    + "|".join(sorted(_NUMBER_WORDS, key=len, reverse=True))
+    + r")\s*(k|m|mil|million|thousand|juta|ribu|b|billion)\b",
+    re.I,
+)
+
+
+def _scaled_amount_sen(match: re.Match[str]) -> int:
+    raw = _GROUPING.sub("", match.group(1))
+    whole = _NUMBER_WORDS.get(raw.casefold())
+    amount = Decimal(whole) if whole is not None else Decimal(raw)
+    return int(amount * _SCALE[match.group(2).casefold()] * 100)
+
+
+def _scaled_sen(text: str) -> int | None:
+    match = _SCALED.search(text)
+    return _scaled_amount_sen(match) if match else None
+
+
 def _amounts_sen(text: str) -> list[int]:
-    return [_matched_amount_sen(match) for match in _AMOUNT.finditer(text)]
+    """Every amount in the sentence, scaled forms included, in the order written.
+
+    Scaled matches are found first and their spans are then excluded from the
+    plain pass, or "RM1 million" would come back as both RM1,000,000 and RM1
+    and a caller taking the first would get whichever the regex reached sooner.
+    """
+    found: list[tuple[int, int]] = []
+    covered: list[tuple[int, int]] = []
+    for match in _SCALED.finditer(text):
+        found.append((match.start(), _scaled_amount_sen(match)))
+        covered.append((match.start(), match.end()))
+    for match in _AMOUNT.finditer(text):
+        if any(start <= match.start() < end for start, end in covered):
+            continue
+        found.append((match.start(), _matched_amount_sen(match)))
+    return [amount for _, amount in sorted(found)]
 
 
 # ── the offline model ─────────────────────────────────────────────────────────
@@ -206,9 +277,7 @@ _CRAVING = (
         # food: "I want to eat fried chicken" puts three of them there. Bounded,
         # so the trigger still has to land on a real kind word rather than
         # wandering down the sentence looking for one.
-        r"(?:\w+\s+){0,3}(?:"
-        + "|".join(re.escape(kind_key(kind)) for _, kind in _KINDS)
-        + r")s?\b"
+        r"(?:\w+\s+){0,3}(?:" + "|".join(re.escape(kind_key(kind)) for _, kind in _KINDS) + r")s?\b"
     )
     if _KINDS
     # An empty alternation matches the empty string, which would read "I want"
@@ -616,13 +685,18 @@ def _compose_attachment(messages: Sequence[BaseMessage], text: str) -> str:
             "I did not get the attachment.\nTry the scan or the microphone again and I "
             "will read it."
         )
+    if not read.get("is_transaction", True):
+        return (
+            "I heard your voice note, but not a transaction to save.\n"
+            "I will treat the transcript as your question rather than guessing a ledger entry."
+        )
     head = (
         f"{_rm(read.get('amount_sen'))} at {read.get('merchant', 'that merchant')} — "
         f"that leaves {_rm(afford.get('remaining_sen'))} for today."
     )
     sub = (
-        f"I read it at {read.get('confidence', 0)}% confidence and it is sitting as a draft. "
-        "Nothing counts against your day until you confirm it."
+        f"I read it at {read.get('confidence', 0)}% confidence. It is still only a proposal, "
+        "so nothing counts against your day unless you save and confirm it."
     )
     return f"{head}\n{sub}"
 
@@ -808,8 +882,7 @@ def _compose_income_split(messages: Sequence[BaseMessage], text: str) -> str:
             "I have not earmarked anything."
         )
     details = ", ".join(
-        f"{item.get('name', 'goal')} {_rm(item.get('amount_sen'))}"
-        for item in allocations
+        f"{item.get('name', 'goal')} {_rm(item.get('amount_sen'))}" for item in allocations
     )
     return (
         f"I recommend {details}.\n"
@@ -1130,7 +1203,64 @@ def _amount_near(text: str, marker: str) -> int | None:
     return _amount_sen(text[location : location + 100])
 
 
-def _goal_workflow_args(text: str, attachment: dict[str, Any] | None) -> dict[str, Any]:
+# What the target is attached to, most specific first. The first amount in the
+# sentence is not the target: "I have ate RM35 of chicken rice and i want to set
+# a goal of having a saving of 1 million" is one turn a user really typed, and
+# taking `amounts[0]` made it a goal of RM35. So the target is read forward from
+# the words that introduce one, and the whole-sentence scan is only the fallback
+# for a sentence that names an amount and no goal language at all.
+#
+# "save" is deliberately absent: it is a prefix of "saved", which is how the
+# *current* balance is stated ("I already saved RM200"), and a marker that
+# matched it would file the money already put aside as the thing being aimed at.
+_GOAL_TARGET_MARKERS = ("goal of", "target of", "goal", "target", "savings", "saving")
+
+
+def _goal_target_sen(text: str) -> int | None:
+    lowered = text.casefold()
+    for marker in _GOAL_TARGET_MARKERS:
+        location = lowered.find(marker)
+        if location < 0:
+            continue
+        amount = _amount_sen(text[location : location + 120])
+        if amount is not None:
+            return amount
+    return None
+
+
+def _years_from(day: date, years: int) -> date:
+    """Move a date by whole years, keeping leap-day inputs valid."""
+    year = day.year + years
+    return day.replace(year=year, day=min(day.day, monthrange(year, day.month)[1]))
+
+
+def _goal_horizon_deadline(text: str, today: date | None) -> str | None:
+    """Turn an explicit horizon into an editable planning date.
+
+    A dated goal plan needs a date before it can calculate or raise its approval
+    card.  "Long term" is still a real constraint, just a coarse one: use a
+    five-year reviewable draft (one year for short term) when the user chose the
+    horizon but not a calendar day.  It is shown on the approval card and is
+    never applied without the user's confirmation.
+    """
+    if today is None:
+        return None
+    lowered = text.casefold()
+    explicit = re.search(r"\bin\s+(\d{1,2})\s+years?\b", lowered)
+    if explicit:
+        return _years_from(today, int(explicit.group(1))).isoformat()
+    if re.search(r"\blong[ -]?term\b", lowered):
+        return _years_from(today, 5).isoformat()
+    if re.search(r"\bshort[ -]?term\b", lowered):
+        return _years_from(today, 1).isoformat()
+    return None
+
+
+def _goal_workflow_args(
+    text: str,
+    attachment: dict[str, Any] | None,
+    today: date | None = None,
+) -> dict[str, Any]:
     del attachment
     lowered = text.casefold()
     goal_type, name, reference = _goal_identity(text)
@@ -1150,23 +1280,23 @@ def _goal_workflow_args(text: str, attachment: dict[str, Any] | None) -> dict[st
         )
     )
     action = (
-        "select_scenario"
-        if select
-        else "impact"
-        if impact
-        else "replan"
-        if replan
-        else "create"
+        "select_scenario" if select else "impact" if impact else "replan" if replan else "create"
     )
     args: dict[str, Any] = {"action": action}
     if action == "create":
-        args.update({"goal_type": goal_type, "name": name})
-        if amounts:
-            args["target_amount_sen"] = amounts[0]
+        # The goal form uses the same starting value.  If the user did not say
+        # they already saved anything, zero is the only non-invented balance;
+        # the complete value is still visible and editable before approval.
+        args.update({"goal_type": goal_type, "name": name, "current_saved_sen": 0})
+        target = _goal_target_sen(text)
+        if target is None and amounts:
+            target = amounts[0]
+        if target is not None:
+            args["target_amount_sen"] = target
         saved = _amount_near(text, "already saved") or _amount_near(text, "saved")
         if saved is not None:
             args["current_saved_sen"] = saved
-        deadline = _goal_deadline(text)
+        deadline = _goal_deadline(text) or _goal_horizon_deadline(text, today)
         if deadline is not None:
             args["target_date"] = deadline
     else:
@@ -1251,7 +1381,7 @@ def _part_time_args(text: str, history: str = "") -> dict[str, Any]:
 
 
 _GOAL_WORKFLOW = re.compile(
-    r"\b(?:want|need|plan|save|saving|start|create|set up)\b.{0,100}"
+    r"\b(?:want|need|plan|save|saving|start|create|set(?: up)?)\b.{0,100}"
     r"\b(?:goal|fund|deposit|down payment|trip|travel|wedding|house|home|car|education|"
     r"purchase|bill|annual expense)\b"
     r"|\b(?:change|update|increase|decrease|raise|lower|extend|move|replan|adjust)\b.{0,80}"
@@ -1271,6 +1401,7 @@ _PLACES_PATTERN = re.compile(
     r"|(?:somewhere|place|places|spot)s? to eat"
     r"|(?:somewhere|place|places|spot)s?.*(?:eat|lunch|dinner|breakfast|food|makan)"
     r"|what can i eat|where should i (?:eat|go)|makan|hungry"
+    r"|\bplan my day\b"
     r"|(?:eat|food|lunch|dinner).*(?:nearby|near me|around here)"
     # Nobody asks about halal except about food, and "somewhere halal under
     # RM15" otherwise fell through to the balance.
@@ -1356,7 +1487,7 @@ ROUTES: tuple[Route, ...] = (
         _GOAL_WORKFLOW,
         ("start_goal_planning",),
         arguments=lambda text, attachment, today=None: {
-            "start_goal_planning": _goal_workflow_args(text, attachment)
+            "start_goal_planning": _goal_workflow_args(text, attachment, today)
         },
     ),
     # After "afford", so a question naming an amount still gets tested against
@@ -1418,6 +1549,19 @@ ROUTES: tuple[Route, ...] = (
         compose=_compose_drop,
     ),
     Route(
+        "foresight",
+        re.compile(
+            r"\b(?:foresight|presight|forecast|future outlook|road ahead|projection)\b"
+            r"|\bchance.*\b(?:reach|hit|make).*\bgoal\b",
+            re.I,
+        ),
+        ("project_future", "control_app"),
+        arguments=lambda text, attachment, today=None: {
+            "project_future": {},
+            "control_app": {"action": "set_plan_view", "plan_view": "foresight"},
+        },
+    ),
+    Route(
         "goals",
         re.compile(r"goal|wedding|saving|emergency fund|on track", re.I),
         ("list_goals",),
@@ -1455,6 +1599,7 @@ ROUTES: tuple[Route, ...] = (
 # nothing here.
 _PLACES = next(route for route in ROUTES if route.name == "places")
 _PART_TIME = next(route for route in ROUTES if route.name == "part_time_jobs")
+_GOAL_ROUTE = next(route for route in ROUTES if route.name == "goal_workflow")
 
 # How ``prompt.history_block`` writes the user's half of the conversation. The
 # graph runs one checkpointed thread per turn, so by the time this turn starts
@@ -1486,6 +1631,21 @@ def _following_food(history: str) -> bool:
     return about
 
 
+def _goal_followup(text: str, history: str) -> bool:
+    """Recognise a short answer to an unfinished goal-planning question."""
+    if not re.search(
+        r"\b(?:goal|it|that|long[ -]?term|short[ -]?term|target|deadline|date|"
+        r"monthly|contribution|payday)\b",
+        text,
+        re.I,
+    ):
+        return False
+    earlier = [
+        line[len(_USER_SAID) :] for line in history.splitlines() if line.startswith(_USER_SAID)
+    ]
+    return any(_GOAL_WORKFLOW.search(said) for said in earlier[-4:])
+
+
 def route_for(text: str, attachment: dict[str, Any] | None = None, history: str = "") -> Route:
     """Which route one message takes, read in the light of the turn before it.
 
@@ -1494,10 +1654,12 @@ def route_for(text: str, attachment: dict[str, Any] | None = None, history: str 
     a convenience: a caller with no history is asking what a sentence means on
     its own, and that is the question it gets answered.
     """
-    if attachment:
+    if attachment and attachment.get("is_transaction", True):
         return ROUTES[0]
     if _PART_TIME_FOLLOW_UP.search(text) and _following_part_time(history):
         return _PART_TIME
+    if _goal_followup(text, history):
+        return _GOAL_ROUTE
     for route in ROUTES:
         if route.pattern.search(text) and (route.when is None or route.when(text)):
             return route

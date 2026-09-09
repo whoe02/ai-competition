@@ -7,6 +7,8 @@ evidence is already fixed by the time this runs.
 
 from __future__ import annotations
 
+import re
+
 from langchain_core.messages import AIMessage, SystemMessage
 from langgraph.runtime import Runtime
 
@@ -28,6 +30,40 @@ NOTHING_RAN = (
     "Ask me again and I'll check properly — your figures come from your ledger, "
     "never from what I happen to recall."
 )
+
+
+# A model that wants to call a tool on a turn with no tools bound sometimes
+# writes the call out as markup instead. Qwen did exactly this on a live turn
+# and the user's whole answer was the string "<tool_code>\n</tool_code>" — the
+# request it was trying to make disappeared, and what took its place was
+# machinery, which is the one thing VOICE says never reaches the user.
+#
+# Stripped rather than trusted to a prompt rule: three separate instructions not
+# to name its own machinery are already in VOICE, and this got through all of
+# them. A block is removed whole, because its contents are an attempted call and
+# not a sentence; a stray tag on its own is removed and the prose around it kept.
+_TOOL_BLOCK = re.compile(
+    r"<\s*(tool_code|tool_call|tool_use|function_call)\s*>.*?<\s*/\s*\1\s*>",
+    re.I | re.S,
+)
+_TOOL_TAG = re.compile(r"<\s*/?\s*(?:tool_code|tool_call|tool_use|function_call)\s*>", re.I)
+_FENCED_TOOL_CALL = re.compile(
+    r"```(?:python|py|json)?\s*"
+    r"(?=[^`]*\b(?:start_goal_planning|start_day_planning|control_app|"
+    r"[a-z][a-z0-9_]*(?:goal|transaction|commitment|account|profile|memory)[a-z0-9_]*)\s*\()"
+    r".*?```",
+    re.I | re.S,
+)
+
+
+def _clean(text: str) -> str:
+    """The answer with any attempted tool call taken out of it.
+
+    Returning "" when that is all there was is deliberate: every caller already
+    treats an empty answer as "this turn produced nothing worth saying" and has
+    a fallback for it, and half a leaked call is worse than the fallback.
+    """
+    return _TOOL_TAG.sub("", _FENCED_TOOL_CALL.sub("", _TOOL_BLOCK.sub("", text))).strip()
 
 
 def _model(runtime: Runtime[ButlerContext], attachment, history):
@@ -63,7 +99,7 @@ async def compose(state: ButlerState, runtime: Runtime[ButlerContext]) -> dict:
             # model happened to notice in the context, which is a dashboard in
             # a friendlier voice rather than conversation.
             context="" if conversation_turn else state.get("context_block", ""),
-            memory="" if conversation_turn else state.get("memory_block", ""),
+            memory=state.get("memory_block", ""),
             # Withheld when nothing ran. Asked the same question twice, the model
             # read the places and prices out of its own earlier reply and wrote
             # them again having called nothing — prose that looked right above a
@@ -73,7 +109,7 @@ async def compose(state: ButlerState, runtime: Runtime[ButlerContext]) -> dict:
             # either, and what is left is the snapshot, which is real. The
             # reasoning turn still sees the whole history, so "add the second
             # one" still knows which one that was.
-            history=state.get("history_block", "") if evidence else "",
+            history=state.get("history_block", "") if evidence or conversation_turn else "",
             attachment="" if conversation_turn else state.get("attachment_block", ""),
             evidence=_evidence_block(evidence),
         )
@@ -115,14 +151,14 @@ async def compose(state: ButlerState, runtime: Runtime[ButlerContext]) -> dict:
         if conversation_turn:
             # `just_talk` is an explicit decision, not a missing lookup. It
             # earns a normal composing call, with no financial facts in scope.
-            model = _model(runtime, None, "")
-            answer = await _stream(runtime, model, conversation)
+            model = _model(runtime, None, state.get("history_block", ""))
+            answer = _clean(await _stream(runtime, model, conversation))
             if not answer.strip():
                 offline = OfflineChatModel()
-                answer = await _stream(runtime, offline, conversation)
+                answer = _clean(await _stream(runtime, offline, conversation))
             if not answer.strip():
                 answer = CHAT_FALLBACK
-                events.emit(runtime, events.TOKEN, text=answer)
+            events.emit(runtime, events.TOKEN, text=answer)
             return {"answer": answer, "messages": [AIMessage(content=answer)]}
         # One turn runs no tool and is still not a guess. "I bought lunch at the
         # mamak" is spending with the amount left out, and the honest reply is to
@@ -146,15 +182,16 @@ async def compose(state: ButlerState, runtime: Runtime[ButlerContext]) -> dict:
     # be quietly answering a question nobody asked.
     history = state.get("history_block", "")
     model = _model(runtime, state.get("attachment"), history)
-    answer = await _stream(runtime, model, conversation)
+    answer = _clean(await _stream(runtime, model, conversation))
     if not answer.strip():
         offline = OfflineChatModel(attachment=state.get("attachment"), history=history)
-        answer = await _stream(runtime, offline, conversation)
+        answer = _clean(await _stream(runtime, offline, conversation))
     if not answer.strip():
         # A specialist's own sentence beats an apology: it was measured, and
         # the panel beneath it already backs every figure in it.
         answer = "\n\n".join(reports) if reports else FALLBACK
 
+    events.emit(runtime, events.TOKEN, text=answer)
     return {"answer": answer, "messages": [AIMessage(content=answer)]}
 
 
@@ -166,8 +203,11 @@ async def _stream(runtime, model, conversation) -> str:
             piece = chunk.content
             if not isinstance(piece, str) or not piece:
                 continue
+            # Buffer until the complete answer can be sanitised. A model that
+            # writes a tool call as prose can split its fence across arbitrary
+            # chunks; emitting first and cleaning later leaks the machinery to
+            # the live chat even when the stored answer is clean.
             collected.append(piece)
-            events.emit(runtime, events.TOKEN, text=piece)
         return "".join(collected)
     except Exception as exc:
         events.emit(runtime, events.THINKING, text="Falling back to what is already here")
@@ -176,8 +216,6 @@ async def _stream(runtime, model, conversation) -> str:
         except Exception:
             return ""
         text = reply.content if isinstance(reply.content, str) else ""
-        if text:
-            events.emit(runtime, events.TOKEN, text=text)
-        else:  # pragma: no cover - defensive
+        if not text:  # pragma: no cover - defensive
             events.emit(runtime, events.ERROR, message=str(exc))
         return text

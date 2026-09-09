@@ -18,12 +18,10 @@ from kira.services.butler_thread import get_thread, messages
 from kira.services.dashboard import today_dashboard
 from kira.services.snapshot import load_snapshot
 
-HISTORY_TURNS = 12
+HISTORY_TURNS = 40
 
 
-async def load_context(
-    state: ButlerState, runtime: Runtime[ButlerContext]
-) -> dict:
+async def load_context(state: ButlerState, runtime: Runtime[ButlerContext]) -> dict:
     context = runtime.context
     events.emit(runtime, events.THINKING, text="Reading your accounts")
 
@@ -35,19 +33,21 @@ async def load_context(
     )
 
     # Warmed here and handed to every tool, so no handler reads a clock or
-    # widens ownership on its own.
+    # widens ownership on its own. `memories` is also what `extract_memory`
+    # scores the answer against at the end of the turn — the state used to
+    # carry a parallel `memory_ids` list for that and nothing ever read it, so
+    # there is one home for this now rather than two.
     context.cache["board"] = board
     context.cache["memories"] = remembered
-    context.cache["snapshot"] = await load_snapshot(
-        context.session, context.user, context.today
-    )
+    context.cache["snapshot"] = await load_snapshot(context.session, context.user, context.today)
 
     return {
         "context_block": prompt.context_block(board, context.today, context.user.currency),
         "memory_block": prompt.memory_block(remembered),
-        "history_block": prompt.history_block(history[:-1] if history else ()),
+        "history_block": prompt.history_block(
+            tuple(message for message in history if message.id != context.source_message_id)
+        ),
         "attachment_block": prompt.attachment_block(state.get("attachment")),
-        "memory_ids": [str(memory.id) for memory in remembered],
         # Started here rather than in the guard, so the budget covers the
         # loading as well as the thinking. It is what the user is waiting
         # through either way.

@@ -11,6 +11,7 @@ protocol without touching this file.
 
 from __future__ import annotations
 
+import logging
 from typing import Annotated
 
 from fastapi import APIRouter, File, HTTPException, UploadFile, status
@@ -22,6 +23,8 @@ from kira.services import capture
 from kira.services.clock import today_for
 
 router = APIRouter(prefix="/v1/capture", tags=["capture"])
+
+logger = logging.getLogger(__name__)
 
 DISABLED = HTTPException(
     status.HTTP_503_SERVICE_UNAVAILABLE, "That way of capturing is not switched on"
@@ -39,7 +42,14 @@ async def availability(user: CurrentUser) -> CaptureAvailability:
     )
 
 
-def _rejected(exc: capture.CaptureRejected) -> HTTPException:
+def _rejected(kind: str, exc: capture.CaptureRejected) -> HTTPException:
+    """Say why, in the log as well as the body.
+
+    The access log records the 422 and nothing else, so a rejection that the
+    user saw as a sentence reads afterwards as an unexplained failure. The
+    reason is about the upload, not its contents.
+    """
+    logger.info("capture %s rejected: %s", kind, exc)
     return HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc))
 
 
@@ -55,7 +65,7 @@ async def read_receipt(
             await image.read(), today=today_for(), max_bytes=settings.capture_max_bytes
         )
     except capture.CaptureRejected as exc:
-        raise _rejected(exc) from exc
+        raise _rejected("receipt", exc) from exc
     return CaptureResponse.model_validate(read)
 
 
@@ -71,5 +81,5 @@ async def read_voice(
             await audio.read(), today=today_for(), max_bytes=settings.capture_max_bytes
         )
     except capture.CaptureRejected as exc:
-        raise _rejected(exc) from exc
+        raise _rejected("voice", exc) from exc
     return CaptureResponse.model_validate(read)

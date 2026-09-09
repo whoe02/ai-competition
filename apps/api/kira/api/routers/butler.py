@@ -31,7 +31,7 @@ from kira.api.schemas import (
     MemoryCorrectionRequest,
     MemoryResponse,
 )
-from kira.db.models import APPROVAL_PENDING, ROLE_KIRA, ROLE_USER, User
+from kira.db.models import APPROVAL_PENDING, ROLE_KIRA, ROLE_USER, ButlerThread, User
 from kira.services import butler_approvals, butler_memory, butler_thread
 from kira.services.audit import ACTOR_USER, record
 from kira.services.clock import today_for
@@ -99,6 +99,23 @@ async def get_default_thread(user: CurrentUser, session: SessionDep) -> ButlerTh
     thread = await butler_thread.ensure_thread(session, user)
     await session.commit()
     return await _thread_payload(session, user, thread)
+
+
+@router.post("/threads", response_model=ButlerThreadResponse, status_code=201)
+async def create_thread(user: CurrentUser, session: SessionDep) -> ButlerThreadResponse:
+    thread = ButlerThread(user_id=user.id, title="New conversation")
+    session.add(thread)
+    await session.commit()
+    return await _thread_payload(session, user, thread)
+
+
+@router.get("/threads")
+async def list_threads(user: CurrentUser, session: SessionDep) -> list[dict]:
+    threads = (await session.execute(
+        select(ButlerThread).where(ButlerThread.user_id == user.id)
+        .order_by(ButlerThread.created_at.desc(), ButlerThread.id.desc())
+    )).scalars().all()
+    return [{"id": str(thread.id), "title": thread.title} for thread in threads]
 
 
 @router.get("/threads/{thread_id}", response_model=ButlerThreadResponse)
@@ -172,6 +189,9 @@ async def _run_locked(
         ).scalar_one()
         thread = await butler_thread.get_thread(session, user, thread_id)
         today = today_for()
+
+        if thread.title == "New conversation":
+            thread.title = " ".join(body.text.split())[:80]
 
         asked = await butler_thread.append(
             session,

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import itertools
+
 import pytest
 
 from kira.agent.llm import OfflineChatModel
@@ -83,6 +85,75 @@ def scripted_factory(*calls):
             attachment=kwargs.get("attachment"),
             history=kwargs.get("history", ""),
             calls=list(calls),
+        )
+
+    return factory
+
+
+class SequencedModel(OfflineChatModel):
+    """Emits one batch of tool calls per reasoning pass, in the order given.
+
+    `ScriptedModel` answers a single pass and then falls silent, which was
+    enough while a turn ended at its first write. A turn that continues after an
+    approval needs a model with a second thing to say, so this one pops a batch
+    per pass and proposes nothing once the script runs out — which is how a real
+    turn ends too.
+
+    The cursor lives in the factory's closure and reaches the model as a
+    callable, not as a list. `agent` builds a fresh model on every pass, so the
+    cursor has to outlive them — and a list field would not do it: pydantic
+    validates `list` by copying, so each instance would pop from its own copy
+    and every pass would propose the first batch again. A field typed `object`
+    is handed through untouched.
+    """
+
+    next_batch: object = None
+    counter: object = None
+
+    def bind_tools(self, tools, **kwargs):
+        bound = super().bind_tools(tools, **kwargs)
+        return bound.model_copy(
+            update={"next_batch": self.next_batch, "counter": self.counter}
+        )
+
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+        from langchain_core.messages import AIMessage
+        from langchain_core.outputs import ChatGeneration, ChatResult
+
+        if not self.bound_tools:
+            return super()._generate(messages, stop, run_manager, **kwargs)
+        calls = self.next_batch()
+        # Unique across the whole turn, not just within the batch. A real model
+        # does not reuse a call id between passes, and the approval projection
+        # keys its replay on one.
+        tool_calls = [
+            {
+                "name": name,
+                "args": args,
+                "id": f"seq-{next(self.counter)}",
+                "type": "tool_call",
+            }
+            for name, args in calls
+        ]
+        return ChatResult(
+            generations=[ChatGeneration(message=AIMessage(content="", tool_calls=tool_calls))]
+        )
+
+
+def sequenced_factory(*batches):
+    """One tuple of (name, args) pairs per reasoning pass."""
+    remaining = [list(batch) for batch in batches]
+    counter = itertools.count()
+
+    def next_batch():
+        return remaining.pop(0) if remaining else []
+
+    def factory(**kwargs):
+        return SequencedModel(
+            attachment=kwargs.get("attachment"),
+            history=kwargs.get("history", ""),
+            next_batch=next_batch,
+            counter=counter,
         )
 
     return factory

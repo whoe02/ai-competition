@@ -34,9 +34,7 @@ async def extract_memory(state: ButlerState, runtime: Runtime[ButlerContext]) ->
     # age out, so retrieval converges on what matters to this user.
     answer = state.get("answer", "")
     used = [
-        memory.id
-        for memory in (context.cache.get("memories") or ())
-        if _cited(memory.fact, answer)
+        memory.id for memory in (context.cache.get("memories") or ()) if _cited(memory.fact, answer)
     ]
     if used:
         await touch(context.session, context.user, used)
@@ -69,11 +67,7 @@ STOPWORDS = frozenset(
 
 
 def _salient(text: str) -> set[str]:
-    return {
-        word
-        for word in re.findall(r"[a-z]{4,}", text.lower())
-        if word not in STOPWORDS
-    }
+    return {word for word in re.findall(r"[a-z]{4,}", text.lower()) if word not in STOPWORDS}
 
 
 def _cited(fact: str, answer: str) -> bool:

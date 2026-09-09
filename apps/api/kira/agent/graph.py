@@ -4,7 +4,7 @@
       → load_context
       → agent → insist  ⇄  guard  →  tools      → agent   (reads, then read again)
                            guard  →  delegate   → agent   (a specialist reports)
-                           guard  →  approval           (writes; interrupt())
+                           guard  →  approval   → agent   (an applied write, then on)
                            guard  →  agent              (all refused, nothing ran)
                            guard  →  compose            (nothing left to ask)
       → compose
@@ -18,8 +18,12 @@ graph but the guard: an iteration cap, and a wall-clock budget that ends the
 looking and sends the turn to compose whatever it has.
 
 Writes still leave the loop, and the only path from a write tool to the
-database still runs through a user answering a card. A specialist that raises
-its own card ends the turn where it stands, because the card is the answer.
+database still runs through a user answering a card. What changed is what
+happens after the user answers: an applied write returns to the model, so a
+turn that owes two changes can finish owing none, and a turn can read back what
+it just wrote. A rejected one does not — see `route_after_approval`. A
+specialist that raises its own card ends the turn where it stands, because the
+card is the answer.
 
 `insist` is the one place a tool call is made by the app rather than proposed
 by the model, and it is deliberately upstream of the guard: a call this app
@@ -36,7 +40,7 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
 
-from kira.agent.nodes.approve import approval
+from kira.agent.nodes.approve import approval, route_after_approval
 from kira.agent.nodes.compose import compose
 from kira.agent.nodes.context import load_context
 from kira.agent.nodes.delegate import delegate, route_after_delegate
@@ -102,7 +106,14 @@ def build_graph(checkpointer: BaseCheckpointSaver | None = None):
         route_after_delegate,
         {"agent": "agent", "end": END},
     )
-    builder.add_edge("approval", "compose")
+    # An applied write is a result like any other, so it goes back to the
+    # model rather than ending the turn. See `route_after_approval` for why a
+    # rejection does not.
+    builder.add_conditional_edges(
+        "approval",
+        route_after_approval,
+        {"agent": "agent", "compose": "compose"},
+    )
     builder.add_edge("compose", "extract_memory")
     builder.add_edge("extract_memory", END)
 

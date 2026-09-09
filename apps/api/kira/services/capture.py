@@ -14,6 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 
+from kira.adapters.local_capture import CaptureProviderError
 from kira.adapters.registry import get_adapters
 from kira.categories import infer, label_for
 from kira.db.models import SOURCE_RECEIPT, SOURCE_VOICE
@@ -44,13 +45,14 @@ class CaptureField:
 class CaptureRead:
     kind: str
     source: str
-    merchant: str
-    amount_sen: int
+    merchant: str | None
+    amount_sen: int | None
     occurred_on: date
     category: str
     confidence: int
     note: str
     transcript: str
+    is_transaction: bool
     fields: tuple[CaptureField, ...]
 
 
@@ -75,7 +77,10 @@ def _guard(payload: bytes, limit: int) -> None:
 
 def read_receipt(image: bytes, *, today: date, max_bytes: int) -> CaptureRead:
     _guard(image, max_bytes)
-    result = get_adapters().ocr.read_receipt(image)
+    try:
+        result = get_adapters().ocr.read_receipt(image)
+    except CaptureProviderError as exc:
+        raise CaptureRejected(str(exc)) from exc
     occurred_on = result.occurred_on or today
     category = infer(f"{result.merchant} {result.note}")
     return CaptureRead(
@@ -88,6 +93,7 @@ def read_receipt(image: bytes, *, today: date, max_bytes: int) -> CaptureRead:
         confidence=result.confidence,
         note=result.note,
         transcript="",
+        is_transaction=True,
         fields=_fields(
             result.merchant, result.amount.sen, occurred_on, category, result.confidence
         ),
@@ -101,19 +107,42 @@ def transcribe(audio: bytes, *, today: date, max_bytes: int) -> CaptureRead:
     transaction, so both are returned and the caller decides which to use.
     """
     _guard(audio, max_bytes)
-    result = get_adapters().voice.transcribe(audio)
-    category = infer(f"{result.transcript} {result.merchant}")
+    try:
+        result = get_adapters().voice.transcribe(audio)
+    except CaptureProviderError as exc:
+        raise CaptureRejected(str(exc)) from exc
+    if not result.is_transaction or result.amount is None:
+        return CaptureRead(
+            kind=CAPTURE_VOICE,
+            source=SOURCE_VOICE,
+            merchant=None,
+            amount_sen=None,
+            occurred_on=today,
+            category="uncategorised",
+            confidence=result.confidence,
+            note=result.note,
+            transcript=result.transcript,
+            is_transaction=False,
+            fields=(),
+        )
+
+    category = infer(f"{result.transcript} {result.merchant or ''}")
     return CaptureRead(
         kind=CAPTURE_VOICE,
         source=SOURCE_VOICE,
-        merchant=result.merchant,
+        merchant=result.merchant or "Unknown merchant",
         amount_sen=result.amount.sen,
         occurred_on=today,
         category=category,
         confidence=result.confidence,
         note=result.note,
         transcript=result.transcript,
+        is_transaction=True,
         fields=_fields(
-            result.merchant, result.amount.sen, today, category, result.confidence
+            result.merchant or "Unknown merchant",
+            result.amount.sen,
+            today,
+            category,
+            result.confidence,
         ),
     )

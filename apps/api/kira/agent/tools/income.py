@@ -113,8 +113,7 @@ async def _apply(ctx: ToolContext, args: ApplyIncomeAllocationArgs) -> ToolResul
 
 def _summary(args: ApplyIncomeAllocationArgs) -> str:
     return (
-        "Earmark the deterministic goal split for confirmed income "
-        f"{args.income_transaction_id}."
+        f"Earmark the deterministic goal split for confirmed income {args.income_transaction_id}."
     )
 
 

@@ -15,6 +15,7 @@ import {
   useMemories,
   useUnconfirm,
 } from "./api/hooks";
+import type { AppAction } from "./api/butler";
 import { EntrySheet, type EntryAttachment } from "./components/EntrySheet";
 import { IcActivity, IcCheck, IcChev, IcMore, IcPlan, IcPlus, IcSpark, IcToday } from "./components/Icons";
 import { Motes } from "./components/Motes";
@@ -49,8 +50,14 @@ export function App() {
   const [dir, setDir] = useState(0);
   const [boot, setBoot] = useState(true);
   const [signedIn, setSignedIn] = useState(false);
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [conversationView, setConversationView] = useState(0);
+  const openConversation = (id: string | null) => {
+    setConversationId(id);
+    setConversationView((value) => value + 1);
+  };
   const [planView, setPlanView] = useState<PlanView>("daily");
-  const [entry, setEntry] = useState(false);
+  const [entry, setEntry] = useState<{ initialText: string } | null>(null);
   const [recommendationReadyGoalId, setRecommendationReadyGoalId] = useState<string | null>(null);
   const [recommendationGoalId, setRecommendationGoalId] = useState<string | null>(null);
   const [now, setNow] = useState(() => new Date());
@@ -67,7 +74,7 @@ export function App() {
   const activity = useActivity(signedIn && tab === "activity", category);
   // The thread is fetched once the user signs in, not on first open: the
   // Butler tab should already have its history when it appears.
-  const butler = useButlerThread(signedIn);
+  const butler = useButlerThread(signedIn, conversationId);
   const memories = useMemories(signedIn && tab === "more");
   const profile = useFinancialProfile(signedIn);
   const updateProfile = useUpdateFinancialProfile();
@@ -111,33 +118,38 @@ export function App() {
     viewRef.current?.scrollTo?.({ top: 0, behavior: "auto" });
   }, [tab]);
 
-  // Scroll-linked parallax: write a CSS variable, never re-render.
-  useEffect(() => {
-    const view = viewRef.current;
-    const screen = screenRef.current;
-    if (!view || !screen) return;
-    let frame = 0;
-    const onScroll = () => {
-      if (frame) return;
-      frame = requestAnimationFrame(() => {
-        screen.style.setProperty("--sy", String(view.scrollTop));
-        frame = 0;
-      });
-    };
-    view.addEventListener("scroll", onScroll, { passive: true });
-    return () => {
-      view.removeEventListener("scroll", onScroll);
-      cancelAnimationFrame(frame);
-    };
-  }, [tab]);
-
   const go = (next: Tab, nextPlanView: PlanView = "daily") => {
-    if (next === tab) return;
     if (next === "plan") setPlanView(nextPlanView);
+    if (next === tab) return;
     const from = TABS.indexOf(tab);
     const to = TABS.indexOf(next);
     setDir(next === "butler" || tab === "butler" ? 0 : to > from ? 1 : -1);
     setTab(next);
+  };
+
+  const applyAppAction = (command: AppAction) => {
+    if (command.category !== undefined) setCategory(command.category || null);
+    if (command.action === "open_sheet" && command.sheet === "entry") {
+      const prefill = command.prefill ?? {};
+      const merchant = typeof prefill.merchant === "string" ? prefill.merchant : "";
+      const amount = typeof prefill.amount_sen === "number"
+        ? `RM${(prefill.amount_sen / 100).toFixed(2)}` : "";
+      setEntry({ initialText: [merchant, amount].filter(Boolean).join(" ") });
+      return;
+    }
+    if (command.action === "focus_goal") {
+      go("plan", "goals");
+      window.setTimeout(() => {
+        document.querySelector(`[data-goal-id="${CSS.escape(command.goal_id ?? "")}"]`)
+          ?.scrollIntoView({ behavior: "smooth", block: "center" });
+      });
+      return;
+    }
+    if (command.action === "set_plan_view" && command.plan_view) {
+      go("plan", command.plan_view);
+      return;
+    }
+    if (command.action === "navigate" && command.tab) go(command.tab);
   };
 
   const dark = tab === "butler";
@@ -199,7 +211,10 @@ export function App() {
             <ScrollContext.Provider value={viewRef}>
               <div className="viewport" ref={viewRef}>
                 <div className="page" key={signedIn ? tab : "login"}>
-                  {!signedIn && <Login onSignedIn={() => setSignedIn(true)} />}
+                  {!signedIn && <Login onSignedIn={() => {
+                    openConversation(null);
+                    setSignedIn(true);
+                  }} />}
                   {signedIn && tab === "today" && (
                     <Today
                       data={dashboard.data}
@@ -207,6 +222,7 @@ export function App() {
                       isError={dashboard.isError}
                       briefing={briefing.data}
                       go={go}
+                      onRetry={() => void dashboard.refetch()}
                     />
                   )}
                   {signedIn && tab === "activity" && (
@@ -231,16 +247,21 @@ export function App() {
                   )}
                   {signedIn && tab === "butler" && (
                     <Butler
-                      thread={butler.data}
+                      key={conversationView}
+                      onThreadStarted={setConversationId}
+                      onOpenConversation={openConversation}
+                      thread={conversationId ? butler.data : undefined}
                       isLoading={butler.isLoading}
                       record={hindsight.data}
                       categories={categories.data}
                       pending={pending}
                       onPendingAsked={() => setPending(null)}
+                      onAppAction={applyAppAction}
                     />
                   )}
                   {signedIn && tab === "plan" && (
                     <Plan
+                      key={planView}
                       initialView={planView}
                       recommendationGoalId={recommendationGoalId ?? undefined}
                       onRecommendationOpened={() => setRecommendationGoalId(null)}
@@ -262,17 +283,18 @@ export function App() {
           </SheetHostContext.Provider>
 
           {signedIn && (tab === "today" || tab === "activity") && (
-            <button className="fab" onClick={() => setEntry(true)} aria-label="Add money">
+            <button className="fab" onClick={() => setEntry({ initialText: "" })} aria-label="Add money">
               <IcPlus size={21} />
             </button>
           )}
 
-          {entry && (
+          {entry !== null && (
             <EntrySheet
-              onClose={() => setEntry(false)}
+              onClose={() => setEntry(null)}
+              initialText={entry.initialText}
               categories={categories.data}
               onAsk={(text, attachment) => {
-                setEntry(false);
+                setEntry(null);
                 setPending({ text, attachment });
                 go("butler");
               }}

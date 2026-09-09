@@ -19,10 +19,11 @@ type RevealProps = {
   children: ReactNode;
   delay?: number;
   style?: CSSProperties;
+  className?: string;
 };
 
 /** Fades a block in as it enters the viewport, once. */
-export function Reveal({ children, delay = 0, style }: RevealProps) {
+export function Reveal({ children, delay = 0, style, className }: RevealProps) {
   const ref = useRef<HTMLDivElement>(null);
   const container = useScrollContainer();
   const [shown, setShown] = useState(false);
@@ -46,7 +47,7 @@ export function Reveal({ children, delay = 0, style }: RevealProps) {
   return (
     <div
       ref={ref}
-      className={`rv ${shown ? "in" : ""}`}
+      className={`rv ${shown ? "in" : ""}${className ? ` ${className}` : ""}`}
       style={{ transitionDelay: `${delay}ms`, ...style }}
     >
       {children}

@@ -31,9 +31,11 @@ async def _inspect(ctx: ToolContext, _: NoArgs) -> ToolResult:
         )
 
     fields = attachment.get("fields") or []
+    is_transaction = attachment.get("is_transaction", True)
     value = {
         "attached": True,
         "kind": attachment.get("kind"),
+        "is_transaction": is_transaction,
         "merchant": attachment.get("merchant"),
         "amount_sen": attachment.get("amount_sen"),
         "occurred_on": attachment.get("occurred_on"),
@@ -50,7 +52,12 @@ async def _inspect(ctx: ToolContext, _: NoArgs) -> ToolResult:
         )
         for field in fields
     ]
-    evidence.append(EvidenceRow("On the ledger", "not until you confirm it"))
+    evidence.append(
+        EvidenceRow(
+            "On the ledger",
+            "not until you confirm it" if is_transaction else "no transaction was inferred",
+        )
+    )
     return ToolResult(value, tuple(evidence))
 
 

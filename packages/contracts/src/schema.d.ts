@@ -285,6 +285,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/butler/threads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Threads */
+        get: operations["list_threads_v1_butler_threads_get"];
+        put?: never;
+        /** Create Thread */
+        post: operations["create_thread_v1_butler_threads_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/butler/threads/{thread_id}": {
         parameters: {
             query?: never;
@@ -1058,7 +1076,11 @@ export interface components {
         };
         /**
          * CaptureResponse
-         * @description What a reader made of a photo or a recording. Nothing is on the ledger.
+         * @description What a reader made of a photo or recording. Nothing is on the ledger.
+         *
+         *     Voice reads always carry a transcript. Transaction fields are populated
+         *     only when the reader has a credible expense proposal for the user to
+         *     review; a spoken Butler question deliberately leaves them empty.
          */
         CaptureResponse: {
             /** Kind */
@@ -1066,9 +1088,9 @@ export interface components {
             /** Source */
             source: string;
             /** Merchant */
-            merchant: string;
+            merchant: string | null;
             /** Amount Sen */
-            amount_sen: number;
+            amount_sen: number | null;
             /**
              * Occurred On
              * Format: date
@@ -1082,6 +1104,8 @@ export interface components {
             note: string;
             /** Transcript */
             transcript: string;
+            /** Is Transaction */
+            is_transaction: boolean;
             /** Fields */
             fields: components["schemas"]["CaptureFieldResponse"][];
         };
@@ -2874,6 +2898,48 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ButlerThreadResponse"];
+                };
+            };
+        };
+    };
+    list_threads_v1_butler_threads_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    }[];
+                };
+            };
+        };
+    };
+    create_thread_v1_butler_threads_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };

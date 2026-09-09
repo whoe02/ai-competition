@@ -25,9 +25,9 @@ SPECS = (
         kind="read",
         label="Keeping the conversation going",
         description=(
-            "Use for a greeting, thanks, or ordinary conversation that does not need "
-            "a financial fact. It records that this turn should answer warmly without "
-            "looking up or stating any numbers."
+            "Use for greetings, thanks, explanations of app features, ordinary conversation "
+            "or a clarifying question that needs no fresh financial lookup. Retain the "
+            "conversation context, but do not present historical financial figures as current."
         ),
         args_model=JustTalkArgs,
         handler=_just_talk,

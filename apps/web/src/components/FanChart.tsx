@@ -46,8 +46,8 @@ export function FanChart({ dates, p10, p50, p90 }: FanChartProps) {
       <svg className="fan-chart" viewBox={`0 0 ${WIDTH} ${HEIGHT}`} role="img" aria-label={label}>
         <defs>
           <linearGradient id="fan-wide" x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0" stopColor="#A9853F" stopOpacity="0.24" />
-            <stop offset="1" stopColor="#A9853F" stopOpacity="0.05" />
+            <stop offset="0" stopColor="#B08C3E" stopOpacity="0.24" />
+            <stop offset="1" stopColor="#B08C3E" stopOpacity="0.05" />
           </linearGradient>
         </defs>
         <line x1={PAD} x2={WIDTH - PAD} y1={HEIGHT - PAD} y2={HEIGHT - PAD} />

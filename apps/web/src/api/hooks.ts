@@ -260,11 +260,11 @@ export function useAddPlanToToday() {
 export const butlerThreadKey = ["butler", "thread"] as const;
 export const memoriesKey = ["butler", "memories"] as const;
 
-export function useButlerThread(enabled: boolean) {
+export function useButlerThread(enabled: boolean, threadId?: string | null) {
   return useQuery({
-    queryKey: butlerThreadKey,
-    queryFn: () => api.get<ButlerThread>("/v1/butler/thread"),
-    enabled,
+    queryKey: [...butlerThreadKey, threadId ?? "default"],
+    queryFn: () => api.get<ButlerThread>(threadId ? `/v1/butler/threads/${threadId}` : "/v1/butler/thread"),
+    enabled: enabled && threadId !== null,
   });
 }
 

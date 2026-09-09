@@ -30,6 +30,37 @@ cd apps/api && .venv/bin/uvicorn kira.api.app:app --reload --port 8000
 npm --workspace apps/web run dev  # http://localhost:5173, proxies /v1
 ```
 
+## Receipt and voice capture
+
+Butler supports follow-up conversation and prepares app actions for confirmation:
+expense/income drafts, draft confirmation/discard/correction, recurring income,
+unprotected bills, goal planning, and daily-plan entries. Every change still requires
+approval. It uses the registered service actions; it does not automate arbitrary
+screens or transfer money. Chat keeps the latest 40 messages as context, with
+remembered preferences for longer-lived context. Shift+Enter adds a line in the
+composer; Enter sends the message.
+
+The Docker app uses PaddleOCR for receipt photos and faster-whisper for
+speech-to-text. Models are downloaded the first time each is used. For a local
+API process, install the optional dependencies and enable the providers in
+`apps/api/.env`:
+
+```bash
+cd apps/api && .venv/bin/pip install -e '.[capture]'
+```
+
+```env
+CAPTURE_OCR_PROVIDER=paddleocr
+CAPTURE_OCR_LANGUAGE=en
+CAPTURE_VOICE_PROVIDER=whisper
+CAPTURE_VOICE_MODEL=small
+CAPTURE_VOICE_LANGUAGE=en
+```
+
+Receipt reads and spoken expenses become proposals the user must save and
+confirm. A spoken question is transcribed and sent directly to the Butler — it
+never becomes a transaction merely because it contains an amount.
+
 After pulling schema changes, run `cd apps/api && poetry run alembic upgrade head`.
 
 Income is recorded separately from spending: a recurring salary profile is a

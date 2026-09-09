@@ -27,6 +27,11 @@ services:
       # Seed only when explicitly requested. Keeping this off preserves goals
       # and recommendation JSON already stored in the Postgres volume.
       SEED_DEMO: ${SEED_DEMO:-0}
+      CAPTURE_OCR_PROVIDER: ${CAPTURE_OCR_PROVIDER:-paddleocr}
+      CAPTURE_OCR_LANGUAGE: ${CAPTURE_OCR_LANGUAGE:-en}
+      CAPTURE_VOICE_PROVIDER: ${CAPTURE_VOICE_PROVIDER:-whisper}
+      CAPTURE_VOICE_MODEL: ${CAPTURE_VOICE_MODEL:-small}
+      CAPTURE_VOICE_LANGUAGE: ${CAPTURE_VOICE_LANGUAGE:-en}
       # Unset means the Butler runs on its offline model: the graph, the tools,
       # the approvals and the evidence are identical, only the prose differs.
       DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}

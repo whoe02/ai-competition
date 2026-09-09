@@ -253,7 +253,7 @@ function MemoryRow({ memory }: { memory: Memory }) {
           />
           <div className="mem-acts">
             <button
-              className="btn btn-brass btn-sm"
+              className="btn btn-accent btn-sm"
               disabled={correct.isPending || !draft.trim()}
               onClick={() =>
                 correct.mutate(

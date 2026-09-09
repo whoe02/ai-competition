@@ -88,6 +88,7 @@ class FakeVoice:
             amount=Money(1400),
             confidence=71,
             note="Heard 'fourteen ringgit'. Amount is worth a second look.",
+            is_transaction=True,
         )
 
 

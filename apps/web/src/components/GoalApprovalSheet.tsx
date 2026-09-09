@@ -108,7 +108,7 @@ export function GoalApprovalSheet({
       <div className="goal-approval-actions">
         {editing ? (
           <button
-            className="btn btn-brass"
+            className="btn btn-accent"
             disabled={mutation.isPending || targetSen === null || contributionSen === null || !targetDate}
             onClick={() => void decide("edit", {
               target_amount_sen: targetSen,
@@ -119,7 +119,7 @@ export function GoalApprovalSheet({
             {mutation.isPending ? "Recalculating…" : "Recalculate"}
           </button>
         ) : (
-          <button className="btn btn-brass" disabled={mutation.isPending} onClick={() => void decide("accept")}>
+          <button className="btn btn-accent" disabled={mutation.isPending} onClick={() => void decide("accept")}>
             {mutation.isPending ? "Applying…" : "Approve"}
           </button>
         )}

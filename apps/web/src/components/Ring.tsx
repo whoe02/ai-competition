@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 
 type RingProps = { pct: number; size?: number; stroke?: string };
 
-export function Ring({ pct, size = 96, stroke = "#A9853F" }: RingProps) {
+export function Ring({ pct, size = 96, stroke = "#B08C3E" }: RingProps) {
   const radius = size / 2 - 7;
   const circumference = 2 * Math.PI * radius;
   const [on, setOn] = useState(false);
