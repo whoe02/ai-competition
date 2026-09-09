@@ -84,7 +84,8 @@ GoalType = Literal[
 ]
 GoalPriority = Literal["protected", "important", "flexible"]
 GoalStatus = Literal[
-    "draft", "active", "at_risk", "needs_replan", "paused", "achieved", "cancelled"
+    "draft", "active", "at_risk", "needs_replan", "paused", "achieved", "cancelled",
+    "deleted",
 ]
 
 
@@ -112,6 +113,21 @@ class GoalDetailResponse(ResponseModel):
     status: GoalStatus
     funding_account_ids: list[uuid.UUID]
     current_plan_version: int | None = None
+    deleted_at: datetime | None = None
+
+
+class GoalDeletionImpactResponse(ResponseModel):
+    goal_id: uuid.UUID
+    goal_name: str
+    contribution_per_payday_released_sen: int
+    safe_today_before_sen: int
+    safe_today_after_sen: int
+    safe_today_increase_sen: int
+
+
+class GoalDeleteResponse(GoalDeletionImpactResponse):
+    status: Literal["deleted"]
+    deleted_at: datetime
 
 
 class GoalMilestoneResponse(ResponseModel):

@@ -702,6 +702,24 @@ export interface paths {
         get: operations["get_goal_v1_goals__goal_id__get"];
         put?: never;
         post?: never;
+        /** Delete Goal Route */
+        delete: operations["delete_goal_route_v1_goals__goal_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/goals/{goal_id}/deletion-impact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Goal Deletion Impact */
+        get: operations["get_goal_deletion_impact_v1_goals__goal_id__deletion_impact_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1446,6 +1464,52 @@ export interface components {
             goal: components["schemas"]["GoalDetailResponse"];
             plan: components["schemas"]["GoalPlanResponse"];
         };
+        /** GoalDeleteResponse */
+        GoalDeleteResponse: {
+            /**
+             * Goal Id
+             * Format: uuid
+             */
+            goal_id: string;
+            /** Goal Name */
+            goal_name: string;
+            /** Contribution Per Payday Released Sen */
+            contribution_per_payday_released_sen: number;
+            /** Safe Today Before Sen */
+            safe_today_before_sen: number;
+            /** Safe Today After Sen */
+            safe_today_after_sen: number;
+            /** Safe Today Increase Sen */
+            safe_today_increase_sen: number;
+            /**
+             * Status
+             * @constant
+             */
+            status: "deleted";
+            /**
+             * Deleted At
+             * Format: date-time
+             */
+            deleted_at: string;
+        };
+        /** GoalDeletionImpactResponse */
+        GoalDeletionImpactResponse: {
+            /**
+             * Goal Id
+             * Format: uuid
+             */
+            goal_id: string;
+            /** Goal Name */
+            goal_name: string;
+            /** Contribution Per Payday Released Sen */
+            contribution_per_payday_released_sen: number;
+            /** Safe Today Before Sen */
+            safe_today_before_sen: number;
+            /** Safe Today After Sen */
+            safe_today_after_sen: number;
+            /** Safe Today Increase Sen */
+            safe_today_increase_sen: number;
+        };
         /** GoalDetailResponse */
         GoalDetailResponse: {
             /**
@@ -1487,11 +1551,13 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "draft" | "active" | "at_risk" | "needs_replan" | "paused" | "achieved" | "cancelled";
+            status: "draft" | "active" | "at_risk" | "needs_replan" | "paused" | "achieved" | "cancelled" | "deleted";
             /** Funding Account Ids */
             funding_account_ids: string[];
             /** Current Plan Version */
             current_plan_version?: number | null;
+            /** Deleted At */
+            deleted_at?: string | null;
         };
         /**
          * GoalGraphIntentRequest
@@ -3409,6 +3475,68 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GoalDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_goal_route_v1_goals__goal_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                goal_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoalDeleteResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_goal_deletion_impact_v1_goals__goal_id__deletion_impact_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                goal_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoalDeletionImpactResponse"];
                 };
             };
             /** @description Validation Error */

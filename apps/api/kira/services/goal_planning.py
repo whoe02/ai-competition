@@ -71,7 +71,13 @@ def definition_from_record(goal: Goal) -> GoalDefinition:
 
 async def owned_goal(session: AsyncSession, user: User, goal_id: uuid.UUID) -> Goal:
     goal = (
-        await session.execute(select(Goal).where(Goal.id == goal_id, Goal.user_id == user.id))
+        await session.execute(
+            select(Goal).where(
+                Goal.id == goal_id,
+                Goal.user_id == user.id,
+                Goal.status != "deleted",
+            )
+        )
     ).scalar_one_or_none()
     if goal is None:
         raise GoalNotFound(str(goal_id))
@@ -119,7 +125,7 @@ async def load_financial_snapshot(
             .join(Goal, Goal.id == GoalContributionRecord.goal_id)
             .where(
                 GoalContributionRecord.user_id == user.id,
-                Goal.status != "cancelled",
+                Goal.status.not_in(("cancelled", "deleted")),
             )
         )
     ).scalars().all()

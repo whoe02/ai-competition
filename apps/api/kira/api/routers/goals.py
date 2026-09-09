@@ -14,6 +14,8 @@ from kira.api.deps import CurrentUser, SessionDep
 from kira.api.schemas import (
     GoalCreateRequest,
     GoalCreateResponse,
+    GoalDeleteResponse,
+    GoalDeletionImpactResponse,
     GoalDetailResponse,
     GoalGraphRunRequest,
     GoalGraphRunResponse,
@@ -31,6 +33,7 @@ from kira.db.models import Goal, GoalPlanRecord
 from kira.engine import GoalImpact, GoalScenario
 from kira.services import butler_thread
 from kira.services.clock import today_for
+from kira.services.goal_deletion import delete_goal, deletion_impact
 from kira.services.goal_planning import (
     GoalNotFound,
     InvalidFundingAccount,
@@ -70,6 +73,7 @@ def _goal_response(goal: Goal, current_plan_version: int | None = None) -> GoalD
         status=goal.status,
         funding_account_ids=[uuid.UUID(value) for value in goal.funding_account_ids],
         current_plan_version=current_plan_version,
+        deleted_at=goal.deleted_at,
     )
 
 
@@ -224,6 +228,30 @@ async def get_goal(
     except GoalNotFound as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Goal not found") from exc
     return _goal_response(goal, plan.version)
+
+
+@router.get("/{goal_id}/deletion-impact", response_model=GoalDeletionImpactResponse)
+async def get_goal_deletion_impact(
+    goal_id: uuid.UUID, user: CurrentUser, session: SessionDep
+) -> GoalDeletionImpactResponse:
+    try:
+        return GoalDeletionImpactResponse.model_validate(
+            await deletion_impact(session, user, goal_id, _as_of_utc())
+        )
+    except GoalNotFound as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Goal not found") from exc
+
+
+@router.delete("/{goal_id}", response_model=GoalDeleteResponse)
+async def delete_goal_route(
+    goal_id: uuid.UUID, user: CurrentUser, session: SessionDep
+) -> GoalDeleteResponse:
+    try:
+        return GoalDeleteResponse.model_validate(
+            await delete_goal(session, user, goal_id, _as_of_utc())
+        )
+    except GoalNotFound as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Goal not found") from exc
 
 
 @router.get("/{goal_id}/plan", response_model=GoalPlanResponse)

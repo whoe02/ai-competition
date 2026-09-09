@@ -251,6 +251,55 @@ describe("Goal Planner", () => {
     expect(screen.getByText("First home")).toBeVisible();
   });
 
+  it("previews and confirms soft deletion from a hovered goal card", async () => {
+    let deleted = false;
+    const goal = { id: LONG_ID, name: "First home", horizon: "long", priority: "important", target_sen: 5_000_000, saved_sen: 800_000, monthly_sen: 150_000, months_left: 28, note: "" } as const;
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.endsWith("/v1/dashboard/today")) {
+        return json({ ...DASHBOARD, goals: deleted ? [] : [goal] });
+      }
+      if (url.endsWith(`/v1/goals/${LONG_ID}/deletion-impact`)) {
+        return json({
+          goal_id: LONG_ID,
+          goal_name: "First home",
+          contribution_per_payday_released_sen: 150_000,
+          safe_today_before_sen: 5_297,
+          safe_today_after_sen: 6_100,
+          safe_today_increase_sen: 803,
+        });
+      }
+      if (url.endsWith(`/v1/goals/${LONG_ID}`) && init?.method === "DELETE") {
+        deleted = true;
+        return json({
+          goal_id: LONG_ID,
+          goal_name: "First home",
+          contribution_per_payday_released_sen: 150_000,
+          safe_today_before_sen: 5_297,
+          safe_today_after_sen: 6_100,
+          safe_today_increase_sen: 803,
+          status: "deleted",
+          deleted_at: "2026-09-09T04:00:00Z",
+        });
+      }
+      if (url.endsWith(`/v1/goals/${LONG_ID}`)) return json(DETAIL);
+      if (url.endsWith(`/v1/goals/${LONG_ID}/plan`)) return json(PLAN);
+      return json({}, 404);
+    });
+    const user = userEvent.setup();
+    renderGoals();
+
+    await user.click(await screen.findByRole("button", { name: "Delete First home" }));
+    const dialog = await screen.findByRole("dialog", { name: "Delete First home" });
+    expect(within(dialog).getByText("RM1,500.00")).toBeVisible();
+    expect(within(dialog).getByText("RM52.97 → RM61.00")).toBeVisible();
+    expect(screen.getByText("First home")).toBeVisible();
+
+    await user.click(within(dialog).getByRole("button", { name: "Delete goal" }));
+    expect(await screen.findByText(/Safe to Spend today increased by RM8.03/)).toBeVisible();
+    await waitFor(() => expect(screen.queryByText("First home")).not.toBeInTheDocument());
+  });
+
   it("renders backend scenarios when a newly calculated target is infeasible", async () => {
     vi.mocked(fetch).mockImplementation(async (input, init) => {
       const url = String(input);

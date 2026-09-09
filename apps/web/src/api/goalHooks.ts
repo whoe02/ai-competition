@@ -1,5 +1,7 @@
 import type {
   GoalDetail,
+  GoalDelete,
+  GoalDeletionImpact,
   GoalGraphIntent,
   GoalGraphRunResponse,
   GoalPlan,
@@ -36,6 +38,33 @@ export function useGoalPlan(goalId: string | null) {
     queryKey: goalPlanKey(goalId ?? "none"),
     queryFn: () => api.get<GoalPlan>(`/v1/goals/${goalId}/plan`),
     enabled: Boolean(goalId),
+  });
+}
+
+export function useGoalDeletionImpact(goalId: string | null) {
+  return useQuery({
+    queryKey: ["goals", goalId ?? "none", "deletion-impact"],
+    queryFn: () =>
+      api.get<GoalDeletionImpact>(`/v1/goals/${goalId}/deletion-impact`),
+    enabled: Boolean(goalId),
+  });
+}
+
+export function useDeleteGoal() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (goalId: string) => api.delete<GoalDelete>(`/v1/goals/${goalId}`),
+    onSuccess: async (_result, goalId) => {
+      queryClient.removeQueries({ queryKey: goalKey(goalId) });
+      queryClient.removeQueries({ queryKey: goalPlanKey(goalId) });
+      queryClient.removeQueries({ queryKey: goalPartTimeRecommendationKey(goalId) });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: dashboardTodayKey }),
+        queryClient.invalidateQueries({ queryKey: ["foresight"] }),
+        queryClient.invalidateQueries({ queryKey: ["hindsight"] }),
+        queryClient.invalidateQueries({ queryKey: ["day-plan"] }),
+      ]);
+    },
   });
 }
 

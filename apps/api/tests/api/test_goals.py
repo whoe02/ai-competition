@@ -7,7 +7,7 @@ from sqlalchemy import select
 
 from kira.api.deps import stream_session_factory
 from kira.api.schemas import GoalCreateRequest
-from kira.db.models import GoalPlanRecord
+from kira.db.models import AuditEvent, Goal, GoalPlanRecord
 from kira.seed.demo import DEMO_EMAIL, DEMO_PASSWORD, seed_demo_user
 
 from .test_auth import register
@@ -109,6 +109,55 @@ class TestGoalContracts:
     async def test_requires_authentication(self, client):
         response = await client.post("/v1/goals", json=payload())
         assert response.status_code == 401
+
+    async def test_soft_delete_preserves_history_and_removes_goal_from_planning(
+        self, client, session
+    ):
+        token = await register(client)
+        created = await client.post("/v1/goals", json=payload(), headers=auth(token))
+        goal_id = uuid.UUID(created.json()["goal"]["goal_id"])
+        goal = await session.get(Goal, goal_id)
+        plan = (
+            await session.execute(
+                select(GoalPlanRecord).where(GoalPlanRecord.goal_id == goal_id)
+            )
+        ).scalar_one()
+        goal.status = "active"
+        plan.approval_status = "approved"
+        await session.commit()
+
+        preview = await client.get(
+            f"/v1/goals/{goal_id}/deletion-impact", headers=auth(token)
+        )
+        assert preview.status_code == 200, preview.text
+        assert preview.json()["goal_name"] == "Family trip"
+        assert preview.json()["contribution_per_payday_released_sen"] > 0
+
+        deleted = await client.delete(f"/v1/goals/{goal_id}", headers=auth(token))
+        assert deleted.status_code == 200, deleted.text
+        assert deleted.json()["status"] == "deleted"
+        assert deleted.json()["deleted_at"]
+        assert deleted.json()["safe_today_after_sen"] >= deleted.json()["safe_today_before_sen"]
+
+        await session.refresh(goal)
+        assert goal.status == "deleted"
+        assert goal.deleted_at is not None
+        assert (
+            await session.execute(
+                select(GoalPlanRecord).where(GoalPlanRecord.goal_id == goal_id)
+            )
+        ).scalars().all()
+        audit = (
+            await session.execute(
+                select(AuditEvent).where(AuditEvent.action == "goal.deleted")
+            )
+        ).scalar_one()
+        assert audit.detail["goal_id"] == str(goal_id)
+
+        assert (await client.get(f"/v1/goals/{goal_id}", headers=auth(token))).status_code == 404
+        dashboard = await client.get("/v1/dashboard/today", headers=auth(token))
+        assert str(goal_id) not in {item["id"] for item in dashboard.json()["goals"]}
+        assert (await client.delete(f"/v1/goals/{goal_id}", headers=auth(token))).status_code == 404
 
     async def test_rejects_float_money_and_past_target(self, client):
         token = await register(client)

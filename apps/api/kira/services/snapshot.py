@@ -69,7 +69,7 @@ async def load_snapshot(session: AsyncSession, user: User, today: date) -> Snaps
             .join(Goal, Goal.id == GoalContributionRecord.goal_id)
             .where(
                 GoalContributionRecord.user_id == user.id,
-                Goal.status != "cancelled",
+                Goal.status.not_in(("cancelled", "deleted")),
             )
         )
     ).scalars().all()

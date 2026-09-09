@@ -2,8 +2,14 @@ import { useEffect, useState } from "react";
 
 import type { GoalSummary } from "@kira/contracts";
 
-import { useGoal, useGoalPlan } from "../../api/goalHooks";
+import {
+  useDeleteGoal,
+  useGoal,
+  useGoalDeletionImpact,
+  useGoalPlan,
+} from "../../api/goalHooks";
 import { useDashboardToday } from "../../api/hooks";
+import { GoalDeleteDialog } from "../../components/GoalDeleteDialog";
 import { formatGoalDate } from "../../components/GoalPlanPreview";
 import { Reveal } from "../../components/Reveal";
 import { fmt } from "../../lib/money";
@@ -72,8 +78,27 @@ function GoalsHome({
 }) {
   const dashboard = useDashboardToday(true);
   const [filter, setFilter] = useState<GoalFilter>("all");
+  const [deletingGoal, setDeletingGoal] = useState<GoalSummary | null>(null);
+  const [deletionNotice, setDeletionNotice] = useState<string | null>(null);
+  const deletionImpact = useGoalDeletionImpact(deletingGoal?.id ?? null);
+  const deleteGoal = useDeleteGoal();
   const goals = dashboard.data?.goals ?? [];
   const filtered = goals.filter((goal) => filter === "all" || goal.horizon === filter);
+
+  const confirmDelete = async () => {
+    if (!deletingGoal) return;
+    try {
+      const result = await deleteGoal.mutateAsync(deletingGoal.id);
+      setDeletionNotice(
+        result.safe_today_increase_sen > 0
+          ? `${result.goal_name} was deleted. Safe to Spend today increased by RM${fmt(result.safe_today_increase_sen)}.`
+          : `${result.goal_name} was deleted. Its future goal reserve has been released.`,
+      );
+      setDeletingGoal(null);
+    } catch {
+      // The dialog remains open and renders the mutation error for retry.
+    }
+  };
 
   return (
     <div className="goal-screen">
@@ -84,6 +109,12 @@ function GoalsHome({
         </div>
       </Reveal>
       <div className="goal-content">
+        {deletionNotice && (
+          <div className="goal-delete-notice" role="status">
+            <span>{deletionNotice}</span>
+            <button onClick={() => setDeletionNotice(null)} aria-label="Dismiss deletion message">×</button>
+          </div>
+        )}
         <Reveal delay={35}>
           <div className="goal-filter" role="group" aria-label="Filter goals">
             {(["all", "short", "long"] as GoalFilter[]).map((value) => (
@@ -135,7 +166,15 @@ function GoalsHome({
           <div className="goal-list">
             {filtered.map((goal, index) => (
               <Reveal key={goal.id} delay={105 + index * 70}>
-                <GoalCard goal={goal} primary={index === 0} onView={() => onView(goal.id)} />
+                <GoalCard
+                  goal={goal}
+                  primary={index === 0}
+                  onView={() => onView(goal.id)}
+                  onDelete={() => {
+                    deleteGoal.reset();
+                    setDeletingGoal(goal);
+                  }}
+                />
               </Reveal>
             ))}
           </div>
@@ -146,11 +185,35 @@ function GoalsHome({
           </Reveal>
         )}
       </div>
+      {deletingGoal && (
+        <GoalDeleteDialog
+          goalName={deletingGoal.name}
+          impact={deletionImpact.data}
+          loading={deletionImpact.isLoading}
+          deleting={deleteGoal.isPending}
+          previewError={deletionImpact.isError}
+          deleteError={deleteGoal.isError}
+          onCancel={() => {
+            if (!deleteGoal.isPending) setDeletingGoal(null);
+          }}
+          onConfirm={() => void confirmDelete()}
+        />
+      )}
     </div>
   );
 }
 
-function GoalCard({ goal, primary, onView }: { goal: GoalSummary; primary: boolean; onView: () => void }) {
+function GoalCard({
+  goal,
+  primary,
+  onView,
+  onDelete,
+}: {
+  goal: GoalSummary;
+  primary: boolean;
+  onView: () => void;
+  onDelete: () => void;
+}) {
   const detail = useGoal(goal.id);
   const plan = useGoalPlan(goal.id);
   const target = plan.data?.target_amount_sen ?? goal.target_sen;
@@ -161,6 +224,12 @@ function GoalCard({ goal, primary, onView }: { goal: GoalSummary; primary: boole
 
   return (
     <article className={`goal-card ${primary ? "primary" : "compact"}`}>
+      <button
+        className="goal-card-delete"
+        aria-label={`Delete ${goal.name}`}
+        title={`Delete ${goal.name}`}
+        onClick={onDelete}
+      >×</button>
       <div className="goal-section-head">
         <span className="goal-horizon">{goal.priority.replace(/^./, (letter) => letter.toUpperCase())} · {goal.horizon === "short" ? "Short-term" : "Long-term"}</span>
         <span className={`goal-health ${danger ? "danger" : "healthy"}`}>{health}</span>

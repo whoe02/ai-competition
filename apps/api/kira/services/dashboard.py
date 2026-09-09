@@ -99,7 +99,10 @@ async def today_dashboard(
     goals = (
         await session.execute(
             select(Goal)
-            .where(Goal.user_id == user.id, Goal.status != "draft", Goal.status != "cancelled")
+            .where(
+                Goal.user_id == user.id,
+                Goal.status.not_in(("draft", "cancelled", "deleted")),
+            )
         )
     ).scalars().all()
     priority_order = {"protected": 0, "important": 1, "flexible": 2}
