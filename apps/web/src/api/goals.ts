@@ -13,7 +13,15 @@ export type GoalPlanDraft = Omit<GoalPlan, "plan_id" | "version" | "approval_sta
 export type GoalApproval = Omit<ApprovalView, "before" | "after"> & {
   before: GoalPlanDraft | null;
   after: GoalPlanDraft;
+  beforePriority: "protected" | "important" | "flexible" | null;
+  afterPriority: "protected" | "important" | "flexible" | null;
 };
+
+function goalPriority(value: unknown): GoalApproval["afterPriority"] {
+  return value === "protected" || value === "important" || value === "flexible"
+    ? value
+    : null;
+}
 
 function planDraft(value: unknown): GoalPlanDraft | null {
   if (!value || typeof value !== "object") return null;
@@ -52,6 +60,8 @@ export function goalApproval(value: unknown): GoalApproval | null {
     tool: raw.tool,
     before: planDraft(raw.before),
     after,
+    beforePriority: goalPriority(raw.before_priority),
+    afterPriority: goalPriority(raw.after_priority),
     basePlanVersion:
       typeof raw.base_plan_version === "number" ? raw.base_plan_version : undefined,
   };

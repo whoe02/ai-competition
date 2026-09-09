@@ -11,6 +11,7 @@ from kira.services.goal_planning import (
 )
 from kira.services.part_time_recommendations import (
     create_part_time_recommendation,
+    get_stored_part_time_recommendation,
     preview_part_time_recommendation,
 )
 from kira.services.snapshot import load_snapshot
@@ -142,6 +143,8 @@ async def test_part_time_preview_is_read_only_and_uses_user_income_estimate(sess
     assert recommendation["expected_monthly_income_sen"] is None
     assert recommendation["monthly_income_after_sen"] is None
     assert recommendation["safe_to_spend_changes"] is False
+    stored = await get_stored_part_time_recommendation(session, user, goal.id)
+    assert stored == recommendation
 
     preview = await preview_part_time_recommendation(session, user, goal.id, 100_000, AS_OF)
     after_safe = safe_to_spend(await load_snapshot(session, user, AS_OF.date())).safe_today.sen

@@ -16,9 +16,12 @@ import {
   type GoalApprovalResult,
 } from "./goals";
 import { butlerThreadKey, dashboardTodayKey } from "./hooks";
+import { announceGoalRecommendationReady } from "../lib/goalRecommendationEvents";
 
 export const goalKey = (goalId: string) => ["goals", goalId] as const;
 export const goalPlanKey = (goalId: string) => ["goals", goalId, "plan"] as const;
+export const goalPartTimeRecommendationKey = (goalId: string) =>
+  ["goals", goalId, "part-time-recommendation"] as const;
 
 export function useGoal(goalId: string | null) {
   return useQuery({
@@ -65,6 +68,22 @@ export function useSelectGoalScenario() {
   });
 }
 
+export function useChangeGoalPriority() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ goalId, priority }: { goalId: string; priority: "protected" | "important" | "flexible" }) =>
+      runStructuredGoal(
+        structuredRequest({
+          action: "recalculate",
+          goal_id: goalId,
+          priority,
+          wants_scenarios: false,
+        }),
+      ),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: butlerThreadKey }),
+  });
+}
+
 export function useGoalScenarios() {
   return useMutation({
     mutationFn: (goalId: string) =>
@@ -73,8 +92,9 @@ export function useGoalScenarios() {
 }
 
 export function usePartTimeRecommendation() {
+  const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({
+    mutationFn: async ({
       goalId,
       availableHoursPerWeek,
       workMode,
@@ -84,12 +104,27 @@ export function usePartTimeRecommendation() {
       availableHoursPerWeek: number;
       workMode: "remote" | "on_site" | "either";
       transportLimitations: string;
-    }) =>
-      api.post<PartTimeJobRecommendation>(`/v1/goals/${goalId}/part-time-recommendation`, {
+    }) => {
+      const result = await api.post<PartTimeJobRecommendation>(`/v1/goals/${goalId}/part-time-recommendation`, {
         available_hours_per_week: availableHoursPerWeek,
         work_mode: workMode,
         transport_limitations: transportLimitations,
-      }),
+      });
+      queryClient.setQueryData(goalPartTimeRecommendationKey(goalId), result);
+      if (result.status === "available") announceGoalRecommendationReady(goalId);
+      return result;
+    },
+  });
+}
+
+export function useStoredPartTimeRecommendation(goalId: string | null) {
+  return useQuery({
+    queryKey: goalPartTimeRecommendationKey(goalId ?? "none"),
+    queryFn: () =>
+      api.get<PartTimeJobRecommendation | null>(
+        `/v1/goals/${goalId}/part-time-recommendation`,
+      ),
+    enabled: Boolean(goalId),
   });
 }
 

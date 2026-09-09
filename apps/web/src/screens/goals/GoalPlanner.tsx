@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import type { GoalSummary } from "@kira/contracts";
 
@@ -14,8 +14,26 @@ import { goalTypeLabel, statusLabel } from "./goalUi";
 type GoalFilter = "all" | "short" | "long";
 type GoalPage = { name: "home" } | { name: "create" } | { name: "detail"; goalId: string };
 
-export function GoalPlanner({ onOpenForesight }: { onOpenForesight?: () => void }) {
-  const [page, setPage] = useState<GoalPage>({ name: "home" });
+export function GoalPlanner({
+  onOpenForesight,
+  recommendationGoalId,
+  onRecommendationOpened,
+}: {
+  onOpenForesight?: () => void;
+  recommendationGoalId?: string;
+  onRecommendationOpened?: () => void;
+}) {
+  const [page, setPage] = useState<GoalPage>(
+    recommendationGoalId
+      ? { name: "detail", goalId: recommendationGoalId }
+      : { name: "home" },
+  );
+
+  useEffect(() => {
+    if (!recommendationGoalId) return;
+    setPage({ name: "detail", goalId: recommendationGoalId });
+    onRecommendationOpened?.();
+  }, [recommendationGoalId, onRecommendationOpened]);
 
   if (page.name === "create") {
     return (
@@ -26,7 +44,13 @@ export function GoalPlanner({ onOpenForesight }: { onOpenForesight?: () => void 
     );
   }
   if (page.name === "detail") {
-    return <GoalDetail goalId={page.goalId} onBack={() => setPage({ name: "home" })} />;
+    return (
+      <GoalDetail
+        goalId={page.goalId}
+        initialShowRecommendations={page.goalId === recommendationGoalId}
+        onBack={() => setPage({ name: "home" })}
+      />
+    );
   }
   return (
     <GoalsHome
@@ -138,7 +162,7 @@ function GoalCard({ goal, primary, onView }: { goal: GoalSummary; primary: boole
   return (
     <article className={`goal-card ${primary ? "primary" : "compact"}`}>
       <div className="goal-section-head">
-        <span className="goal-horizon">{goal.horizon === "short" ? "Short-term" : "Long-term"}</span>
+        <span className="goal-horizon">{goal.priority.replace(/^./, (letter) => letter.toUpperCase())} · {goal.horizon === "short" ? "Short-term" : "Long-term"}</span>
         <span className={`goal-health ${danger ? "danger" : "healthy"}`}>{health}</span>
       </div>
       <div className="goal-card-title"><div><p>{detail.data ? goalTypeLabel(detail.data.goal_type) : "Goal"}</p><h2>{goal.name}</h2></div><b>{progress}%</b></div>

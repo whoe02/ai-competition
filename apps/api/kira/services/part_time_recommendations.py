@@ -77,6 +77,18 @@ class PartTimeRecommendationError(Exception):
     """The AI recommendation is unavailable or no longer matches this plan."""
 
 
+async def get_stored_part_time_recommendation(
+    session: AsyncSession, user: User, goal_id
+) -> dict[str, object] | None:
+    """Return only a recommendation saved against the current plan version."""
+    await owned_goal(session, user, goal_id)
+    record = await current_plan_record(session, user, goal_id)
+    cached = dict(record.part_time_recommendation_data or {})
+    if cached.get("status") != "available" or cached.get("plan_version") != record.version:
+        return None
+    return cached
+
+
 def recommendation_is_available(plan: GoalPlan) -> bool:
     """Offer acceleration help for unfinished goals below a 60% income claim."""
     return (

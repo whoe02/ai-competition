@@ -57,6 +57,7 @@ class TestDashboardToday:
         assert goals["Emergency top-up"]["target_sen"] == 250000
         assert goals["Emergency top-up"]["saved_sen"] == 115000
         assert goals["Emergency top-up"]["months_left"] == 5
+        assert goals["Emergency top-up"]["priority"] == "flexible"
         assert goals["Wedding"]["horizon"] == "long"
 
     async def test_counts_waiting_drafts_without_counting_their_money(self, client, session):

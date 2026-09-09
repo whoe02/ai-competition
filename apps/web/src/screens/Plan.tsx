@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import type { ForesightDriver, ForesightResponse, GoalSummary } from "@kira/contracts";
 
@@ -18,6 +18,8 @@ type PlanProps = {
   isLoading?: boolean;
   isError?: boolean;
   onDriver?: (driver: ForesightDriver) => void;
+  recommendationGoalId?: string;
+  onRecommendationOpened?: () => void;
 };
 
 const SHORT = "#4E8F79";
@@ -55,9 +57,16 @@ export function Plan({
   isLoading = false,
   isError = false,
   onDriver = () => undefined,
+  recommendationGoalId,
+  onRecommendationOpened,
 }: PlanProps) {
   const [view, setView] = useState<PlanView>(initialView);
   const [showForesight, setShowForesight] = useState(false);
+
+  useEffect(() => {
+    setView(initialView);
+    if (initialView === "daily") setShowForesight(false);
+  }, [initialView]);
 
   const selectView = (next: PlanView) => {
     setView(next);
@@ -117,7 +126,11 @@ export function Plan({
               onDriver={onDriver}
             />
           ) : (
-            <GoalPlanner onOpenForesight={() => setShowForesight(true)} />
+            <GoalPlanner
+              onOpenForesight={() => setShowForesight(true)}
+              recommendationGoalId={recommendationGoalId}
+              onRecommendationOpened={onRecommendationOpened}
+            />
           )}
         </div>
       )}

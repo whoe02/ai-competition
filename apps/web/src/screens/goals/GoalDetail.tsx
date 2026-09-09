@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import type { GoalScenario, PartTimeJobRecommendation } from "@kira/contracts";
 
@@ -6,26 +6,38 @@ import {
   approvalFromRun,
   useGoal,
   useGoalPlan,
+  useChangeGoalPriority,
   useGoalScenarios,
   usePartTimeRecommendationImpact,
   usePartTimeRecommendation,
+  useStoredPartTimeRecommendation,
   useSelectGoalScenario,
 } from "../../api/goalHooks";
 import type { GoalApproval } from "../../api/goals";
 import { GoalApprovalSheet } from "../../components/GoalApprovalSheet";
-import { IcCheck, IcChev } from "../../components/Icons";
+import { IcCheck } from "../../components/Icons";
 import { GoalPlanPreview, formatGoalDate } from "../../components/GoalPlanPreview";
 import { fmt, parseSen } from "../../lib/money";
 import { GoalScreenHead } from "./GoalCreate";
 import { goalTypeLabel, statusLabel } from "./goalUi";
 
-export function GoalDetail({ goalId, onBack }: { goalId: string; onBack: () => void }) {
+export function GoalDetail({
+  goalId,
+  onBack,
+  initialShowRecommendations = false,
+}: {
+  goalId: string;
+  onBack: () => void;
+  initialShowRecommendations?: boolean;
+}) {
   const goal = useGoal(goalId);
   const plan = useGoalPlan(goalId);
   const scenarioMutation = useGoalScenarios();
   const selectScenario = useSelectGoalScenario();
+  const changePriority = useChangeGoalPriority();
   const partTimeMutation = usePartTimeRecommendation();
   const partTimeImpact = usePartTimeRecommendationImpact();
+  const storedPartTime = useStoredPartTimeRecommendation(goalId);
   const [scenarios, setScenarios] = useState<GoalScenario[] | null>(null);
   const [selected, setSelected] = useState<GoalScenario | null>(null);
   const [approval, setApproval] = useState<GoalApproval | null>(null);
@@ -35,8 +47,14 @@ export function GoalDetail({ goalId, onBack }: { goalId: string; onBack: () => v
   const [availableHours, setAvailableHours] = useState("8");
   const [workMode, setWorkMode] = useState<"remote" | "on_site" | "either">("either");
   const [transportLimitations, setTransportLimitations] = useState("");
-  const [recommendationsReady, setRecommendationsReady] = useState(false);
-  const [showRecommendations, setShowRecommendations] = useState(false);
+  const [showRecommendations, setShowRecommendations] = useState(initialShowRecommendations);
+
+  useEffect(() => {
+    const stored = storedPartTime.data;
+    if (stored?.status === "available") {
+      setPartTime((current) => current ?? stored);
+    }
+  }, [storedPartTime.data]);
 
   if (goal.isLoading || plan.isLoading) {
     return <GoalState title="Loading your goal…" detail="Reading the latest approved plan." />;
@@ -84,6 +102,18 @@ export function GoalDetail({ goalId, onBack }: { goalId: string; onBack: () => v
     }
   };
 
+  const reviewPriority = async (priority: "protected" | "important" | "flexible") => {
+    if (priority === detail.priority) return;
+    try {
+      const run = await changePriority.mutateAsync({ goalId, priority });
+      const nextApproval = approvalFromRun(run);
+      if (!nextApproval) throw new Error(run.errors?.join(" ") || "No approval draft returned");
+      setApproval(nextApproval);
+    } catch {
+      // A priority never changes until its calculated plan is explicitly approved.
+    }
+  };
+
   const loadPartTimeRecommendation = async () => {
     const parsedHours = Number.parseInt(availableHours, 10);
     if (!Number.isInteger(parsedHours) || parsedHours < 1 || parsedHours > 40) return;
@@ -95,7 +125,6 @@ export function GoalDetail({ goalId, onBack }: { goalId: string; onBack: () => v
         transportLimitations: transportLimitations.trim(),
       });
       setPartTime(result);
-      setRecommendationsReady(result.status === "available");
     } catch {
       // The error state keeps the approved plan untouched and visible.
     }
@@ -150,6 +179,29 @@ export function GoalDetail({ goalId, onBack }: { goalId: string; onBack: () => v
             <span>Target <b>{formatGoalDate(detail.target_date)}</b></span>
             <span>Priority <b>{detail.priority}</b></span>
           </div>
+        </section>
+
+        <section className="goal-priority-section" aria-label="Goal funding priority">
+          <div className="goal-section-head">
+            <div><p className="eyebrow">Funding priority</p><h3>Choose what gets funded first</h3></div>
+          </div>
+          <p className="goal-muted">Protected goals are funded after bills and your emergency buffer, then Important, then Flexible. Within a level, the earlier target date comes first.</p>
+          <div className="goal-priority-options">
+            {(["protected", "important", "flexible"] as const).map((priority) => (
+              <button
+                type="button"
+                className={detail.priority === priority ? "selected" : ""}
+                aria-pressed={detail.priority === priority}
+                disabled={changePriority.isPending}
+                key={priority}
+                onClick={() => void reviewPriority(priority)}
+              >
+                {priority.replace(/^./, (letter) => letter.toUpperCase())}
+              </button>
+            ))}
+          </div>
+          {changePriority.isError && <p className="goal-inline-error" role="alert">Kira could not prepare that priority change. Your current plan is unchanged.</p>}
+          <p className="goal-priority-help">Changing priority recalculates the plan and asks for approval before it affects future income allocations.</p>
         </section>
 
         <GoalPlanPreview plan={currentPlan} title="Approved calculation" />
@@ -259,20 +311,6 @@ export function GoalDetail({ goalId, onBack }: { goalId: string; onBack: () => v
             setNotice(result === "approved" ? "Your approved plan is now updated." : "Change rejected. Your current plan is unchanged.");
           }}
         />
-      )}
-      {recommendationsReady && partTime?.status === "available" && (
-        <button
-          className="goal-recommendations-toast"
-          type="button"
-          onClick={() => {
-            setRecommendationsReady(false);
-            setShowRecommendations(true);
-          }}
-        >
-          <span className="goal-recommendations-toast-mark"><IcCheck size={16} /></span>
-          <span><b>Recommendations ready</b><small>Tap to view 3 work ideas for {detail.name}</small></span>
-          <IcChev size={18} />
-        </button>
       )}
     </div>
   );

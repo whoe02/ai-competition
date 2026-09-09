@@ -137,7 +137,7 @@ afterEach(() => vi.unstubAllGlobals());
 
 describe("Goal Planner", () => {
   it("shows an empty state and validates the create form before calling the backend", async () => {
-    vi.mocked(fetch).mockImplementation(async (input) => {
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
       if (String(input).endsWith("/v1/dashboard/today")) return json(DASHBOARD);
       return json({}, 404);
     });
@@ -225,8 +225,8 @@ describe("Goal Planner", () => {
     const dashboard = {
       ...DASHBOARD,
       goals: [
-        { id: SHORT_ID, name: "Japan trip", horizon: "short", target_sen: 500000, saved_sen: 100000, monthly_sen: 50000, months_left: 8, note: "" },
-        { id: LONG_ID, name: "First home", horizon: "long", target_sen: 5000000, saved_sen: 800000, monthly_sen: 150000, months_left: 28, note: "" },
+        { id: SHORT_ID, name: "Japan trip", horizon: "short", priority: "flexible", target_sen: 500000, saved_sen: 100000, monthly_sen: 50000, months_left: 8, note: "" },
+        { id: LONG_ID, name: "First home", horizon: "long", priority: "important", target_sen: 5000000, saved_sen: 800000, monthly_sen: 150000, months_left: 28, note: "" },
       ],
     } satisfies DashboardToday;
     vi.mocked(fetch).mockImplementation(async (input) => {
@@ -280,7 +280,7 @@ describe("Goal Planner", () => {
   });
 
   it("keeps scenario selection local and rejects through the approval endpoint", async () => {
-    const dashboard = { ...DASHBOARD, goals: [{ id: LONG_ID, name: "First home", horizon: "long", target_sen: 5000000, saved_sen: 800000, monthly_sen: 150000, months_left: 28, note: "" }] } satisfies DashboardToday;
+    const dashboard = { ...DASHBOARD, goals: [{ id: LONG_ID, name: "First home", horizon: "long", priority: "important", target_sen: 5000000, saved_sen: 800000, monthly_sen: 150000, months_left: 28, note: "" }] } satisfies DashboardToday;
     let runCalls = 0;
     let decision: Record<string, unknown> | null = null;
     vi.mocked(fetch).mockImplementation(async (input, init) => {
@@ -322,9 +322,54 @@ describe("Goal Planner", () => {
     expect(await screen.findByText("Change rejected. Your current plan is unchanged.")).toBeVisible();
   });
 
+  it("requires approval before changing a goal's funding priority", async () => {
+    const dashboard = {
+      ...DASHBOARD,
+      goals: [{ id: LONG_ID, name: "First home", horizon: "long", priority: "important", target_sen: 5_000_000, saved_sen: 800_000, monthly_sen: 150_000, months_left: 28, note: "" }],
+    } satisfies DashboardToday;
+    let intent: Record<string, unknown> | null = null;
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.endsWith("/v1/dashboard/today")) return json(dashboard);
+      if (url.endsWith(`/v1/goals/${LONG_ID}`)) return json(DETAIL);
+      if (url.endsWith(`/v1/goals/${LONG_ID}/plan`)) return json(PLAN);
+      if (url.endsWith("/v1/goals/runs")) {
+        intent = JSON.parse(String(init?.body)).intent;
+        return json({
+          request_id: "55555555-5555-4555-8555-555555555555",
+          thread_id: "66666666-6666-4666-8666-666666666666",
+          final_response: "Priority recalculated.", llm_calls: 0, goal_id: LONG_ID, feasible: true, errors: [],
+          approval: {
+            approval_id: APPROVAL_ID,
+            tool: "apply_goal_plan_change",
+            summary: "Change funding priority.",
+            base_plan_version: 1,
+            before: DRAFT,
+            after: DRAFT,
+            before_priority: "important",
+            after_priority: "protected",
+          },
+        });
+      }
+      return json({}, 404);
+    });
+    const user = userEvent.setup();
+    renderGoals();
+
+    await user.click((await screen.findAllByRole("button", { name: "View plan" }))[0]!);
+    expect(await screen.findByText("Choose what gets funded first")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Protected" }));
+
+    expect(await screen.findByRole("dialog", { name: "Review goal plan change" })).toBeVisible();
+    expect(intent).toEqual({ action: "recalculate", goal_id: LONG_ID, priority: "protected", wants_scenarios: false });
+    expect(screen.getByText("Funding order changes")).toBeVisible();
+    expect(screen.getByText(/receives available goal money first/)).toBeVisible();
+    expect(screen.getByText(/required contribution stays the same/)).toBeVisible();
+  });
+
   it("sends edits back for recalculation and requires approval again", async () => {
     const replacementId = "77777777-7777-4777-8777-777777777777";
-    const dashboard = { ...DASHBOARD, goals: [{ id: LONG_ID, name: "First home", horizon: "long", target_sen: 5000000, saved_sen: 800000, monthly_sen: 150000, months_left: 28, note: "" }] } satisfies DashboardToday;
+    const dashboard = { ...DASHBOARD, goals: [{ id: LONG_ID, name: "First home", horizon: "long", priority: "important", target_sen: 5000000, saved_sen: 800000, monthly_sen: 150000, months_left: 28, note: "" }] } satisfies DashboardToday;
     const decisions: { id: string; body: Record<string, unknown> }[] = [];
     vi.mocked(fetch).mockImplementation(async (input, init) => {
       const url = String(input);
@@ -379,7 +424,7 @@ describe("Goal Planner", () => {
   it("opens compact work recommendations from their completion notice", async () => {
     const dashboard = {
       ...DASHBOARD,
-      goals: [{ id: LONG_ID, name: "First home", horizon: "long", target_sen: 5_000_000, saved_sen: 800_000, monthly_sen: 150_000, months_left: 28, note: "" }],
+      goals: [{ id: LONG_ID, name: "First home", horizon: "long", priority: "important", target_sen: 5_000_000, saved_sen: 800_000, monthly_sen: 150_000, months_left: 28, note: "" }],
     } satisfies DashboardToday;
     const recommendations = [
       {
@@ -407,12 +452,12 @@ describe("Goal Planner", () => {
         cautions: ["Keep preparation time within your weekly limit."],
       },
     ];
-    vi.mocked(fetch).mockImplementation(async (input) => {
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
       const url = String(input);
       if (url.endsWith("/v1/dashboard/today")) return json(dashboard);
       if (url.endsWith(`/v1/goals/${LONG_ID}`)) return json(DETAIL);
       if (url.endsWith(`/v1/goals/${LONG_ID}/plan`)) return json(PLAN);
-      if (url.endsWith(`/v1/goals/${LONG_ID}/part-time-recommendation`)) {
+      if (url.endsWith(`/v1/goals/${LONG_ID}/part-time-recommendation`) && init?.method === "POST") {
         return json({
           goal_id: LONG_ID,
           plan_version: 1,
@@ -434,7 +479,7 @@ describe("Goal Planner", () => {
 
     await user.click((await screen.findAllByRole("button", { name: "View plan" }))[0]!);
     await user.click(await screen.findByRole("button", { name: "See work recommendations" }));
-    await user.click(await screen.findByRole("button", { name: /Recommendations ready/ }));
+    await user.click(await screen.findByRole("button", { name: "View ideas" }));
 
     expect(await screen.findByRole("heading", { name: "Work ideas for your goal" })).toBeVisible();
     expect(screen.getByText("Technical documentation specialist")).toBeVisible();

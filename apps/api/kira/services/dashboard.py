@@ -29,6 +29,7 @@ class GoalSummary:
     id: uuid.UUID
     name: str
     horizon: str
+    priority: str
     target_sen: int
     saved_sen: int
     monthly_sen: int
@@ -99,9 +100,16 @@ async def today_dashboard(
         await session.execute(
             select(Goal)
             .where(Goal.user_id == user.id, Goal.status != "draft", Goal.status != "cancelled")
-            .order_by(Goal.name)
         )
     ).scalars().all()
+    priority_order = {"protected": 0, "important": 1, "flexible": 2}
+    goals.sort(
+        key=lambda goal: (
+            priority_order[goal.priority],
+            goal.target_date or date.max,
+            str(goal.id),
+        )
+    )
 
     return DashboardToday(
         date=today,
@@ -125,6 +133,7 @@ async def today_dashboard(
                 id=goal.id,
                 name=goal.name,
                 horizon=goal.horizon,
+                priority=goal.priority,
                 target_sen=goal.target.sen,
                 saved_sen=goal.saved.sen,
                 monthly_sen=goal.monthly.sen,

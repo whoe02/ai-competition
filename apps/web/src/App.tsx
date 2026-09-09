@@ -19,11 +19,15 @@ import {
   useUnconfirm,
 } from "./api/hooks";
 import { EntrySheet, type EntryAttachment } from "./components/EntrySheet";
-import { IcActivity, IcMore, IcPlan, IcPlus, IcSpark, IcToday } from "./components/Icons";
+import { IcActivity, IcCheck, IcChev, IcMore, IcPlan, IcPlus, IcSpark, IcToday } from "./components/Icons";
 import { Motes } from "./components/Motes";
 import { NavItem } from "./components/NavItem";
 import { ScrollContext } from "./components/Reveal";
 import { SheetHostContext } from "./components/Sheet";
+import {
+  GOAL_RECOMMENDATION_READY,
+  type GoalRecommendationReadyDetail,
+} from "./lib/goalRecommendationEvents";
 import { Activity } from "./screens/Activity";
 import { Butler } from "./screens/Butler";
 import { Login } from "./screens/Login";
@@ -50,6 +54,8 @@ export function App() {
   const [signedIn, setSignedIn] = useState(false);
   const [planView, setPlanView] = useState<PlanView>("daily");
   const [entry, setEntry] = useState(false);
+  const [recommendationReadyGoalId, setRecommendationReadyGoalId] = useState<string | null>(null);
+  const [recommendationGoalId, setRecommendationGoalId] = useState<string | null>(null);
   const [now, setNow] = useState(() => new Date());
   // A sentence raised from Today or Activity, handed to the Butler to ask.
   const [pending, setPending] = useState<{ text: string; attachment?: EntryAttachment } | null>(
@@ -81,6 +87,15 @@ export function App() {
   useEffect(() => {
     const timer = setTimeout(() => setBoot(false), 2500);
     return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    const onReady = (event: Event) => {
+      const detail = (event as CustomEvent<GoalRecommendationReadyDetail>).detail;
+      if (detail?.goalId) setRecommendationReadyGoalId(detail.goalId);
+    };
+    window.addEventListener(GOAL_RECOMMENDATION_READY, onReady);
+    return () => window.removeEventListener(GOAL_RECOMMENDATION_READY, onReady);
   }, []);
 
   useEffect(() => {
@@ -252,6 +267,8 @@ export function App() {
                       isLoading={foresight.isLoading}
                       isError={foresight.isError}
                       onDriver={proposeDriver}
+                      recommendationGoalId={recommendationGoalId ?? undefined}
+                      onRecommendationOpened={() => setRecommendationGoalId(null)}
                     />
                   )}
                   {signedIn && tab === "more" && (
@@ -285,6 +302,26 @@ export function App() {
                 go("butler");
               }}
             />
+          )}
+
+          {signedIn && recommendationReadyGoalId && (
+            <button
+              className="goal-recommendations-toast"
+              type="button"
+              onClick={() => {
+                setRecommendationGoalId(recommendationReadyGoalId);
+                setRecommendationReadyGoalId(null);
+                setPlanView("goals");
+                if (tab !== "plan") go("plan", "goals");
+              }}
+            >
+              <span className="goal-recommendations-toast-mark"><IcCheck size={16} /></span>
+              <span>
+                <b>Work recommendations ready</b>
+                <small>Tap to open {dashboard.data?.goals.find((goal) => goal.id === recommendationReadyGoalId)?.name ?? "your goal"}</small>
+              </span>
+              <IcChev size={18} />
+            </button>
           )}
 
           {signedIn && (

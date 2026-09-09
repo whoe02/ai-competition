@@ -44,6 +44,7 @@ from kira.services.goal_planning import (
 from kira.services.part_time_recommendations import (
     PartTimeRecommendationError,
     create_part_time_recommendation,
+    get_stored_part_time_recommendation,
     preview_part_time_recommendation,
 )
 
@@ -263,6 +264,21 @@ async def post_part_time_recommendation(
     except PartTimeRecommendationError as exc:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
     return PartTimeJobRecommendationResponse.model_validate(data)
+
+
+@router.get(
+    "/{goal_id}/part-time-recommendation",
+    response_model=PartTimeJobRecommendationResponse | None,
+)
+async def get_part_time_recommendation(
+    goal_id: uuid.UUID, user: CurrentUser, session: SessionDep
+) -> PartTimeJobRecommendationResponse | None:
+    """Load the AI work ideas stored on this goal's current plan version."""
+    try:
+        data = await get_stored_part_time_recommendation(session, user, goal_id)
+    except GoalNotFound as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Goal plan not found") from exc
+    return PartTimeJobRecommendationResponse.model_validate(data) if data else None
 
 
 @router.post(

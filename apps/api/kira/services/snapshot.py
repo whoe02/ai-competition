@@ -95,6 +95,7 @@ async def load_snapshot(session: AsyncSession, user: User, today: date) -> Snaps
                 goal.saved,
                 goal.target_date,
                 last_contribution_by_goal.get(goal.id),
+                goal.priority,
             )
             for goal in goals
         ),

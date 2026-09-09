@@ -11,6 +11,12 @@ import { fmt, parseNonNegativeSen, parseSen } from "../../lib/money";
 type GoalType = NonNullable<GoalGraphIntent["goal_type"]>;
 type GoalPriority = NonNullable<GoalGraphIntent["priority"]>;
 
+const PRIORITY_HELP: Record<GoalPriority, string> = {
+  protected: "Fund first after bills and your emergency buffer. Use only for goals that cannot wait.",
+  important: "Fund after protected goals, before flexible goals.",
+  flexible: "Fund after protected and important goals. It may receive less when money is tight.",
+};
+
 export const GOAL_TYPES: { value: GoalType; label: string; hint: string }[] = [
   { value: "emergency_starter_fund", label: "Emergency starter fund", hint: "A first layer of protection" },
   { value: "upcoming_bill_annual_expense", label: "Upcoming bill", hint: "Annual or known expense" },
@@ -218,6 +224,7 @@ export function GoalCreate({
               </button>
             ))}
           </div>
+          <p className="goal-priority-help" role="status">{PRIORITY_HELP[priority]}</p>
         </fieldset>
 
         {(errors.submit || create.isError) && (
@@ -228,7 +235,7 @@ export function GoalCreate({
         <button className="btn btn-primary goal-full-button" type="submit" disabled={create.isPending}>
           {create.isPending ? "Calculating safely…" : "Calculate plan"}
         </button>
-        <p className="goal-lock-note">The backend calculates feasibility, reserves and contributions from confirmed records. This form never performs those calculations.</p>
+        <p className="goal-lock-note">Funding order is Protected → Important → Flexible. Goals in the same level are funded by target date, then a stable goal ID.</p>
       </form>
     </div>
   );

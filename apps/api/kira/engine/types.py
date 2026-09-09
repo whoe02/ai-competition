@@ -23,6 +23,7 @@ class GoalInput:
     saved: Money = Money(0)
     target_date: date | None = None
     last_contributed_on: date | None = None
+    priority: str = "flexible"
 
 
 @dataclass(frozen=True, slots=True)

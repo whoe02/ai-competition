@@ -1,11 +1,12 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { DayPlan, Transaction } from "@kira/contracts";
 
 import { App } from "./App";
+import { announceGoalRecommendationReady } from "./lib/goalRecommendationEvents";
 
 const DASHBOARD = {
   date: "2026-09-03",
@@ -434,6 +435,21 @@ describe("App", () => {
     expect(await screen.findByRole("tab", { name: "Goals" })).toHaveAttribute("aria-selected", "true");
     expect(await screen.findByText("Start with one goal that matters")).toBeVisible();
     expect(screen.getByRole("button", { name: /^Plan$/i })).toHaveClass("active");
+  });
+
+  it("shows recommendation completion across tabs and opens its goal destination", async () => {
+    renderApp();
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    await user.click(await screen.findByRole("button", { name: /sign in/i }));
+
+    act(() => announceGoalRecommendationReady("goal-recommendation-1"));
+    const notice = await screen.findByRole("button", { name: /Work recommendations ready/ });
+    expect(screen.getByRole("button", { name: /^Today$/i })).toHaveClass("active");
+    await user.click(notice);
+
+    expect(await screen.findByRole("tab", { name: "Goals" })).toHaveAttribute("aria-selected", "true");
+    expect(await screen.findByText("We couldn’t load this plan")).toBeVisible();
+    expect(screen.queryByRole("button", { name: /Work recommendations ready/ })).not.toBeInTheDocument();
   });
 });
 

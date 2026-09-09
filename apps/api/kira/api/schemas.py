@@ -61,6 +61,7 @@ class GoalSummaryResponse(ResponseModel):
     id: uuid.UUID
     name: str
     horizon: str
+    priority: Literal["protected", "important", "flexible"]
     target_sen: int
     saved_sen: int
     monthly_sen: int

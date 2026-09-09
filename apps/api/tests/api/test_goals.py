@@ -73,6 +73,29 @@ class TestGoalContracts:
             "Cash-flow-safe",
             "Accelerated",
         ]
+        record.part_time_recommendation_data = {
+            "goal_id": goal_id,
+            "plan_version": record.version,
+            "status": "available",
+            "eligible": True,
+            "recommendations": [],
+            "source": "llm",
+            "preferences": {
+                "available_hours_per_week": 8,
+                "work_mode": "remote",
+                "transport_limitations": "",
+            },
+            "feasible_before": record.feasible,
+            "safe_to_spend_changes": False,
+            "cash_effect": "Read-only recommendation.",
+        }
+        await session.commit()
+        stored = await client.get(
+            f"/v1/goals/{goal_id}/part-time-recommendation", headers=auth(token)
+        )
+        assert stored.status_code == 200, stored.text
+        assert stored.json()["plan_version"] == record.version
+        assert stored.json()["preferences"]["work_mode"] == "remote"
 
         impact = await client.post(
             f"/v1/goals/{goal_id}/impact",

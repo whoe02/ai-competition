@@ -50,6 +50,7 @@ from kira.services.goal_planning import (
     definition_from_record,
     owned_goal,
     plan_from_record,
+    recalculate_active_goal_plans,
 )
 from kira.services.goal_planning import (
     load_financial_snapshot as load_snapshot_service,
@@ -638,7 +639,10 @@ def _approval_summary(draft: PlanChangeDraft) -> str:
         f"{_rm(draft.after.required_contribution_per_payday_sen)} per payday, "
         f"target {draft.after.target_date}"
     )
-    return f"Goal plan change — before: {before}; after: {after}."
+    summary = f"Goal plan change — before: {before}; after: {after}."
+    if draft.before is None:
+        summary += f" Priority: {draft.definition.priority}."
+    return summary
 
 
 async def approval_interrupt(
@@ -683,6 +687,12 @@ async def approval_interrupt(
             "base_plan_version": draft.base_plan_version,
             "before": args["before"],
             "after": args["after"],
+            "before_priority": (
+                state["base_goal_definition"].priority
+                if state.get("base_goal_definition") is not None
+                else None
+            ),
+            "after_priority": draft.definition.priority,
         }
     ) or {"action": "reject"}
     try:
@@ -766,6 +776,11 @@ async def apply_goal_plan(
             plan=draft.after,
             base_plan_version=draft.base_plan_version,
             as_of_utc=runtime.context.as_of_utc,
+        )
+        await recalculate_active_goal_plans(
+            runtime.context.session,
+            runtime.context.user,
+            runtime.context.as_of_utc,
         )
     except StalePlanVersion as exc:
         await butler_approvals.settle(

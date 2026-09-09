@@ -57,6 +57,7 @@ const GOALS: GoalSummary[] = [
     id: "g1",
     name: "Emergency top-up",
     horizon: "short",
+    priority: "protected",
     target_sen: 250000,
     saved_sen: 115000,
     monthly_sen: 27000,

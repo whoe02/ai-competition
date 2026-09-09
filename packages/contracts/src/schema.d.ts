@@ -732,7 +732,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Get Part Time Recommendation
+         * @description Load the AI work ideas stored on this goal's current plan version.
+         */
+        get: operations["get_part_time_recommendation_v1_goals__goal_id__part_time_recommendation_get"];
         put?: never;
         /**
          * Post Part Time Recommendation
@@ -1798,6 +1802,11 @@ export interface components {
             name: string;
             /** Horizon */
             horizon: string;
+            /**
+             * Priority
+             * @enum {string}
+             */
+            priority: "protected" | "important" | "flexible";
             /** Target Sen */
             target_sen: number;
             /** Saved Sen */
@@ -3431,6 +3440,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GoalPlanResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_part_time_recommendation_v1_goals__goal_id__part_time_recommendation_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                goal_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PartTimeJobRecommendationResponse"] | null;
                 };
             };
             /** @description Validation Error */
