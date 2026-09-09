@@ -87,13 +87,15 @@ async def _owned(session: AsyncSession, user: User, goal_id: uuid.UUID) -> Goal:
 
 async def list_goals(session: AsyncSession, user: User) -> tuple[GoalView, ...]:
     goals = (
-        await session.execute(
-            select(Goal)
-            .where(
-                Goal.user_id == user.id,
-                Goal.status.not_in(("draft", "cancelled", "deleted")),
+        (
+            await session.execute(
+                select(Goal)
+                .where(
+                    Goal.user_id == user.id,
+                    Goal.status.not_in(("draft", "cancelled", "deleted")),
+                )
+                .order_by(Goal.name)
             )
-            .order_by(Goal.name)
         )
         .scalars()
         .all()
