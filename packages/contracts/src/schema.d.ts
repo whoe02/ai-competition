@@ -1637,6 +1637,9 @@ export interface components {
             goal_id?: string | null;
             /** Feasible */
             feasible?: boolean | null;
+            calculation?: components["schemas"]["GoalPlanCalculationResponse"] | null;
+            /** Scenarios */
+            scenarios?: components["schemas"]["GoalScenarioResponse"][];
             /** Approval */
             approval?: {
                 [key: string]: unknown;
@@ -1754,6 +1757,58 @@ export interface components {
             /** Probability Bp */
             probability_bp: number;
             median_shortfall: components["schemas"]["MoneyOut"];
+        };
+        /**
+         * GoalPlanCalculationResponse
+         * @description A calculated plan that has not been persisted or offered for approval.
+         */
+        GoalPlanCalculationResponse: {
+            /**
+             * Goal Id
+             * Format: uuid
+             */
+            goal_id: string;
+            /** Feasible */
+            feasible: boolean;
+            /** Target Amount Sen */
+            target_amount_sen: number;
+            /** Current Saved Sen */
+            current_saved_sen: number;
+            /** Remaining Amount Sen */
+            remaining_amount_sen: number;
+            /**
+             * Target Date
+             * Format: date
+             */
+            target_date: string;
+            /** Required Contribution Per Payday Sen */
+            required_contribution_per_payday_sen: number;
+            /** Next Required Reserve Sen */
+            next_required_reserve_sen: number;
+            /** Projected Completion Date */
+            projected_completion_date: string | null;
+            /** Milestones */
+            milestones: components["schemas"]["GoalMilestoneResponse"][];
+            /** Risk Flags */
+            risk_flags: string[];
+            /** Assumptions */
+            assumptions: string[];
+            /** Calculation Version */
+            calculation_version: string;
+            /** Evidence Refs */
+            evidence_refs: string[];
+            /** Monthly Income Sen */
+            monthly_income_sen: number | null;
+            /** Monthly Protected Commitments Sen */
+            monthly_protected_commitments_sen: number;
+            /** Monthly Disposable For Goals Sen */
+            monthly_disposable_for_goals_sen: number;
+            /** Monthly Goal Contributions Sen */
+            monthly_goal_contributions_sen: number;
+            /** Contribution Ratio Bp */
+            contribution_ratio_bp: number | null;
+            /** Affordability Status */
+            affordability_status: string;
         };
         /** GoalPlanResponse */
         GoalPlanResponse: {

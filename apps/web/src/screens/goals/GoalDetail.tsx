@@ -53,8 +53,10 @@ export function GoalDetail({
     const stored = storedPartTime.data;
     if (stored?.status === "available") {
       setPartTime((current) => current ?? stored);
+    } else if (storedPartTime.isSuccess) {
+      setPartTime(null);
     }
-  }, [storedPartTime.data]);
+  }, [storedPartTime.data, storedPartTime.isSuccess]);
 
   if (goal.isLoading || plan.isLoading) {
     return <GoalState title="Loading your goal…" detail="Reading the latest approved plan." />;
@@ -72,6 +74,7 @@ export function GoalDetail({
 
   const detail = goal.data;
   const currentPlan = plan.data;
+  const partTimeEligible = shouldOfferPartTime(currentPlan);
   const progress = currentPlan.target_amount_sen > 0
     ? Math.min(100, Math.round((currentPlan.current_saved_sen / currentPlan.target_amount_sen) * 100))
     : 0;
@@ -206,13 +209,19 @@ export function GoalDetail({
 
         <GoalPlanPreview plan={currentPlan} title="Approved calculation" />
 
-        {shouldOfferPartTime(currentPlan) && (
+        {currentPlan.remaining_amount_sen > 0 && (
           <section className="goal-part-time-section" aria-label="Part-time work reminder">
             <div className="goal-section-head">
               <div><p className="eyebrow">Goal boost</p><h3>Could part-time work help?</h3></div>
               <span className="goal-health danger">Optional</span>
             </div>
-            {partTime === null && (
+            {!partTimeEligible ? (
+              <p className="goal-muted">
+                {currentPlan.contribution_ratio_bp === null
+                  ? "Add confirmed monthly income before Kira prepares personalised work ideas."
+                  : "First revise this goal below 60% of monthly income. Then Kira can suggest suitable work to accelerate it."}
+              </p>
+            ) : partTime === null && (
               <>
                 <p className="goal-muted">Kira uses your job title and availability to suggest three suitable ways to earn extra income.</p>
                 <div className="goal-part-time-preferences">
@@ -235,7 +244,7 @@ export function GoalDetail({
                 </button>
               </>
             )}
-            {partTimeMutation.isError && <p className="goal-inline-error" role="alert">Kira could not prepare a recommendation. Your plan is unchanged.</p>}
+            {partTimeEligible && partTimeMutation.isError && <p className="goal-inline-error" role="alert">Kira could not prepare a recommendation. Your plan is unchanged.</p>}
             {partTime?.status === "not_available" ? (
               <p className="goal-muted">{partTime.reason}</p>
             ) : partTime && (
@@ -278,7 +287,7 @@ export function GoalDetail({
             >
               <div className="goal-section-head">
                 <b>{scenario.label}</b>
-                <span className={`goal-health ${scenario.feasible ? "healthy" : "danger"}`}>{scenario.feasible ? "Feasible" : "At risk"}</span>
+                <span className={`goal-health ${scenarioHealth(scenario).tone}`}>{scenarioHealth(scenario).label}</span>
               </div>
               <p><strong>RM{fmt(scenario.contribution_per_payday_sen)}</strong> per payday</p>
               <small>{formatGoalDate(scenario.target_date)}{scenario.goal_delay_days > 0 ? ` · ${scenario.goal_delay_days} days later` : " · no delay"}</small>
@@ -314,6 +323,18 @@ export function GoalDetail({
       )}
     </div>
   );
+}
+
+function scenarioHealth(scenario: GoalScenario): { tone: "healthy" | "warning" | "danger"; label: string } {
+  if (scenario.risk_flags.includes("goal_contributions_high_risk")) {
+    return { tone: "danger", label: "High risk" };
+  }
+  if (scenario.risk_flags.includes("goal_contributions_stretching")) {
+    return { tone: "warning", label: "Stretching" };
+  }
+  return scenario.feasible
+    ? { tone: "healthy", label: "Feasible" }
+    : { tone: "danger", label: "At risk" };
 }
 
 function PartTimeRecommendationPage({

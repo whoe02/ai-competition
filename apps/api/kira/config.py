@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     dashscope_api_key: str = ""
     dashscope_base_url: str = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
     # The model every turn is asked of first.
-    butler_model: str = "qwen3.7-flash"
+    butler_model: str = "qwen3.5-35b-a3b"
     # Tried with the same call when the main model errors: an id this key is
     # not served, a rate limit, a timeout. Only when both fail does a turn
     # drop to the offline stand-in. Blank disables the middle rung.

@@ -310,10 +310,20 @@ describe("Goal Planner", () => {
           request_id: "55555555-5555-4555-8555-555555555555",
           thread_id: "66666666-6666-4666-8666-666666666666",
           final_response: "The target needs adjustment.", llm_calls: 0, goal_id: LONG_ID, feasible: false, errors: [],
-          approval: { approval_id: APPROVAL_ID, tool: "apply_goal_plan_change", summary: "Create goal.", base_plan_version: 1, before: null, after: { ...DRAFT, feasible: false, target_amount_sen: 9_000_000, remaining_amount_sen: 8_200_000, risk_flags: ["insufficient_surplus"] } },
+          calculation: {
+            ...DRAFT,
+            feasible: false,
+            target_amount_sen: 9_000_000,
+            remaining_amount_sen: 8_200_000,
+            monthly_goal_contributions_sen: 428_572,
+            contribution_ratio_bp: 8_200,
+            affordability_status: "impossible",
+            risk_flags: ["goal_contributions_exceed_70_percent_of_income"],
+          },
+          scenarios: [SCENARIO],
+          approval: null,
         });
       }
-      if (url.endsWith(`/v1/goals/${LONG_ID}/scenarios`)) return json({ scenarios: [SCENARIO] });
       return json({}, 404);
     });
     const user = userEvent.setup();
@@ -325,7 +335,13 @@ describe("Goal Planner", () => {
 
     expect(await screen.findByText("This target needs adjustment")).toBeVisible();
     expect(await screen.findByText("Extend the target date")).toBeVisible();
-    expect(screen.getByText("Insufficient surplus")).toBeVisible();
+    expect(screen.queryByText("Insufficient surplus")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Monthly affordability")).toBeVisible();
+    expect(screen.getByText("This goal cannot be created yet")).toBeVisible();
+    expect(screen.getByText(/hard limit is 70%/)).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Review & activate" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Revise goal details" }));
+    expect(screen.getByRole("button", { name: "Calculate plan" })).toBeVisible();
   });
 
   it("keeps scenario selection local and rejects through the approval endpoint", async () => {
@@ -534,6 +550,36 @@ describe("Goal Planner", () => {
     expect(screen.getByText("Technical documentation specialist")).toBeVisible();
     expect(screen.getAllByText("Typical work")).toHaveLength(3);
     expect(screen.getAllByText("Why it fits")).toHaveLength(3);
+  });
+
+  it("keeps the work reminder visible when the plan is above its recommendation limit", async () => {
+    const dashboard = {
+      ...DASHBOARD,
+      goals: [{ id: LONG_ID, name: "First home", horizon: "long", priority: "important", target_sen: 5_000_000, saved_sen: 800_000, monthly_sen: 430_000, months_left: 10, note: "" }],
+    } satisfies DashboardToday;
+    const highSharePlan = {
+      ...PLAN,
+      monthly_goal_contributions_sen: 430_000,
+      contribution_ratio_bp: 8_269,
+      affordability_status: "unsustainable",
+      feasible: false,
+    } satisfies GoalPlan;
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/v1/dashboard/today")) return json(dashboard);
+      if (url.endsWith(`/v1/goals/${LONG_ID}`)) return json(DETAIL);
+      if (url.endsWith(`/v1/goals/${LONG_ID}/plan`)) return json(highSharePlan);
+      if (url.endsWith(`/v1/goals/${LONG_ID}/part-time-recommendation`)) return json(null);
+      return json({}, 404);
+    });
+    const user = userEvent.setup();
+    renderGoals();
+
+    await user.click(await screen.findByRole("button", { name: "View plan" }));
+
+    expect(await screen.findByRole("region", { name: "Part-time work reminder" })).toBeVisible();
+    expect(screen.getByText(/First revise this goal below 60%/)).toBeVisible();
+    expect(screen.queryByRole("button", { name: "See work recommendations" })).not.toBeInTheDocument();
   });
 
   it("shows a retryable goal-home error", async () => {

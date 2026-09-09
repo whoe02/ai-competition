@@ -51,6 +51,10 @@ class StalePlanVersion(Exception):
     """The approved draft was calculated from a plan that is no longer current."""
 
 
+class InfeasibleGoalPlan(Exception):
+    """A plan beyond the hard affordability boundary cannot be activated."""
+
+
 def definition_from_record(goal: Goal) -> GoalDefinition:
     if goal.target_date is None:
         raise ValueError("legacy goal has no target_date and needs replanning")
@@ -432,6 +436,10 @@ async def apply_approved_plan_change(
     The caller owns the surrounding transaction so the plan, approval row and
     audit event commit together. Previous approved versions are retained.
     """
+    if plan.affordability_status == "impossible":
+        raise InfeasibleGoalPlan(
+            "Revise the goal before approval; this plan exceeds the hard affordability limit"
+        )
     goal_id = uuid.UUID(definition.goal_id)
     goal = (
         await session.execute(

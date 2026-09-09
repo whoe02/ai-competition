@@ -106,9 +106,18 @@ const GOAL_PROPOSAL = sse(
       after: {
         target_amount_sen: 100000,
         current_saved_sen: 20000,
+        remaining_amount_sen: 80000,
         required_contribution_per_payday_sen: 10000,
         target_date: "2026-12-31",
+        projected_completion_date: "2026-12-20",
         feasible: true,
+        monthly_income_sen: 520000,
+        monthly_protected_commitments_sen: 200000,
+        monthly_disposable_for_goals_sen: 320000,
+        monthly_goal_contributions_sen: 230770,
+        contribution_ratio_bp: 4438,
+        affordability_status: "high_risk",
+        risk_flags: ["goal_contributions_high_risk"],
       },
       base_plan_version: 1,
     },
@@ -285,6 +294,16 @@ describe("Butler approvals", () => {
     );
     expect(screen.getByText("Remember: I split rent with Aida.")).toBeInTheDocument();
     expect(screen.getByText(/Nothing changes until you approve/)).toBeInTheDocument();
+  });
+
+  it("shows goal affordability and contribution share in the review card", async () => {
+    vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(streamed(GOAL_PROPOSAL))));
+    const user = setup();
+    await user.type(screen.getByLabelText("Ask Kira"), "Create my goal{Enter}");
+
+    await waitFor(() => expect(screen.getByText("High risk")).toBeInTheDocument());
+    expect(screen.getByText(/Goal saving RM2,307.70 · 44% of income/)).toBeInTheDocument();
+    expect(screen.getByText(/Income RM5,200.00 · protected RM2,000.00/)).toBeInTheDocument();
   });
 
   it("sends the decision when the change is approved", async () => {

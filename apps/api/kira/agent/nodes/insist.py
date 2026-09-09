@@ -36,7 +36,7 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMe
 from langgraph.runtime import Runtime
 
 from kira.agent import events
-from kira.agent.llm import _goal_workflow_args, _today_from, route_for
+from kira.agent.llm import _goal_workflow_args, _part_time_args, _today_from, route_for
 from kira.agent.state import ButlerContext, ButlerState
 from kira.agent.tools import REGISTRY
 
@@ -58,12 +58,14 @@ PLACES_THEN_GOAL = "places_then_goal_impact"
 CHAT = "chat"
 JUST_TALK = "just_talk"
 GOALS = "start_goal_planning"
+PART_TIME = "recommend_part_time_jobs"
 
 # Only ever attached to a call this node added, so a transcript says plainly
 # which calls the model asked for and which one it did not.
 CALL_ID = "insisted-start_day_planning"
 CHAT_CALL_ID = "insisted-just-talk"
 GOAL_CALL_ID = "insisted-goal-impact"
+PART_TIME_CALL_ID = "insisted-part-time-recommendations"
 
 
 def _last_ai(messages: Sequence[BaseMessage]) -> AIMessage | None:
@@ -81,7 +83,7 @@ def _last_human(messages: Sequence[BaseMessage]) -> str:
     return ""
 
 
-def _already_answered(messages: Sequence[BaseMessage]) -> bool:
+def _already_answered(messages: Sequence[BaseMessage], name: str = PLANNER) -> bool:
     """Whether the planner has already come back this turn, however it went.
 
     A refusal from the guard and a handler that raised are both results here,
@@ -89,7 +91,7 @@ def _already_answered(messages: Sequence[BaseMessage]) -> bool:
     insisting a second time would only ask the same question again.
     """
     return any(
-        isinstance(message, ToolMessage) and message.name == PLANNER for message in messages
+        isinstance(message, ToolMessage) and message.name == name for message in messages
     )
 
 
@@ -184,6 +186,45 @@ async def insist(state: ButlerState, runtime: Runtime[ButlerContext]) -> dict:
     # proposed add_place_to_today is left alone to reach the approval card.
     if getattr(reply, "tool_calls", None) and route.name != PLACES_THEN_GOAL:
         return {}
+
+    desired: str | None = None
+    arguments: dict = {}
+    thinking = ""
+    call_id = CALL_ID
+    if route.name in ("goal_workflow", "goal_impact"):
+        desired = GOALS
+        arguments = _goal_workflow_args(text, attachment)
+        thinking = "Calculating the goal from your confirmed figures"
+        call_id = GOAL_CALL_ID
+    elif route.name == "part_time_jobs":
+        desired = PART_TIME
+        arguments = _part_time_args(text, state.get("history_block", ""))
+        thinking = "Matching work ideas to your goal and availability"
+        call_id = PART_TIME_CALL_ID
+
+    if desired is not None:
+        if _already_answered(messages, desired):
+            return {}
+        spec = REGISTRY.get(desired)
+        if spec is None or spec.is_write:  # pragma: no cover - registry contract
+            return {}
+        events.emit(runtime, events.THINKING, text=thinking)
+        return {
+            "messages": [
+                AIMessage(
+                    id=reply.id,
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": desired,
+                            "args": arguments,
+                            "id": call_id,
+                            "type": "tool_call",
+                        }
+                    ],
+                )
+            ]
+        }
 
     if _already_answered(messages):
         return {}

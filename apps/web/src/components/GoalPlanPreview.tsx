@@ -20,6 +20,18 @@ const affordabilityLabel = (value: string) => {
   return labels[value] ?? readable(value);
 };
 
+const affordabilityTone = (value: string) => {
+  const tones: Record<string, string> = {
+    comfortable: "comfortable",
+    stretching: "stretching",
+    high_risk: "high-risk",
+    unsustainable: "unsustainable",
+    impossible: "unsustainable",
+    income_unavailable: "income-unavailable",
+  };
+  return tones[value] ?? "income-unavailable";
+};
+
 export function formatGoalDate(value: string | null): string {
   if (!value) return "Not available";
   const [year, month, day] = value.split("-").map(Number);
@@ -67,7 +79,10 @@ export function GoalPlanPreview({
       </dl>
 
       {!compact && plan.monthly_income_sen !== null && (
-        <section className="goal-notes" aria-label="Monthly affordability">
+        <section
+          className={`goal-notes affordability ${affordabilityTone(plan.affordability_status)}`}
+          aria-label="Monthly affordability"
+        >
           <b>Monthly affordability · {affordabilityLabel(plan.affordability_status)}</b>
           <span>Income: RM{fmt(plan.monthly_income_sen)}</span>
           <span>Protected commitments: RM{fmt(plan.monthly_protected_commitments_sen)}</span>
@@ -82,12 +97,6 @@ export function GoalPlanPreview({
         </div>
       )}
 
-      {!compact && plan.risk_flags.length > 0 && (
-        <div className="goal-notes risk" aria-label="Plan warnings">
-          <b>Watch-outs</b>
-          {plan.risk_flags.map((flag) => <span key={flag}>{readable(flag)}</span>)}
-        </div>
-      )}
       {!compact && plan.assumptions.length > 0 && (
         <div className="goal-notes" aria-label="Plan assumptions">
           <b>Assumptions</b>

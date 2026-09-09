@@ -302,7 +302,7 @@ degrades the Butler's prose, not its behaviour.
 
 New settings: `dashscope_api_key`, `dashscope_base_url`
 (default `https://dashscope-intl.aliyuncs.com/compatible-mode/v1`), `butler_model`
-(default `qwen3.7-flash`), `butler_fallback_model` (default `qwen3.6-plus`),
+(default `qwen3.5-35b-a3b`), `butler_fallback_model` (default `qwen3.6-plus`),
 `butler_offline`, `butler_max_tool_iterations`, `butler_request_timeout_seconds`.
 `docker-compose.yml` passes `DASHSCOPE_API_KEY` through as an optional variable,
 and both model ids with those defaults.

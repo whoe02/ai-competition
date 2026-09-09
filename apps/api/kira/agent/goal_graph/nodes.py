@@ -43,6 +43,7 @@ from kira.services import butler_approvals
 from kira.services.audit import ACTOR_BUTLER, ACTOR_USER, record
 from kira.services.goal_planning import (
     GoalNotFound,
+    InfeasibleGoalPlan,
     StalePlanVersion,
     apply_approved_plan_change,
     create_draft_goal,
@@ -473,13 +474,31 @@ def _deterministic_answer(state: GoalGraphState) -> str:
     plan = state.get("current_goal_plan")
     if plan is None:
         return "I could not calculate a goal plan from the available confirmed data."
+    if plan.affordability_status == "impossible":
+        ratio = (
+            f"{plan.contribution_ratio_bp / 100:.0f}% of monthly income"
+            if plan.contribution_ratio_bp is not None
+            else "more than the disposable income available for goals"
+        )
+        return (
+            f"This goal is impossible as entered: {_rm(plan.required_contribution_per_payday_sen)} "
+            f"per payday would use {ratio}. Revise the target amount, extend the target date, "
+            "or add money already saved before trying again."
+        )
     feasibility = "feasible" if plan.feasible else "not feasible from confirmed cash flow"
     completion = (
         plan.projected_completion_date.isoformat() if plan.projected_completion_date else "unknown"
     )
+    affordability = plan.affordability_status.replace("_", " ")
+    share = (
+        f" at {plan.contribution_ratio_bp / 100:.0f}% of monthly income"
+        if plan.contribution_ratio_bp is not None
+        else " because confirmed monthly income is unavailable"
+    )
     return (
         f"Set aside {_rm(plan.required_contribution_per_payday_sen)} per payday; "
-        f"the plan is {feasibility} and projects completion on {completion}."
+        f"the plan is {feasibility} and projects completion on {completion}. "
+        f"Monthly affordability is {affordability}{share}."
     )
 
 
@@ -782,6 +801,26 @@ async def apply_goal_plan(
             runtime.context.user,
             runtime.context.as_of_utc,
         )
+    except InfeasibleGoalPlan as exc:
+        await butler_approvals.settle(
+            runtime.context.session,
+            row,
+            applied=False,
+            summary=row.summary + " Blocked because the plan is not feasible.",
+        )
+        await record(
+            runtime.context.session,
+            runtime.context.user,
+            actor=ACTOR_BUTLER,
+            action="goal.plan.blocked",
+            detail={"request_id": state["request_id"], "reason": str(exc)},
+        )
+        return {
+            "approval": {"id": str(row.id), "status": "blocked"},
+            "resume_action": "blocked",
+            "proposed_change": None,
+            "errors": [str(exc)],
+        }
     except StalePlanVersion as exc:
         await butler_approvals.settle(
             runtime.context.session,
@@ -903,6 +942,9 @@ def route_after_scenarios(state: GoalGraphState) -> str:
 
 
 def route_after_compose(state: GoalGraphState) -> str:
+    plan = state.get("current_goal_plan")
+    if plan is not None and not plan.feasible:
+        return "audit"
     if state.get("resume_action") in {"edit", "stale"}:
         return "draft"
     return "draft" if _plan_changed(state) else "audit"

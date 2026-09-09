@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { fmt, parseNonNegativeSen, parseSen, toRinggitInput } from "./money";
+import { fmt, formatKeypadMoney, parseNonNegativeSen, parseSen, toRinggitInput } from "./money";
 
 describe("fmt", () => {
   it("formats sen as grouped ringgit", () => {
@@ -77,5 +77,18 @@ describe("parseNonNegativeSen", () => {
     expect(parseNonNegativeSen("0.00")).toBe(0);
     expect(parseNonNegativeSen("8,000.25")).toBe(800025);
     expect(parseNonNegativeSen("-1.00")).toBeNull();
+  });
+});
+
+describe("formatKeypadMoney", () => {
+  it("moves keypad digits left from the cents position", () => {
+    expect(formatKeypadMoney("0.003")).toBe("0.03");
+    expect(formatKeypadMoney("0.035")).toBe("0.35");
+    expect(formatKeypadMoney("0.350")).toBe("3.50");
+  });
+
+  it("supports deleting back toward zero", () => {
+    expect(formatKeypadMoney("3.5")).toBe("0.35");
+    expect(formatKeypadMoney("0.0")).toBe("0.00");
   });
 });

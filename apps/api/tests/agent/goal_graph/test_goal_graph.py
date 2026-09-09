@@ -225,7 +225,10 @@ async def test_infeasible_goal_generates_deterministic_scenarios(session, butler
         "Cash-flow-safe",
         "Accelerated",
     ]
-    assert result.approval is not None
+    assert result.approval is None
+    assert result.state.get("proposed_change") is None
+    goal_id = uuid.UUID(result.state["goal_definition"].goal_id)
+    assert await session.get(Goal, goal_id) is None
 
 
 async def test_overspend_marks_goal_at_risk_without_llm(session, butler, today):
@@ -266,9 +269,6 @@ async def test_scenario_selection_creates_draft_and_edit_recalculates(session, b
         session,
         butler,
         today,
-        target_amount_sen=50_000_000,
-        current_saved_sen=0,
-        target_date=date(2028, 12, 31),
     )
     applied = await resume_goal_run(
         session,

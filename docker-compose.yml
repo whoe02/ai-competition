@@ -24,7 +24,9 @@ services:
       DATABASE_URL: postgresql+asyncpg://kira:kira@db:5432/kira
       JWT_SECRET: ${JWT_SECRET:-development-only-replace-with-a-secure-jwt-secret}
       DEMO_TODAY: "2026-09-03"
-      SEED_DEMO: "1"
+      # Seed only when explicitly requested. Keeping this off preserves goals
+      # and recommendation JSON already stored in the Postgres volume.
+      SEED_DEMO: ${SEED_DEMO:-0}
       # Unset means the Butler runs on its offline model: the graph, the tools,
       # the approvals and the evidence are identical, only the prose differs.
       DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}

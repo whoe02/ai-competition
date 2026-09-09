@@ -208,8 +208,19 @@ def _response_data(
         "monthly_income_after_sen": after.monthly_income_sen if after else None,
         "contribution_ratio_before_bp": before.contribution_ratio_bp,
         "contribution_ratio_after_bp": after.contribution_ratio_bp if after else None,
+        "affordability_status": before.affordability_status,
         "feasible_before": before.feasible,
         "feasible_after": after.feasible if after else None,
+        "projected_completion_before": (
+            before.projected_completion_date.isoformat()
+            if before.projected_completion_date
+            else None
+        ),
+        "projected_completion_after": (
+            after.projected_completion_date.isoformat()
+            if after and after.projected_completion_date
+            else None
+        ),
         "safe_to_spend_changes": False,
         "cash_effect": "Read-only scenario. No income, goal plan, or Safe to Spend amount changes.",
     }

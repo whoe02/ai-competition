@@ -585,6 +585,8 @@ def _affordability(
         )
     if monthly_goals > disposable:
         return result("impossible", True)
+    if ratio is not None and ratio > 7_000:
+        return result("impossible", True)
     if ratio is not None and ratio > 5_000:
         return result("unsustainable", True)
     if ratio is not None and ratio > 4_000:
@@ -592,6 +594,16 @@ def _affordability(
     if ratio is not None and ratio >= 3_000:
         return result("stretching", False)
     return result("comfortable", False)
+
+
+def _blocking_affordability_risk(
+    affordability: tuple[int | None, int, int, int, int | None, str, bool],
+) -> str:
+    if affordability[3] > affordability[2]:
+        return "goal_contributions_exceed_disposable_income"
+    if affordability[5] == "impossible":
+        return "goal_contributions_exceed_70_percent_of_income"
+    return "goal_contributions_exceed_50_percent_of_income"
 
 
 def _milestones(
@@ -686,11 +698,7 @@ def calculate_goal_feasibility(goal: GoalDefinition, snapshot: FinancialSnapshot
     affordability = _affordability(snapshot, goal.goal_id, required)
     if affordability[-1]:
         feasible = False
-        risks.append(
-            "goal_contributions_exceed_disposable_income"
-            if affordability[-2] == "impossible"
-            else "goal_contributions_exceed_50_percent_of_income"
-        )
+        risks.append(_blocking_affordability_risk(affordability))
     elif affordability[-2] in {"stretching", "high_risk"}:
         risks.append(f"goal_contributions_{affordability[-2]}")
     projected = calculate_projected_completion_date(goal, snapshot, required)
@@ -802,11 +810,7 @@ def calculate_goal_plan_for_contribution(
     affordability = _affordability(snapshot, effective.goal_id, contribution_per_payday_sen)
     if affordability[-1]:
         feasible = False
-        risks.append(
-            "goal_contributions_exceed_disposable_income"
-            if affordability[-2] == "impossible"
-            else "goal_contributions_exceed_50_percent_of_income"
-        )
+        risks.append(_blocking_affordability_risk(affordability))
     elif affordability[-2] in {"stretching", "high_risk"}:
         risks.append(f"goal_contributions_{affordability[-2]}")
     return GoalPlan(
@@ -882,6 +886,12 @@ def _scenario(
         risks.append("target_date_delayed")
     if not feasible:
         risks.append("contribution_exceeds_confirmed_capacity")
+    affordability = _affordability(snapshot, goal.goal_id, contribution)
+    if affordability[-1]:
+        feasible = False
+        risks.append(_blocking_affordability_risk(affordability))
+    elif affordability[-2] in {"stretching", "high_risk"}:
+        risks.append(f"goal_contributions_{affordability[-2]}")
     scenario_id = str(
         uuid.uuid5(
             uuid.NAMESPACE_URL,
@@ -898,7 +908,7 @@ def _scenario(
         goal_delay_days=delay,
         flexible_spending_delta_sen=baseline.required_contribution_per_payday_sen - contribution,
         tradeoffs=tradeoffs,
-        risk_flags=tuple(risks),
+        risk_flags=tuple(dict.fromkeys(risks)),
         calculation_version=CALCULATION_VERSION,
         evidence_refs=snapshot.evidence_refs,
     )
@@ -913,20 +923,52 @@ def generate_goal_scenarios(
     recurring = _minimum_payday_capacity(
         snapshot, goal.goal_id, goal.priority, goal.target_date
     )
-    # The on-time plan may already fit inside confirmed capacity, which used to
-    # make the "Cash-flow-safe" scenario identical. Keep one fifth of each
-    # confirmed cycle unallocated and reduce the on-time reserve by the same
-    # proportion. The result is always a real trade-off for a positive plan:
-    # more flexible cash now in exchange for a later projected completion.
-    cash_safe = required - _ceil_div(required, 5) if required else 0
-    if recurring is not None:
-        cash_safe = min(cash_safe, (recurring * 4) // 5)
-    else:
-        cash_safe = min(
-            cash_safe,
-            (_available_before_goal(snapshot, goal.goal_id, goal.priority) * 4) // 5,
+    income = snapshot.next_income_payday.amount_sen
+
+    def ratio_limited_capacity(max_ratio_bp: int, *, inclusive: bool) -> int:
+        """Largest contribution accepted by the same affordability classifier."""
+        if income is None:
+            return 0
+        low, high = 0, income
+        while low < high:
+            candidate = (low + high + 1) // 2
+            affordability = _affordability(snapshot, goal.goal_id, candidate)
+            ratio = affordability[4]
+            within_ratio = ratio is not None and (
+                ratio <= max_ratio_bp if inclusive else ratio < max_ratio_bp
+            )
+            if not affordability[-1] and within_ratio:
+                low = candidate
+            else:
+                high = candidate - 1
+        return low
+
+    reduced_required = required - _ceil_div(required, 5) if required else 0
+    if income is not None:
+        # Comfortable is strictly below 30%. Other approved goals are included
+        # by _affordability, so this is the remaining headroom for this goal.
+        cash_safe = min(reduced_required, ratio_limited_capacity(3_000, inclusive=False))
+        # Acceleration may use high-risk headroom but never crosses the hard 50%
+        # boundary or disposable income. It can therefore never exceed a payday's
+        # confirmed income merely because the requested date is aggressive.
+        accelerated = min(
+            required + _ceil_div(required, 4) if required else 0,
+            ratio_limited_capacity(5_000, inclusive=True),
         )
-    accelerated = required + _ceil_div(required, 4) if required else 0
+    else:
+        # Without a confirmed income denominator, retain a visible cash cushion
+        # and do not invent percentage-based affordability.
+        fallback = recurring
+        if fallback is None:
+            fallback = _available_before_goal(snapshot, goal.goal_id, goal.priority)
+        cash_safe = min(reduced_required, (fallback * 4) // 5)
+        accelerated = min(
+            required + _ceil_div(required, 4) if required else 0,
+            fallback,
+        )
+    if recurring is not None:
+        cash_safe = min(cash_safe, recurring)
+        accelerated = min(accelerated, recurring)
     return (
         _scenario(
             goal,
@@ -934,7 +976,7 @@ def generate_goal_scenarios(
             "On-time target",
             required,
             baseline,
-            ("Meets the requested date when confirmed cash flow supports it.",),
+            ("Exact reserve required for the requested date; risk limits still apply.",),
         ),
         _scenario(
             goal,
@@ -943,8 +985,10 @@ def generate_goal_scenarios(
             cash_safe,
             baseline,
             (
-                "Keeps a 20% cushion from confirmed cash-flow capacity; the target date "
-                "moves later if needed.",
+                "Keeps combined goal saving below 30% of income and within confirmed "
+                "cash flow; the date moves later when needed."
+                if income is not None
+                else "Keeps a 20% cash-flow cushion; the date moves later when needed.",
             ),
         ),
         _scenario(
@@ -953,7 +997,12 @@ def generate_goal_scenarios(
             "Accelerated",
             accelerated,
             baseline,
-            ("Uses 25% more per payday and leaves less flexible spending.",),
+            (
+                "Uses available headroom to finish sooner than the cash-flow-safe option, "
+                "without taking combined goal saving above 50% of income."
+                if income is not None
+                else "Uses confirmed capacity to finish sooner without exceeding it.",
+            ),
         ),
     )
 

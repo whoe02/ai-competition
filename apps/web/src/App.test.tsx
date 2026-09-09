@@ -387,15 +387,15 @@ describe("App", () => {
     expect(await screen.findByText(/Nothing under Transport this cycle/)).toBeInTheDocument();
   });
 
-  it("switches tabs without losing the shell", async () => {
+  it("switches to Goals without losing the shell", async () => {
     renderApp();
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     await user.click(await screen.findByRole("button", { name: /sign in/i }));
     await user.click(await screen.findByRole("button", { name: /^Plan$/i }));
     await user.click(await screen.findByRole("tab", { name: "Goals" }));
-    await user.click(await screen.findByRole("button", { name: /open foresight/i }));
+    expect(screen.queryByRole("button", { name: /open foresight/i })).not.toBeInTheDocument();
 
-    expect(await screen.findByText("The road ahead")).toBeInTheDocument();
+    expect(await screen.findByText("What are you saving toward?")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^Today$/i })).toBeInTheDocument();
   });
 

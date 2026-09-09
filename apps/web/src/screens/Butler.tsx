@@ -672,19 +672,64 @@ function GoalPlanApproval({
 }
 
 function PlanPreview({ label, plan }: { label: string; plan: GoalPlanPreview | null }) {
+  const affordability = plan ? readableAffordability(plan.affordability_status) : null;
   return (
     <div>
       <span>{label}</span>
       {plan ? (
         <>
+          {affordability && (
+            <em className={`butler-goal-risk ${affordability.tone}`}>{affordability.label}</em>
+          )}
           <b>RM{displayRinggit(plan.required_contribution_per_payday_sen)} / payday</b>
           <small>RM{displayRinggit(plan.target_amount_sen)} by {plan.target_date}</small>
+          {plan.remaining_amount_sen !== undefined && (
+            <small>RM{displayRinggit(plan.remaining_amount_sen)} remaining</small>
+          )}
+          {plan.monthly_goal_contributions_sen !== undefined && (
+            <small>
+              Goal saving RM{displayRinggit(plan.monthly_goal_contributions_sen)}
+              {plan.contribution_ratio_bp != null
+                ? ` · ${Math.round(plan.contribution_ratio_bp / 100)}% of income`
+                : ""}
+            </small>
+          )}
+          {plan.monthly_income_sen != null && (
+            <small>
+              Income RM{displayRinggit(plan.monthly_income_sen)} · protected RM
+              {displayRinggit(plan.monthly_protected_commitments_sen ?? 0)}
+            </small>
+          )}
         </>
       ) : (
         <b>No active plan</b>
       )}
     </div>
   );
+}
+
+function readableAffordability(value: string | undefined): { label: string; tone: string } | null {
+  if (!value) return null;
+  const labels: Record<string, string> = {
+    comfortable: "Comfortable",
+    stretching: "Stretching",
+    high_risk: "High risk",
+    unsustainable: "Unsustainable",
+    impossible: "Not possible",
+    income_unavailable: "Income needed",
+  };
+  const tones: Record<string, string> = {
+    comfortable: "comfortable",
+    stretching: "stretching",
+    high_risk: "high-risk",
+    unsustainable: "unsustainable",
+    impossible: "unsustainable",
+    income_unavailable: "income-unavailable",
+  };
+  return {
+    label: labels[value] ?? value.replaceAll("_", " "),
+    tone: tones[value] ?? "income-unavailable",
+  };
 }
 
 function senToRinggit(sen: number): string {

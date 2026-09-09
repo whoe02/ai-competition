@@ -42,3 +42,17 @@ export function toRinggitInput(sen: number): string {
   const absolute = Math.abs(sen);
   return `${sign}${Math.floor(absolute / 100)}.${String(absolute % 100).padStart(2, "0")}`;
 }
+
+/**
+ * Format keypad digits as a right-to-left money entry.
+ *
+ * Examples: `3` -> `0.03`, then `35` -> `0.35`, then `350` -> `3.50`.
+ * The formatted value may be passed back in on every keystroke because all
+ * separators are removed before the next value is calculated.
+ */
+export function formatKeypadMoney(input: string): string {
+  const digits = input.replace(/\D/g, "").replace(/^0+(?=\d)/, "");
+  if (!digits) return "0.00";
+  const sen = Number(digits);
+  return Number.isSafeInteger(sen) ? fmt(sen) : input;
+}

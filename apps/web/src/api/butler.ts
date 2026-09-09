@@ -7,9 +7,18 @@ export type EvidenceRow = [string, string];
 export type GoalPlanPreview = {
   target_amount_sen: number;
   current_saved_sen: number;
+  remaining_amount_sen?: number;
   required_contribution_per_payday_sen: number;
   target_date: string;
+  projected_completion_date?: string | null;
   feasible: boolean;
+  monthly_income_sen?: number | null;
+  monthly_protected_commitments_sen?: number;
+  monthly_disposable_for_goals_sen?: number;
+  monthly_goal_contributions_sen?: number;
+  contribution_ratio_bp?: number | null;
+  affordability_status?: string;
+  risk_flags?: string[];
 };
 
 export type ApprovalView = {

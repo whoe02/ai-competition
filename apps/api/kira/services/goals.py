@@ -23,6 +23,10 @@ class InvalidGoal(Exception):
     """The proposed goal does not describe something fundable."""
 
 
+class AmbiguousGoal(Exception):
+    """A human goal reference matches more than one owned goal."""
+
+
 @dataclass(frozen=True, slots=True)
 class GoalView:
     id: uuid.UUID
@@ -88,6 +92,55 @@ async def list_goals(session: AsyncSession, user: User) -> tuple[GoalView, ...]:
         )
     ).scalars().all()
     return tuple(_view(goal) for goal in goals)
+
+
+def _reference_words(value: str) -> set[str]:
+    ignored = {"a", "an", "the", "my", "goal", "fund", "savings", "for"}
+    return {
+        word
+        for word in "".join(character if character.isalnum() else " " for character in value)
+        .casefold()
+        .split()
+        if word not in ignored
+    }
+
+
+async def resolve_owned_goal_reference(
+    session: AsyncSession, user: User, reference: str = ""
+) -> Goal:
+    """Resolve a user-facing goal name without asking the model for a UUID."""
+    goals = (
+        await session.execute(
+            select(Goal)
+            .where(
+                Goal.user_id == user.id,
+                Goal.status.not_in(("draft", "cancelled", "deleted", "achieved")),
+            )
+            .order_by(Goal.created_at, Goal.id)
+        )
+    ).scalars().all()
+    if not goals:
+        raise GoalNotFound("you do not have an active goal yet")
+
+    cleaned = reference.strip()
+    if not cleaned:
+        if len(goals) == 1:
+            return goals[0]
+        raise AmbiguousGoal("name the goal you want to accelerate")
+
+    folded = cleaned.casefold()
+    matches = [goal for goal in goals if goal.name.casefold() == folded]
+    if not matches:
+        wanted = _reference_words(cleaned)
+        scored = [(len(wanted & _reference_words(goal.name)), goal) for goal in goals]
+        best = max((score for score, _ in scored), default=0)
+        matches = [goal for score, goal in scored if score == best and score > 0]
+    if len(matches) == 1:
+        return matches[0]
+    if len(matches) > 1:
+        names = ", ".join(goal.name for goal in matches)
+        raise AmbiguousGoal(f"more than one goal matches '{cleaned}': {names}")
+    raise GoalNotFound(f"I could not find an active goal matching '{cleaned}'")
 
 
 async def project_goal(

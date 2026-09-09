@@ -162,6 +162,31 @@ class GoalPlanResponse(ResponseModel):
     affordability_status: str
 
 
+class GoalPlanCalculationResponse(ResponseModel):
+    """A calculated plan that has not been persisted or offered for approval."""
+
+    goal_id: uuid.UUID
+    feasible: bool
+    target_amount_sen: int
+    current_saved_sen: int
+    remaining_amount_sen: int
+    target_date: date
+    required_contribution_per_payday_sen: int
+    next_required_reserve_sen: int
+    projected_completion_date: date | None
+    milestones: list[GoalMilestoneResponse]
+    risk_flags: list[str]
+    assumptions: list[str]
+    calculation_version: str
+    evidence_refs: list[str]
+    monthly_income_sen: int | None
+    monthly_protected_commitments_sen: int
+    monthly_disposable_for_goals_sen: int
+    monthly_goal_contributions_sen: int
+    contribution_ratio_bp: int | None
+    affordability_status: str
+
+
 class PartTimeJobOptionResponse(ResponseModel):
     role_title: str
     typical_tasks: str
@@ -289,6 +314,8 @@ class GoalGraphRunResponse(ResponseModel):
     llm_calls: int
     goal_id: uuid.UUID | None = None
     feasible: bool | None = None
+    calculation: GoalPlanCalculationResponse | None = None
+    scenarios: list[GoalScenarioResponse] = Field(default_factory=list)
     approval: dict | None = None
     errors: list[str] = Field(default_factory=list)
 

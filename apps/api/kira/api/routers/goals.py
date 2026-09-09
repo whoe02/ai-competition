@@ -22,6 +22,7 @@ from kira.api.schemas import (
     GoalImpactRequest,
     GoalImpactResponse,
     GoalMilestoneResponse,
+    GoalPlanCalculationResponse,
     GoalPlanResponse,
     GoalScenarioResponse,
     GoalScenariosResponse,
@@ -30,7 +31,7 @@ from kira.api.schemas import (
     PartTimeRecommendationRequest,
 )
 from kira.db.models import Goal, GoalPlanRecord
-from kira.engine import GoalImpact, GoalScenario
+from kira.engine import GoalImpact, GoalPlan, GoalScenario
 from kira.services import butler_thread
 from kira.services.clock import today_for
 from kira.services.goal_deletion import delete_goal, deletion_impact
@@ -113,6 +114,38 @@ def _plan_response(record: GoalPlanRecord) -> GoalPlanResponse:
     )
 
 
+def _calculation_response(plan: GoalPlan) -> GoalPlanCalculationResponse:
+    return GoalPlanCalculationResponse(
+        goal_id=uuid.UUID(plan.goal_id),
+        feasible=plan.feasible,
+        target_amount_sen=plan.target_amount_sen,
+        current_saved_sen=plan.current_saved_sen,
+        remaining_amount_sen=plan.remaining_amount_sen,
+        target_date=plan.target_date,
+        required_contribution_per_payday_sen=plan.required_contribution_per_payday_sen,
+        next_required_reserve_sen=plan.next_required_reserve_sen,
+        projected_completion_date=plan.projected_completion_date,
+        milestones=[
+            GoalMilestoneResponse(
+                percentage=item.percentage,
+                amount_sen=item.amount_sen,
+                projected_date=item.projected_date,
+            )
+            for item in plan.milestones
+        ],
+        risk_flags=list(plan.risk_flags),
+        assumptions=list(plan.assumptions),
+        calculation_version=plan.calculation_version,
+        evidence_refs=list(plan.evidence_refs),
+        monthly_income_sen=plan.monthly_income_sen,
+        monthly_protected_commitments_sen=plan.monthly_protected_commitments_sen,
+        monthly_disposable_for_goals_sen=plan.monthly_disposable_for_goals_sen,
+        monthly_goal_contributions_sen=plan.monthly_goal_contributions_sen,
+        contribution_ratio_bp=plan.contribution_ratio_bp,
+        affordability_status=plan.affordability_status,
+    )
+
+
 def _scenario_response(scenario: GoalScenario) -> GoalScenarioResponse:
     return GoalScenarioResponse(
         scenario_id=uuid.UUID(scenario.scenario_id),
@@ -157,6 +190,8 @@ def _run_response(result: GoalRunResult, thread_id: uuid.UUID) -> GoalGraphRunRe
         llm_calls=result.llm_calls,
         goal_id=uuid.UUID(definition.goal_id) if definition is not None else None,
         feasible=plan.feasible if plan is not None else None,
+        calculation=_calculation_response(plan) if plan is not None else None,
+        scenarios=[_scenario_response(item) for item in result.state.get("goal_scenarios", ())],
         approval=result.approval,
         errors=result.state.get("errors") or [],
     )

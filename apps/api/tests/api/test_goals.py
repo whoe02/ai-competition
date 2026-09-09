@@ -188,6 +188,33 @@ async def test_structured_goal_graph_run_and_approval_resume(client, session):
         "/v1/auth/login", json={"email": DEMO_EMAIL, "password": DEMO_PASSWORD}
     )
     headers = auth(logged_in.json()["access_token"])
+    blocked = await client.post(
+        "/v1/goals/runs",
+        json={
+            "text": "",
+            "explain": False,
+            "intent": {
+                "action": "create",
+                "goal_type": "travel",
+                "name": "Impossible rush goal",
+                "target_amount_sen": 3_000_000,
+                "current_saved_sen": 0,
+                "target_date": "2027-04-04",
+                "priority": "important",
+            },
+        },
+        headers=headers,
+    )
+    assert blocked.status_code == 200, blocked.text
+    blocked_body = blocked.json()
+    assert blocked_body["approval"] is None
+    assert blocked_body["calculation"]["affordability_status"] == "impossible"
+    assert blocked_body["calculation"]["contribution_ratio_bp"] > 7_000
+    assert len(blocked_body["scenarios"]) == 3
+    assert (
+        await client.get(f"/v1/goals/{blocked_body['goal_id']}", headers=headers)
+    ).status_code == 404
+
     started = await client.post(
         "/v1/goals/runs",
         json={

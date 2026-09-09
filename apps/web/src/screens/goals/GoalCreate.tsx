@@ -3,10 +3,10 @@ import { useState, type FormEvent } from "react";
 import type { GoalGraphIntent, GoalScenario } from "@kira/contracts";
 
 import { approvalFromRun, useCreateGoal, useGoalScenarios } from "../../api/goalHooks";
-import type { GoalApproval } from "../../api/goals";
+import type { GoalApproval, GoalPlanDraft } from "../../api/goals";
 import { GoalApprovalSheet } from "../../components/GoalApprovalSheet";
 import { GoalPlanPreview, formatGoalDate } from "../../components/GoalPlanPreview";
-import { fmt, parseNonNegativeSen, parseSen } from "../../lib/money";
+import { fmt, formatKeypadMoney, parseNonNegativeSen, parseSen } from "../../lib/money";
 
 type GoalType = NonNullable<GoalGraphIntent["goal_type"]>;
 type GoalPriority = NonNullable<GoalGraphIntent["priority"]>;
@@ -55,6 +55,7 @@ export function GoalCreate({
   const [priority, setPriority] = useState<GoalPriority>("important");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [approval, setApproval] = useState<GoalApproval | null>(null);
+  const [calculation, setCalculation] = useState<GoalPlanDraft | null>(null);
   const [approvalOpen, setApprovalOpen] = useState(false);
   const [goalId, setGoalId] = useState<string | null>(null);
   const [scenarios, setScenarios] = useState<GoalScenario[]>([]);
@@ -95,13 +96,16 @@ export function GoalCreate({
         wants_scenarios: false,
       });
       const nextApproval = approvalFromRun(run);
-      if (!run.goal_id || !nextApproval) {
+      const nextCalculation = run.calculation ?? nextApproval?.after ?? null;
+      if (!run.goal_id || !nextCalculation) {
         setErrors({ submit: run.errors?.join(" ") || run.final_response || "No plan was returned." });
         return;
       }
       setGoalId(run.goal_id);
       setApproval(nextApproval);
-      if (run.feasible === false) {
+      setCalculation(nextCalculation);
+      setScenarios(run.scenarios ?? []);
+      if (run.feasible === false && (run.scenarios?.length ?? 0) === 0 && nextApproval) {
         try {
           const alternatives = await scenarioMutation.mutateAsync(run.goal_id);
           setScenarios(alternatives.scenarios);
@@ -114,7 +118,14 @@ export function GoalCreate({
     }
   };
 
-  if (approval && goalId) {
+  if (calculation && goalId) {
+    const requiresRevision = !calculation.feasible || !approval;
+    const reviseGoal = () => {
+      setCalculation(null);
+      setApproval(null);
+      setGoalId(null);
+      setScenarios([]);
+    };
     return (
       <div className="goal-screen">
         <GoalScreenHead eyebrow="Create goal" title="Review your plan" onBack={onBack} />
@@ -123,9 +134,9 @@ export function GoalCreate({
             <span className="goal-template-mark">{name.slice(0, 1).toUpperCase()}</span>
             <div><h2>{name}</h2><p>{GOAL_TYPES.find((item) => item.value === goalType)?.label}</p></div>
           </div>
-          <GoalPlanPreview plan={approval.after} />
+          <GoalPlanPreview plan={calculation} />
 
-          {!approval.after.feasible && scenarios.length > 0 && (
+          {!calculation.feasible && scenarios.length > 0 && (
             <section className="goal-alternatives" aria-label="Backend alternatives">
               <div className="goal-section-head">
                 <div><p className="eyebrow">Backend alternatives</p><h3>Ways to make it fit</h3></div>
@@ -134,8 +145,8 @@ export function GoalCreate({
                 <article className="goal-scenario-card" key={scenario.scenario_id}>
                   <div className="goal-section-head">
                     <b>{scenario.label}</b>
-                    <span className={`goal-health ${scenario.feasible ? "healthy" : "danger"}`}>
-                      {scenario.feasible ? "Feasible" : "At risk"}
+                    <span className={`goal-health ${scenarioHealth(scenario).tone}`}>
+                      {scenarioHealth(scenario).label}
                     </span>
                   </div>
                   <p><strong>RM{fmt(scenario.contribution_per_payday_sen)}</strong> per payday · {formatGoalDate(scenario.target_date)}</p>
@@ -146,13 +157,30 @@ export function GoalCreate({
             </section>
           )}
 
-          <button className="btn btn-primary goal-full-button" onClick={() => setApprovalOpen(true)}>
-            Review &amp; activate
-          </button>
-          <p className="goal-lock-note">This is still a draft. Nothing is active until you explicitly approve it.</p>
+          {requiresRevision ? (
+            <>
+              <section className="goal-revision-required" role="alert">
+                <b>{calculation.affordability_status === "impossible" ? "This goal cannot be created yet" : "Revise this goal before continuing"}</b>
+                <span>
+                  {calculation.contribution_ratio_bp !== null && calculation.contribution_ratio_bp > 7_000
+                    ? `The required contribution is ${(calculation.contribution_ratio_bp / 100).toFixed(0)}% of monthly income. The hard limit is 70%, and this plan exceeds it.`
+                    : "Choose a safer amount or date from the options above, or edit the goal details."}
+                </span>
+              </section>
+              <button className="btn btn-primary goal-full-button" onClick={reviseGoal}>Revise goal details</button>
+              <p className="goal-lock-note">No goal, contribution, or approval was created.</p>
+            </>
+          ) : (
+            <>
+              <button className="btn btn-primary goal-full-button" onClick={() => setApprovalOpen(true)}>
+                Review &amp; activate
+              </button>
+              <p className="goal-lock-note">This is still a draft. Nothing is active until you explicitly approve it.</p>
+            </>
+          )}
         </div>
 
-        {approvalOpen && (
+        {approvalOpen && approval && (
           <GoalApprovalSheet
             approval={approval}
             goalId={goalId}
@@ -206,7 +234,7 @@ export function GoalCreate({
           </label>
           <label>
             Already saved <span>RM</span>
-            <input aria-label="Amount already saved" inputMode="decimal" value={saved} onChange={(event) => setSaved(event.target.value)} aria-invalid={Boolean(errors.saved)} />
+            <input aria-label="Amount already saved" inputMode="numeric" value={saved} onChange={(event) => setSaved(formatKeypadMoney(event.target.value))} aria-invalid={Boolean(errors.saved)} />
             {errors.saved && <small className="goal-field-error">{errors.saved}</small>}
           </label>
         </div>
@@ -239,6 +267,18 @@ export function GoalCreate({
       </form>
     </div>
   );
+}
+
+function scenarioHealth(scenario: GoalScenario): { tone: "healthy" | "warning" | "danger"; label: string } {
+  if (scenario.risk_flags.includes("goal_contributions_high_risk")) {
+    return { tone: "danger", label: "High risk" };
+  }
+  if (scenario.risk_flags.includes("goal_contributions_stretching")) {
+    return { tone: "warning", label: "Stretching" };
+  }
+  return scenario.feasible
+    ? { tone: "healthy", label: "Feasible" }
+    : { tone: "danger", label: "At risk" };
 }
 
 export function GoalScreenHead({ eyebrow, title, onBack }: { eyebrow: string; title: string; onBack: () => void }) {

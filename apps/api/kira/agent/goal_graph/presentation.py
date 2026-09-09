@@ -21,10 +21,14 @@ def goal_evidence(state: GoalGraphState, currency: str) -> list[list[str]]:
     rows: list[list[str]] = []
     plan = state.get("current_goal_plan")
     if plan is not None:
+        definition = state.get("goal_definition")
+        affordability = plan.affordability_status.replace("_", " ").title()
         rows.extend(
             [
+                ["Goal priority", definition.priority.title() if definition else "Not set"],
                 ["Goal target", _money(plan.target_amount_sen, currency)],
                 ["Already saved", _money(plan.current_saved_sen, currency)],
+                ["Remaining", _money(plan.remaining_amount_sen, currency)],
                 [
                     "Required each payday",
                     _money(plan.required_contribution_per_payday_sen, currency),
@@ -37,8 +41,39 @@ def goal_evidence(state: GoalGraphState, currency: str) -> list[list[str]]:
                     else "not projected",
                 ],
                 ["Feasibility", "feasible" if plan.feasible else "at risk"],
+                ["Monthly affordability", affordability],
             ]
         )
+        if plan.monthly_income_sen is not None:
+            share = (
+                f" · {round(plan.contribution_ratio_bp / 100)}% of income"
+                if plan.contribution_ratio_bp is not None
+                else ""
+            )
+            rows.extend(
+                [
+                    ["Monthly income", _money(plan.monthly_income_sen, currency)],
+                    [
+                        "Protected commitments",
+                        _money(plan.monthly_protected_commitments_sen, currency),
+                    ],
+                    [
+                        "Total goal contributions",
+                        _money(plan.monthly_goal_contributions_sen, currency) + share,
+                    ],
+                    [
+                        "Disposable for goals",
+                        _money(plan.monthly_disposable_for_goals_sen, currency),
+                    ],
+                ]
+            )
+        if plan.risk_flags:
+            rows.append(
+                [
+                    "Plan risks",
+                    ", ".join(flag.replace("_", " ") for flag in plan.risk_flags),
+                ]
+            )
     reconciliation = state.get("reconciliation")
     if reconciliation is not None:
         rows.extend(

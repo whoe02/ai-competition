@@ -8,7 +8,7 @@ from sqlalchemy import select
 from kira.agent.llm import route_for
 from kira.agent.run import run_turn
 from kira.db.models import ButlerApproval, ButlerMemory, Goal
-from tests.agent.conftest import offline_factory
+from tests.agent.conftest import declining_factory, offline_factory
 
 
 @pytest.mark.parametrize(
@@ -66,6 +66,50 @@ async def test_natural_goal_is_handed_to_goal_graph_without_third_llm_call(
     assert "RM" in result.answer
     assert (await session.execute(select(Goal).where(Goal.name == "Travel"))).scalar_one()
     assert (await session.execute(select(ButlerMemory))).scalars().all() == []
+
+
+async def test_goal_creation_still_opens_review_when_online_model_declines_tools(
+    session, butler, today
+):
+    user, thread = butler
+
+    result = await run_turn(
+        session,
+        user,
+        thread,
+        text=(
+            "I want RM1,000 for a Penang trip by December 2026. "
+            "I already saved RM200."
+        ),
+        today=today,
+        model_factory=declining_factory("I can help you plan that."),
+    )
+
+    assert result.tools_used == ["start_goal_planning"]
+    assert result.approval is not None
+    assert result.approval["tool"] == "apply_goal_plan_change"
+    assert result.approval["after"]["affordability_status"]
+    assert result.approval["after"]["contribution_ratio_bp"] is not None
+
+
+async def test_part_time_request_in_butler_asks_for_missing_availability(
+    session, butler, today
+):
+    user, thread = butler
+
+    result = await run_turn(
+        session,
+        user,
+        thread,
+        text="Recommend part-time work to accelerate my wedding goal.",
+        today=today,
+        model_factory=declining_factory("Try freelancing."),
+    )
+
+    assert result.tools_used == ["recommend_part_time_jobs"]
+    assert dict(result.evidence)["Goal"] == "Wedding"
+    assert "hours" in result.answer.lower()
+    assert "remote" in result.answer.lower()
 
 
 async def test_incomplete_goal_request_clarifies_without_creating_a_draft(

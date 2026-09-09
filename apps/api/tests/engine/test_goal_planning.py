@@ -132,6 +132,18 @@ class TestGoalAffordability:
         assert unsustainable.feasible is False
         assert "goal_contributions_exceed_50_percent_of_income" in unsustainable.risk_flags
 
+        impossible_ratio = calculate_goal_plan_for_contribution(
+            goal(target_amount_sen=900_000, target_date=date(2026, 12, 5)),
+            replace(financials, commitments=()),
+            364_001,
+        )
+        assert impossible_ratio.affordability_status == "impossible"
+        assert impossible_ratio.feasible is False
+        assert (
+            "goal_contributions_exceed_70_percent_of_income"
+            in impossible_ratio.risk_flags
+        )
+
         impossible = calculate_goal_plan_for_contribution(
             goal(target_amount_sen=900_000, target_date=date(2026, 12, 5)),
             financials,
@@ -210,7 +222,12 @@ class TestDatesAndImpact:
 
 class TestReproducibility:
     def test_cash_flow_safe_reserves_a_real_cushion(self):
-        on_time, cash_safe, accelerated = generate_goal_scenarios(goal(), snapshot())
+        financials = snapshot(
+            next_income_payday=IncomePayday(date(2026, 9, 5), 100_000, "income:1"),
+            commitments=(),
+            active_goal_plans=(),
+        )
+        on_time, cash_safe, accelerated = generate_goal_scenarios(goal(), financials)
 
         assert on_time.contribution_per_payday_sen == 5_001
         assert cash_safe.contribution_per_payday_sen == 4_000
@@ -218,6 +235,29 @@ class TestReproducibility:
         assert cash_safe.flexible_spending_delta_sen == 1_001
         assert cash_safe.goal_delay_days == 30
         assert accelerated.contribution_per_payday_sen > on_time.contribution_per_payday_sen
+
+    def test_accelerated_never_exceeds_income_or_the_50_percent_goal_limit(self):
+        financials = snapshot(
+            next_income_payday=IncomePayday(date(2026, 9, 5), 520_000, "income:1"),
+            commitments=(),
+            active_goal_plans=(),
+        )
+        expensive_goal = goal(
+            target_amount_sen=3_000_000,
+            target_date=date(2027, 3, 27),
+        )
+
+        on_time, cash_safe, accelerated = generate_goal_scenarios(
+            expensive_goal, financials
+        )
+
+        assert on_time.contribution_per_payday_sen == 428_572
+        assert on_time.feasible is False
+        assert cash_safe.contribution_per_payday_sen < 156_000
+        assert accelerated.contribution_per_payday_sen == 260_000
+        assert accelerated.contribution_per_payday_sen < 520_000
+        assert cash_safe.target_date > accelerated.target_date > expensive_goal.target_date
+        assert "goal_contributions_high_risk" in accelerated.risk_flags
 
     def test_same_inputs_return_identical_plan_and_scenarios(self):
         assert calculate_goal_feasibility(goal(), snapshot()) == calculate_goal_feasibility(

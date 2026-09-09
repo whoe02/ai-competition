@@ -553,6 +553,44 @@ def _compose_goals(messages: Sequence[BaseMessage], text: str) -> str:
     return f"{head}\n{sub}"
 
 
+def _compose_part_time(messages: Sequence[BaseMessage], text: str) -> str:
+    result = _payload(messages, "recommend_part_time_jobs") or {}
+    status = result.get("status")
+    if status == "needs_input":
+        missing = set(result.get("missing_fields") or [])
+        questions = []
+        if "goal_reference" in missing:
+            questions.append("which goal you want to accelerate")
+        if "available_hours_per_week" in missing:
+            questions.append("how many hours you can realistically work each week")
+        if "work_mode" in missing:
+            questions.append("whether you prefer remote, on-site, or either")
+        requested = _listed(questions) or "your availability"
+        return f"I can do that. Tell me {requested}, and I’ll tailor the work ideas."
+    if status != "available":
+        reason = result.get("reason") or (
+            "Part-time recommendations are not available for this plan."
+        )
+        return f"I can’t prepare responsible work ideas for this plan yet.\n{reason}"
+
+    jobs = [item for item in result.get("recommendations", []) if isinstance(item, dict)]
+    if not jobs:
+        return "I could not get the work ideas just now. Your goal plan is unchanged."
+    lines = [
+        f"{index}. {item.get('role_title')} — {item.get('why_relevant')} "
+        f"First step: {item.get('first_step')}"
+        for index, item in enumerate(jobs, start=1)
+    ]
+    guidance = result.get("overall_guidance")
+    tail = f"\n{guidance}" if guidance else ""
+    return (
+        "Here are three part-time options matched to your goal and availability:\n"
+        + "\n".join(lines)
+        + tail
+        + "\nThese are recommendations only; no income or goal figure was changed."
+    )
+
+
 def _compose_bills(messages: Sequence[BaseMessage], text: str) -> str:
     bills = _payload(messages, "list_commitments") or []
     if not bills:
@@ -1165,6 +1203,53 @@ def _goal_workflow_args(text: str, attachment: dict[str, Any] | None) -> dict[st
     return args
 
 
+_PART_TIME_WORK = re.compile(
+    r"\b(?:part[- ]?time|side[- ]?(?:job|work|gig|income)|freelanc(?:e|ing)|"
+    r"extra work|work recommendation|job recommendation)\b",
+    re.I,
+)
+_PART_TIME_FOLLOW_UP = re.compile(
+    r"\b(?:[1-9]|[1-3]\d|40)\s*(?:hours?|hrs?)\b|\b(?:remote|on[- ]?site|either)\b",
+    re.I,
+)
+
+
+def _last_user_from_history(history: str) -> str:
+    for line in reversed(history.splitlines()):
+        if line.startswith(_USER_SAID):
+            return line[len(_USER_SAID) :]
+    return ""
+
+
+def _following_part_time(history: str) -> bool:
+    return bool(_PART_TIME_WORK.search(_last_user_from_history(history)))
+
+
+def _part_time_args(text: str, history: str = "") -> dict[str, Any]:
+    prior = _last_user_from_history(history) if _following_part_time(history) else ""
+    source = f"{prior} {text}".strip()
+    args: dict[str, Any] = {"goal_reference": source[:80]}
+    hours = re.search(
+        r"\b([1-9]|[1-3]\d|40)\s*(?:hours?|hrs?)(?:\s*(?:per|a|/)\s*week)?\b",
+        source,
+        re.I,
+    )
+    if hours:
+        args["available_hours_per_week"] = int(hours.group(1))
+    if re.search(r"\bremote(?: only)?\b", source, re.I):
+        args["work_mode"] = "remote"
+    elif re.search(r"\bon[- ]?site(?: only)?\b", source, re.I):
+        args["work_mode"] = "on_site"
+    elif re.search(r"\b(?:either|both|remote or on[- ]?site)\b", source, re.I):
+        args["work_mode"] = "either"
+    transport = re.search(
+        r"\b(?:no car|public transport|cannot drive|can't drive|transport)\b", source, re.I
+    )
+    if transport:
+        args["transport_limitations"] = source[:200]
+    return args
+
+
 _GOAL_WORKFLOW = re.compile(
     r"\b(?:want|need|plan|save|saving|start|create|set up)\b.{0,100}"
     r"\b(?:goal|fund|deposit|down payment|trip|travel|wedding|house|home|car|education|"
@@ -1225,6 +1310,15 @@ ROUTES: tuple[Route, ...] = (
         re.compile(r"overspent|overspend|blew|over budget|went over", re.I),
         ("get_financial_snapshot", "list_activity"),
         compose=_compose_overspend,
+    ),
+    Route(
+        "part_time_jobs",
+        _PART_TIME_WORK,
+        ("recommend_part_time_jobs",),
+        arguments=lambda text, attachment, today=None: {
+            "recommend_part_time_jobs": _part_time_args(text)
+        },
+        compose=_compose_part_time,
     ),
     # Before generic affordability: "can I buy this without hurting my house
     # goal" is a goal-impact question, not only a today-room question.
@@ -1360,6 +1454,7 @@ ROUTES: tuple[Route, ...] = (
 # identity rather than by index, so a route inserted anywhere above it moves
 # nothing here.
 _PLACES = next(route for route in ROUTES if route.name == "places")
+_PART_TIME = next(route for route in ROUTES if route.name == "part_time_jobs")
 
 # How ``prompt.history_block`` writes the user's half of the conversation. The
 # graph runs one checkpointed thread per turn, so by the time this turn starts
@@ -1401,6 +1496,8 @@ def route_for(text: str, attachment: dict[str, Any] | None = None, history: str 
     """
     if attachment:
         return ROUTES[0]
+    if _PART_TIME_FOLLOW_UP.search(text) and _following_part_time(history):
+        return _PART_TIME
     for route in ROUTES:
         if route.pattern.search(text) and (route.when is None or route.when(text)):
             return route
@@ -1461,6 +1558,8 @@ class OfflineChatModel(BaseChatModel):
 
         today = _today_from(messages)
         arguments = route.arguments(text, self.attachment, today) if route.arguments else {}
+        if route is _PART_TIME:
+            arguments = {"recommend_part_time_jobs": _part_time_args(text, self.history)}
         calls = [
             {
                 "name": name,
