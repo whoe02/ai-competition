@@ -738,17 +738,17 @@ button.led:active{opacity:.55;}
 .goal-card-title{display:flex;justify-content:space-between;gap:12px;align-items:flex-end;margin:16px 0 12px;}
 .goal-card-title p{font-size:10.5px;color:var(--muted);margin:0 0 3px;}
 .goal-card.primary .goal-card-title p{color:rgba(241,244,240,.52);}
-.goal-card-title h2{margin:0;font-size:20px;line-height:1.15;letter-spacing:-.03em;overflow-wrap:anywhere;}
-.goal-card-title>b{font-size:24px;color:var(--accent);font-variant-numeric:tabular-nums;}
+.goal-card-title h2{margin:0;font-size:22px;line-height:1.15;letter-spacing:-.03em;overflow-wrap:anywhere;}
+.goal-card-title>b{font-size:28px;color:var(--accent);font-variant-numeric:tabular-nums;}
 .goal-card.primary .goal-card-title>b{color:var(--accent-lit);}
 .goal-progress{height:8px;border-radius:100px;background:rgba(15,28,26,.08);overflow:hidden;}
 .goal-card.primary .goal-progress{background:rgba(241,244,240,.12);}
 .goal-progress i{display:block;height:100%;max-width:100%;border-radius:inherit;background:linear-gradient(90deg,var(--accent),var(--accent-lit));transition:width .8s var(--spring);}
 .goal-card-money{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:14px 0;}
 .goal-card-money div{display:flex;flex-direction:column;gap:3px;min-width:0;}
-.goal-card-money span,.goal-card-plan>span{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-weight:700;}
+.goal-card-money span,.goal-card-plan>span{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-weight:700;}
 .goal-card.primary .goal-card-money span,.goal-card.primary .goal-card-plan>span{color:rgba(241,244,240,.45);}
-.goal-card-money strong{font-size:16px;overflow-wrap:anywhere;font-variant-numeric:tabular-nums;}
+.goal-card-money strong{font-size:18px;overflow-wrap:anywhere;font-variant-numeric:tabular-nums;}
 .goal-card-plan{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:2px 0 15px;padding:12px;border-radius:14px;background:rgba(241,244,240,.06);}
 .goal-card-plan span:last-child{grid-column:1/-1;}
 .goal-card-plan b{display:block;margin-top:4px;color:#F1F4F0;font-size:12px;text-transform:none;letter-spacing:0;overflow-wrap:anywhere;}
