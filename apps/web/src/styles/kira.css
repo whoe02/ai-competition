@@ -618,6 +618,7 @@ button.led:active{opacity:.55;}
 .composer input:focus{border:0;outline:0;box-shadow:none;}
 .composer input::placeholder,.composer textarea::placeholder{color:rgba(240,245,240,.58);}
 .composer textarea{flex:1;min-width:0;max-height:120px;resize:none;background:none;border:0;outline:0;box-shadow:none;-webkit-appearance:none;appearance:none;border-radius:0;color:#F4F7F3;font-family:inherit;font-size:14px;line-height:1.5;padding:11px 0;}
+.composer textarea:focus-visible{outline:none;}
 .butler-answer-body,.bubble-user>span{white-space:pre-wrap;overflow-wrap:anywhere;}
 .send{width:38px;height:38px;border-radius:12px;background:#E0BB74;color:#101C1A;
   display:grid;place-items:center;flex:none;box-shadow:0 4px 16px -4px rgba(224,187,116,.7);
