@@ -147,16 +147,12 @@ class TestDelegation:
         update, _ = await self._run(registered, session, butler, today)
         assert "iterations" not in update
 
-    async def test_the_panel_gets_the_child_s_rows(
-        self, registered, session, butler, today
-    ):
+    async def test_the_panel_gets_the_child_s_rows(self, registered, session, butler, today):
         _, runtime = await self._run(registered, session, butler, today)
         rows = [event for event in runtime.events if event["type"] == "evidence"]
         assert rows == [{"type": "evidence", "rows": [["Checked", "the rent"]]}]
 
-    async def test_a_card_from_the_child_ends_the_turn(
-        self, registered, session, butler, today
-    ):
+    async def test_a_card_from_the_child_ends_the_turn(self, registered, session, butler, today):
         async def raises_a_card(_ctx, _args):
             return AgentReport(
                 findings={},
@@ -168,9 +164,7 @@ class TestDelegation:
                 },
             )
 
-        update, runtime = await self._run(
-            registered, session, butler, today, agent=raises_a_card
-        )
+        update, runtime = await self._run(registered, session, butler, today, agent=raises_a_card)
 
         assert route_after_delegate({**update}) == "end"
         assert update["answer"] == "Here is what I would change."
@@ -202,11 +196,7 @@ class TestTheGuardBoundsTheLoop:
         from kira.agent.state import ButlerContext
 
         user, thread = butler
-        return Runtime(
-            ButlerContext(
-                session=session, user=user, today=today, thread_id=thread.id
-            )
-        )
+        return Runtime(ButlerContext(session=session, user=user, today=today, thread_id=thread.id))
 
     def _state(self, *calls, **extra):
         state = initial_state()
@@ -248,9 +238,7 @@ class TestTheGuardBoundsTheLoop:
         assert update["refusals"] == []
         assert update["messages"] == []
 
-    async def test_the_read_runs_first_and_the_handoff_follows_it(
-        self, session, butler, today
-    ):
+    async def test_the_read_runs_first_and_the_handoff_follows_it(self, session, butler, today):
         """Order matters, and it is the routing that carries it.
 
         `tools` runs the reads and then hands on to whatever is still pending,
@@ -275,10 +263,41 @@ class TestTheGuardBoundsTheLoop:
         assert update["approved_reads"] == []
         assert route_after_guard(update) == "workflow"
 
-    async def test_a_blown_budget_stops_the_looking(self, session, butler, today):
-        state = self._state(
-            ("list_goals", {}), started_at=time.monotonic() - 999.0
+    async def test_goal_follow_up_hands_the_models_typed_routing_call_to_the_specialist(
+        self, session, butler, today
+    ):
+        """Interpretation belongs to the specialist's system-prompted intake."""
+        state = initial_state()
+        state["messages"] = [
+            HumanMessage(content="saved rm5000, target is rm 10000, date is 3 march 2027"),
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "start_goal_planning",
+                        "args": {"action": "create"},
+                        "id": "goal-follow-up",
+                        "type": "tool_call",
+                    }
+                ],
+            ),
+        ]
+        state["history_block"] = (
+            "User: i want to create my goal\n"
+            "Kira: I need how much you have already saved, the target amount, the target date."
         )
+        state["iterations"] = 1
+
+        update = await guard(state, self._runtime(session, butler, today))
+
+        assert update["refusals"] == []
+        workflow = update["pending_workflow"]
+        assert workflow["id"] == "goal-follow-up"
+        assert workflow["name"] == "start_goal_planning"
+        assert workflow["args"]["action"] == "create"
+
+    async def test_a_blown_budget_stops_the_looking(self, session, butler, today):
+        state = self._state(("list_goals", {}), started_at=time.monotonic() - 999.0)
         update = await guard(state, self._runtime(session, butler, today))
 
         assert update["approved_reads"] == []
@@ -288,9 +307,7 @@ class TestTheGuardBoundsTheLoop:
         # stopped a second time.
         assert update["refusals"] == []
 
-    async def test_an_unstarted_clock_does_not_stop_anything(
-        self, session, butler, today
-    ):
+    async def test_an_unstarted_clock_does_not_stop_anything(self, session, butler, today):
         # A state checkpointed before this field existed, and any caller that
         # drives the guard directly. Neither should lose its tools.
         state = self._state(("list_goals", {}))

@@ -473,12 +473,16 @@ describe("Goal Planner", () => {
       projected_completion_with_max_income: "2027-06-18",
       days_saved_min: 366,
       days_saved_max: 546,
-      safe_to_spend_today_change_sen: 0,
       future_daily_safe_to_spend_increase_min_sen: 8467,
       future_daily_safe_to_spend_increase_max_sen: 10778,
     };
     const recommendations = [
       {
+        source_job_id: "remotive:documentation",
+        job_source: "remotive" as const,
+        job_company: "Documentation Co",
+        job_location: "Remote",
+        apply_url: "https://remotive.com/remote-jobs/documentation",
         role_title: "Technical documentation specialist",
         typical_tasks: "Write clear product guides and maintain concise technical references.",
         why_relevant: "Your engineering background helps translate complex work into useful documentation.",
@@ -488,6 +492,11 @@ describe("Goal Planner", () => {
         ...forecast,
       },
       {
+        source_job_id: "arbeitnow:ai-reviewer",
+        job_source: "arbeitnow" as const,
+        job_company: "Review Labs",
+        job_location: "Kuala Lumpur",
+        apply_url: "https://www.arbeitnow.com/jobs/ai-reviewer",
         role_title: "AI quality reviewer",
         typical_tasks: "Review model outputs against a defined quality checklist.",
         why_relevant: "It uses your existing AI knowledge in short, contained tasks.",
@@ -497,6 +506,11 @@ describe("Goal Planner", () => {
         ...forecast,
       },
       {
+        source_job_id: "remotive:tutor",
+        job_source: "remotive" as const,
+        job_company: "Tutor Co",
+        job_location: "Malaysia",
+        apply_url: "https://remotive.com/remote-jobs/tutor",
         role_title: "Technical tutor",
         typical_tasks: "Teach small beginner sessions on practical AI foundations.",
         why_relevant: "It turns your expertise into scheduled work around your availability.",
@@ -513,18 +527,17 @@ describe("Goal Planner", () => {
       if (url.endsWith(`/v1/goals/${LONG_ID}/plan`)) return json(PLAN);
       if (url.endsWith(`/v1/goals/${LONG_ID}/part-time-recommendation`) && init?.method === "POST") {
         return json({
-          recommendation_schema_version: 2,
+          recommendation_schema_version: 5,
           goal_id: LONG_ID,
           plan_version: 1,
           status: "available",
           eligible: true,
           recommendations,
           overall_guidance: "Choose only an option that fits your time and commitments.",
-          source: "llm",
+          source: "job_board_ranked",
           preferences: { available_hours_per_week: 8, work_mode: "either", transport_limitations: "" },
           feasible_before: true,
           projected_completion_before: "2028-12-15",
-          safe_to_spend_changes: false,
           cash_effect: "Read-only scenario.",
         });
       }
@@ -544,7 +557,23 @@ describe("Goal Planner", () => {
     expect(screen.getAllByText("Estimated hourly")).toHaveLength(3);
     expect(screen.getAllByText("Estimated goal effect")).toHaveLength(3);
     expect(screen.getAllByText("RM30.00–RM50.00")).toHaveLength(3);
-    expect(screen.getAllByText("No change")).toHaveLength(3);
+    expect(screen.getAllByText((_, element) => (
+      element?.tagName === "B" && element.textContent === "+RM84.67–RM107.78"
+    ))).toHaveLength(3);
+    expect(screen.getByRole("link", { name: "View & apply on Arbeitnow" })).toHaveAttribute(
+      "href",
+      "https://www.arbeitnow.com/jobs/ai-reviewer",
+    );
+
+    await user.click(screen.getByRole("button", { name: "Show me different jobs" }));
+    await waitFor(() => {
+      const recommendationPosts = vi.mocked(fetch).mock.calls.filter(
+        ([input, init]) => String(input).endsWith(
+          `/v1/goals/${LONG_ID}/part-time-recommendation`,
+        ) && init?.method === "POST",
+      );
+      expect(recommendationPosts).toHaveLength(2);
+    });
   });
 
   it("keeps work recommendations available when the plan is high risk", async () => {

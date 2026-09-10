@@ -6,6 +6,8 @@ here, so the API layer never touches LangGraph directly.
 
 from __future__ import annotations
 
+import json
+import logging
 import uuid
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
@@ -22,6 +24,7 @@ from kira.agent.state import ButlerContext, initial_state
 from kira.db.models import ButlerThread, User
 
 ModelFactory = Callable[..., Any]
+log = logging.getLogger("uvicorn.error.kira.butler")
 
 
 # What Kira says while a proposal is on screen. It is fixed rather than
@@ -75,6 +78,33 @@ def _config(graph_thread: str) -> dict[str, Any]:
     return {"configurable": {"thread_id": graph_thread}}
 
 
+def _debug_value(value: Any) -> str:
+    """Keep a complete debug value on one terminal-log line."""
+    return json.dumps(value, ensure_ascii=False, default=str)
+
+
+def _log_user_input(thread: ButlerThread, message_id: uuid.UUID, text: str, mode: str) -> None:
+    log.info(
+        "butler.input mode=%s thread_id=%s message_id=%s user_input=%s",
+        mode,
+        thread.id,
+        message_id,
+        _debug_value(text),
+    )
+
+
+def _log_assistant_output(
+    thread: ButlerThread, identifier: str | uuid.UUID, result: TurnResult, mode: str
+) -> None:
+    log.info(
+        "butler.output mode=%s thread_id=%s turn_id=%s assistant_output=%s",
+        mode,
+        thread.id,
+        identifier,
+        _debug_value(result.answer),
+    )
+
+
 async def _collect(graph, payload, config, context) -> AsyncIterator[dict[str, Any]]:
     async for event in graph.astream(payload, config=config, context=context, stream_mode="custom"):
         yield event
@@ -114,21 +144,117 @@ async def stream_turn(
     context = _context(session, user, thread, today, message_id, model_factory)
     payload = initial_state(attachment=attachment)
     payload["messages"] = [HumanMessage(content=text)]
+    log.info(
+        "butler.turn started mode=stream thread_id=%s message_id=%s attachment=%s",
+        thread.id,
+        message_id,
+        bool(attachment),
+    )
+    _log_user_input(thread, message_id, text, "stream")
 
     try:
         async for event in _collect(graph, payload, config, context):
             yield event
     except Exception as exc:
+        log.exception(
+            "butler.turn failed mode=stream thread_id=%s message_id=%s", thread.id, message_id
+        )
         yield {"type": events.ERROR, "message": str(exc)}
         return
 
     result = await _result(graph, config)
+    log.info(
+        "butler.turn finished mode=stream thread_id=%s message_id=%s "
+        "iterations=%s child_llm_calls=%s tools=%s approval=%s",
+        thread.id,
+        message_id,
+        result.iterations,
+        result.child_llm_calls,
+        result.tools_used,
+        bool(result.approval),
+    )
+    _log_assistant_output(thread, message_id, result, "stream")
     yield {
         "type": events.DONE,
         "answer": result.answer,
         "evidence": result.evidence,
         "tools_used": result.tools_used,
         "approval": result.approval,
+        "learned": result.learned,
+        "llm_calls": result.llm_calls,
+    }
+
+
+async def stream_interrupted_turn(
+    session: AsyncSession,
+    user: User,
+    thread: ButlerThread,
+    *,
+    message_id: uuid.UUID,
+    today: date,
+    model_factory: ModelFactory | None = None,
+) -> AsyncIterator[dict[str, Any]]:
+    """Continue the checkpoint belonging to an unanswered user message.
+
+    A new payload would replay the request and could repeat a goal workflow or
+    another side effect.  ``None`` tells LangGraph to continue the durable
+    checkpoint instead.  A checkpoint that already reached END is useful too:
+    the graph result may have finished immediately before the API process died,
+    in which case we only need to publish and persist that existing result.
+    """
+    graph = get_graph()
+    graph_thread = graph_thread_id(thread.id, message_id)
+    config = _config(graph_thread)
+    context = _context(session, user, thread, today, message_id, model_factory)
+    snapshot = await graph.aget_state(config)
+    if not snapshot.values:
+        yield {
+            "type": events.ERROR,
+            "message": (
+                "This answer cannot be resumed because its saved workflow is no longer "
+                "available. Please send the request again."
+            ),
+        }
+        return
+
+    log.info(
+        "butler.turn resume started mode=stream thread_id=%s message_id=%s next=%s",
+        thread.id,
+        message_id,
+        list(snapshot.next),
+    )
+    try:
+        if snapshot.next:
+            async for event in _collect(graph, None, config, context):
+                yield event
+    except Exception as exc:
+        log.exception(
+            "butler.turn resume failed mode=stream thread_id=%s message_id=%s",
+            thread.id,
+            message_id,
+        )
+        yield {"type": events.ERROR, "message": str(exc)}
+        return
+
+    result = await _result(graph, config)
+    log.info(
+        "butler.turn resume finished mode=stream thread_id=%s message_id=%s "
+        "iterations=%s child_llm_calls=%s tools=%s approval=%s",
+        thread.id,
+        message_id,
+        result.iterations,
+        result.child_llm_calls,
+        result.tools_used,
+        bool(result.approval),
+    )
+    _log_assistant_output(thread, message_id, result, "interrupted-stream")
+    yield {
+        "type": events.DONE,
+        "answer": result.answer,
+        "evidence": result.evidence,
+        "tools_used": result.tools_used,
+        "approval": result.approval,
+        "applied": result.applied,
         "learned": result.learned,
         "llm_calls": result.llm_calls,
     }
@@ -152,10 +278,35 @@ async def run_turn(
     context = _context(session, user, thread, today, message_id, model_factory)
     payload = initial_state(attachment=attachment)
     payload["messages"] = [HumanMessage(content=text)]
+    log.info(
+        "butler.turn started mode=collected thread_id=%s message_id=%s attachment=%s",
+        thread.id,
+        message_id,
+        bool(attachment),
+    )
+    _log_user_input(thread, message_id, text, "collected")
 
-    async for _ in _collect(graph, payload, config, context):
-        pass
-    return await _result(graph, config)
+    try:
+        async for _ in _collect(graph, payload, config, context):
+            pass
+        result = await _result(graph, config)
+    except Exception:
+        log.exception(
+            "butler.turn failed mode=collected thread_id=%s message_id=%s", thread.id, message_id
+        )
+        raise
+    log.info(
+        "butler.turn finished mode=collected thread_id=%s message_id=%s "
+        "iterations=%s child_llm_calls=%s tools=%s approval=%s",
+        thread.id,
+        message_id,
+        result.iterations,
+        result.child_llm_calls,
+        result.tools_used,
+        bool(result.approval),
+    )
+    _log_assistant_output(thread, message_id, result, "collected")
+    return result
 
 
 async def resume_approval(
@@ -172,9 +323,38 @@ async def resume_approval(
     graph = get_graph()
     config = _config(graph_thread)
     context = _context(session, user, thread, today, None, model_factory)
-    async for _ in _collect(graph, Command(resume=decision), config, context):
-        pass
-    return await _result(graph, config)
+    log.info(
+        "butler.approval resume started mode=collected thread_id=%s graph_thread=%s",
+        thread.id,
+        graph_thread,
+    )
+    log.info(
+        "butler.approval input mode=collected thread_id=%s graph_thread=%s user_decision=%s",
+        thread.id,
+        graph_thread,
+        _debug_value(decision),
+    )
+    try:
+        async for _ in _collect(graph, Command(resume=decision), config, context):
+            pass
+        result = await _result(graph, config)
+    except Exception:
+        log.exception(
+            "butler.approval resume failed mode=collected thread_id=%s graph_thread=%s",
+            thread.id,
+            graph_thread,
+        )
+        raise
+    log.info(
+        "butler.approval resume finished mode=collected thread_id=%s "
+        "graph_thread=%s tools=%s approval=%s",
+        thread.id,
+        graph_thread,
+        result.tools_used,
+        bool(result.approval),
+    )
+    _log_assistant_output(thread, graph_thread, result, "approval-collected")
+    return result
 
 
 async def stream_resume(
@@ -190,13 +370,38 @@ async def stream_resume(
     graph = get_graph()
     config = _config(graph_thread)
     context = _context(session, user, thread, today, None, model_factory)
+    log.info(
+        "butler.approval resume started mode=stream thread_id=%s graph_thread=%s",
+        thread.id,
+        graph_thread,
+    )
+    log.info(
+        "butler.approval input mode=stream thread_id=%s graph_thread=%s user_decision=%s",
+        thread.id,
+        graph_thread,
+        _debug_value(decision),
+    )
     try:
         async for event in _collect(graph, Command(resume=decision), config, context):
             yield event
     except Exception as exc:
+        log.exception(
+            "butler.approval resume failed mode=stream thread_id=%s graph_thread=%s",
+            thread.id,
+            graph_thread,
+        )
         yield {"type": events.ERROR, "message": str(exc)}
         return
     result = await _result(graph, config)
+    log.info(
+        "butler.approval resume finished mode=stream thread_id=%s "
+        "graph_thread=%s tools=%s approval=%s",
+        thread.id,
+        graph_thread,
+        result.tools_used,
+        bool(result.approval),
+    )
+    _log_assistant_output(thread, graph_thread, result, "approval-stream")
     yield {
         "type": events.DONE,
         "answer": result.answer,

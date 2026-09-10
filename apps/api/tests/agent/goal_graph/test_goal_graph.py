@@ -113,7 +113,8 @@ async def test_missing_fields_routes_to_clarification_after_one_llm_call(session
     assert result.approval is None
     assert result.llm_calls == 1
     assert script.calls == ["goal_intake"]
-    assert "target amount sen" in result.final_response
+    assert "target amount" in result.final_response
+    assert "sen" not in result.final_response.casefold()
     assert "target date" in result.final_response
 
 

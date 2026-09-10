@@ -13,6 +13,7 @@ from __future__ import annotations
 from kira.agent.goal_graph.presentation import goal_evidence
 from kira.agent.goal_graph.run import run_goal_request
 from kira.agent.goal_graph.schemas import GoalIntent
+from kira.agent.llm import offline_reason
 
 # `kira.agent.tools.spec` is imported inside the functions below, never at the
 # top. The tool module names this agent in its spec, so importing the two the
@@ -24,14 +25,21 @@ from kira.agent.goal_graph.schemas import GoalIntent
 async def run_goal_agent(ctx, intent: GoalIntent):
     from kira.agent.tools.spec import AgentReport, EvidenceRow
 
+    # A live Goal specialist interprets the complete user conversation through
+    # GOAL_INTAKE_PROMPT and its typed GoalIntent schema.  The parent Butler's
+    # tool call is only a routing decision; it must not become a brittle second
+    # parser of phrases such as "target is" or "already saved".  Offline and
+    # injected test models retain the deterministic typed intent so the app
+    # remains usable without a provider.
+    use_fallback_intent = ctx.model_factory is not None or offline_reason() is not None
     result = await run_goal_request(
         ctx.session,
         ctx.user,
         thread_id=ctx.thread_id,
-        message="",
+        message=ctx.conversation,
         as_of_date=ctx.today,
         request_id=ctx.request_id,
-        structured_intent=intent,
+        structured_intent=intent if use_fallback_intent else None,
         model_factory=ctx.model_factory,
         explain=True,
     )

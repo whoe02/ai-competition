@@ -7,6 +7,8 @@ worth streaming anyway.
 
 from __future__ import annotations
 
+import logging
+
 from langchain_core.messages import AIMessage, SystemMessage
 from langgraph.runtime import Runtime
 
@@ -15,6 +17,8 @@ from kira.agent.llm import OfflineChatModel, _last_human, get_chat_model, route_
 from kira.agent.state import ButlerContext, ButlerState
 from kira.agent.tools import REGISTRY
 from kira.config import get_settings
+
+log = logging.getLogger("uvicorn.error.kira.butler")
 
 
 def _model(runtime: Runtime[ButlerContext], attachment, history):
@@ -50,10 +54,20 @@ async def agent(state: ButlerState, runtime: Runtime[ButlerContext]) -> dict:
     )
     conversation = [system, *state.get("messages", [])]
 
+    iteration = state.get("iterations", 0) + 1
+    log.info(
+        "butler.node agent started thread_id=%s iteration=%s", runtime.context.thread_id, iteration
+    )
     model = _model(runtime, attachment, history).bind_tools(REGISTRY.schemas())
     try:
         reply = await model.ainvoke(conversation)
     except Exception as exc:  # the venue's network is not the user's problem
+        log.warning(
+            "butler.node agent model_failed thread_id=%s iteration=%s fallback=offline error=%s",
+            runtime.context.thread_id,
+            iteration,
+            exc,
+        )
         events.emit(runtime, events.THINKING, text="Working from what is already here")
         fallback = OfflineChatModel(attachment=attachment, history=history).bind_tools(
             REGISTRY.schemas()
@@ -76,4 +90,10 @@ async def agent(state: ButlerState, runtime: Runtime[ButlerContext]) -> dict:
 
     if not isinstance(reply, AIMessage):  # pragma: no cover - defensive
         reply = AIMessage(content=str(reply))
-    return {"messages": [reply], "iterations": state.get("iterations", 0) + 1}
+    log.info(
+        "butler.node agent finished thread_id=%s iteration=%s proposed_tools=%s",
+        runtime.context.thread_id,
+        iteration,
+        [call.get("name") for call in (reply.tool_calls or [])],
+    )
+    return {"messages": [reply], "iterations": iteration}

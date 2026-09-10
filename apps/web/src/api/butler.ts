@@ -93,10 +93,11 @@ export async function* readTurn(
 ): AsyncGenerator<ButlerEvent> {
   const response = await api.stream(path, body);
   const reader = response.body?.getReader();
-  if (!reader) return;
+  if (!reader) throw new Error("The server opened no response stream.");
 
   const decoder = new TextDecoder();
   let buffer = "";
+  let terminal = false;
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
@@ -111,14 +112,24 @@ export async function* readTurn(
         .filter((line) => line.startsWith("data: "))
         .map((line) => line.slice(6))
         .join("");
-      if (payload) yield JSON.parse(payload) as ButlerEvent;
+      if (payload) {
+        const event = JSON.parse(payload) as ButlerEvent;
+        terminal ||= event.type === "done" || event.type === "error";
+        yield event;
+      }
       split = buffer.indexOf("\n\n");
     }
+  }
+  if (!terminal) {
+    throw new Error("The response was interrupted before Butler finished.");
   }
 }
 
 export const ask = (text: string, attachment?: unknown, threadId?: string) =>
   readTurn(threadId ? `/v1/butler/threads/${threadId}/messages` : "/v1/butler/messages", { text, attachment: attachment ?? null });
+
+export const resumeAnswer = (threadId: string, messageId: string) =>
+  readTurn(`/v1/butler/threads/${threadId}/messages/${messageId}/resume`);
 
 export const decide = (
   approval: Pick<ButlerApproval, "id">,

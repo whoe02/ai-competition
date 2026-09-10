@@ -538,7 +538,14 @@ async def clarification_response(
     missing = intent.missing_fields if intent is not None else []
     errors = state.get("errors") or []
     if missing:
-        readable = ", ".join(field.replace("_", " ") for field in missing)
+        labels = {
+            "target_amount_sen": "the target amount",
+            "current_saved_sen": "how much you have already saved",
+            "target_date": "the target date",
+            "contribution_per_payday_sen": "the contribution per payday",
+            "proposed_spend_sen": "the purchase amount",
+        }
+        readable = ", ".join(labels.get(field, field.replace("_", " ")) for field in missing)
         answer = f"I need {readable} before I can calculate this goal."
     else:
         answer = "I could not safely prepare this goal: " + "; ".join(errors)

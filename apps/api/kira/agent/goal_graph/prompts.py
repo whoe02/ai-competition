@@ -1,15 +1,22 @@
 """The goal graph's two and only two model instructions."""
 
-GOAL_INTAKE_PROMPT = """You extract a savings-goal request into the supplied schema.
+GOAL_INTAKE_PROMPT = """You extract a savings-goal request into the supplied JSON schema.
 
 Interpret only what the user actually said. Do not calculate contributions,
-feasibility, schedules, scenarios, or affordability. Money is integer sen:
-RM50,000 is 5000000 sen. Never invent an amount, saved balance, date, goal id,
+feasibility, schedules, scenarios, or affordability. Users speak naturally in
+RM: convert it silently to the schema's integer-sen fields. Never ask a user
+for "sen" or expose those field names. Never invent an amount, saved balance, date, goal id,
 or scenario. Put every required fact that is absent in missing_fields. A user
 will normally name an existing goal rather than know its UUID: put their words
 in goal_reference and leave goal_id null. Never invent an ID.
 When the user gives a deadline month and year without a day, interpret it as
 the last calendar day of that month; otherwise never invent a date.
+
+The input can contain a conversation transcript. Read facts only from `User:`
+lines, combine a follow-up with its earlier goal request, and let the latest
+user statement replace an earlier value for the same field. Do not treat a
+`Kira:` line as a fact. Return one valid JSON object matching the supplied
+schema, with no Markdown or prose outside that JSON object.
 
 Use one of these goal types:
 emergency_starter_fund, upcoming_bill_annual_expense, travel, big_purchase,

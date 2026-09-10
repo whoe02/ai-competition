@@ -227,6 +227,21 @@ def _payload(messages: Sequence[BaseMessage], tool: str) -> dict[str, Any] | lis
     return None
 
 
+def _payloads(messages: Sequence[BaseMessage], tool: str) -> list[dict[str, Any] | list]:
+    """Every value returned by a repeatable tool, in execution order."""
+    values: list[dict[str, Any] | list] = []
+    for message in messages:
+        if not isinstance(message, ToolMessage) or message.name != tool:
+            continue
+        try:
+            value = json.loads(message.content if isinstance(message.content, str) else "")
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if isinstance(value, dict | list):
+            values.append(value)
+    return values
+
+
 def _last_human(messages: Sequence[BaseMessage]) -> str:
     for message in reversed(messages):
         if isinstance(message, HumanMessage):
@@ -623,10 +638,18 @@ def _compose_goals(messages: Sequence[BaseMessage], text: str) -> str:
 
 
 def _compose_part_time(messages: Sequence[BaseMessage], text: str) -> str:
-    result = _payload(messages, "recommend_part_time_jobs") or {}
-    status = result.get("status")
-    if status == "needs_input":
-        missing = set(result.get("missing_fields") or [])
+    results = [
+        result
+        for result in _payloads(messages, "recommend_part_time_jobs")
+        if isinstance(result, dict)
+    ]
+    needs_input = [result for result in results if result.get("status") == "needs_input"]
+    if needs_input:
+        missing = {
+            field
+            for result in needs_input
+            for field in (result.get("missing_fields") or [])
+        }
         questions = []
         if "goal_reference" in missing:
             questions.append("which goal you want to accelerate")
@@ -636,36 +659,51 @@ def _compose_part_time(messages: Sequence[BaseMessage], text: str) -> str:
             questions.append("whether you prefer remote, on-site, or either")
         requested = _listed(questions) or "your availability"
         return f"I can do that. Tell me {requested}, and I’ll tailor the work ideas."
-    if status != "available":
+    available = [result for result in results if result.get("status") == "available"]
+    if not available:
+        result = results[-1] if results else {}
         reason = result.get("reason") or (
             "Part-time recommendations are not available for this plan."
         )
         return f"I can’t prepare responsible work ideas for this plan yet.\n{reason}"
 
-    jobs = [item for item in result.get("recommendations", []) if isinstance(item, dict)]
-    if not jobs:
+    sections = []
+    total_jobs = 0
+    for result in available:
+        jobs = [item for item in result.get("recommendations", []) if isinstance(item, dict)]
+        if not jobs:
+            continue
+        total_jobs += len(jobs)
+        lines = []
+        for index, item in enumerate(jobs, start=1):
+            completion = item.get("projected_completion_with_max_income")
+            completion_note = f" Earliest estimated completion: {completion}." if completion else ""
+            application_url = item.get("apply_url")
+            source = item.get("job_source") or "the job board"
+            apply_note = f" Apply on {source}: {application_url}." if application_url else ""
+            lines.append(
+                f"{index}. {item.get('role_title')} — "
+                f"{_rm(item.get('estimated_hourly_rate_min_sen'))}"
+                f"–{_rm(item.get('estimated_hourly_rate_max_sen'))}/hour, about "
+                f"{_rm(item.get('estimated_monthly_income_min_sen'))}"
+                f"–{_rm(item.get('estimated_monthly_income_max_sen'))}/month at "
+                f"{item.get('suggested_hours_per_week')} hours/week. "
+                f"{item.get('why_relevant')} First step: {item.get('first_step')}."
+                f"{completion_note}{apply_note}"
+            )
+        guidance = result.get("overall_guidance")
+        if guidance:
+            lines.append(str(guidance))
+        goal_name = result.get("goal_name")
+        sections.append((f"For {goal_name}:\n" if goal_name else "") + "\n".join(lines))
+    if not sections:
         return "I could not get the work ideas just now. Your goal plan is unchanged."
-    lines = []
-    for index, item in enumerate(jobs, start=1):
-        completion = item.get("projected_completion_with_max_income")
-        completion_note = f" Earliest estimated completion: {completion}." if completion else ""
-        lines.append(
-            f"{index}. {item.get('role_title')} — {_rm(item.get('estimated_hourly_rate_min_sen'))}"
-            f"–{_rm(item.get('estimated_hourly_rate_max_sen'))}/hour, about "
-            f"{_rm(item.get('estimated_monthly_income_min_sen'))}"
-            f"–{_rm(item.get('estimated_monthly_income_max_sen'))}/month at "
-            f"{item.get('suggested_hours_per_week')} hours/week. "
-            f"{item.get('why_relevant')} First step: {item.get('first_step')}."
-            f"{completion_note}"
-        )
-    guidance = result.get("overall_guidance")
-    tail = f"\n{guidance}" if guidance else ""
     return (
-        "Here are three part-time options matched to your goal and availability:\n"
-        + "\n".join(lines)
-        + tail
-        + "\nThese are model-estimated forecasts, not confirmed income; no goal or "
-        "Safe to Spend figure was changed."
+        f"Here are {total_jobs} live work option{'s' if total_jobs != 1 else ''} matched to "
+        "your goal and availability:\n"
+        + "\n\n".join(sections)
+        + "\nThese are model-estimated forecasts, not confirmed income; "
+        "your goal plan was not changed."
     )
 
 
@@ -1181,16 +1219,26 @@ def _goal_deadline(text: str) -> str | None:
             return date(*(int(value) for value in iso.groups())).isoformat()
         except ValueError:
             return None
-    named = re.search(
-        r"\b(" + "|".join(_MONTHS) + r")(?:\s+(\d{1,2})(?:st|nd|rd|th)?)?[,\s]+(20\d{2})\b",
+    day_first = re.search(
+        r"\b(\d{1,2})(?:st|nd|rd|th)?\s+(" + "|".join(_MONTHS) + r")[,\s]+(20\d{2})\b",
         text,
         re.I,
     )
-    if not named:
-        return None
-    month = _MONTHS[named.group(1).casefold()]
-    year = int(named.group(3))
-    day = int(named.group(2)) if named.group(2) else monthrange(year, month)[1]
+    if day_first:
+        day = int(day_first.group(1))
+        month = _MONTHS[day_first.group(2).casefold()]
+        year = int(day_first.group(3))
+    else:
+        named = re.search(
+            r"\b(" + "|".join(_MONTHS) + r")(?:\s+(\d{1,2})(?:st|nd|rd|th)?)?[,\s]+(20\d{2})\b",
+            text,
+            re.I,
+        )
+        if not named:
+            return None
+        month = _MONTHS[named.group(1).casefold()]
+        year = int(named.group(3))
+        day = int(named.group(2)) if named.group(2) else monthrange(year, month)[1]
     try:
         return date(year, month, day).isoformat()
     except ValueError:
@@ -1222,19 +1270,18 @@ def _amount_near(text: str, marker: str) -> int | None:
 # "save" is deliberately absent: it is a prefix of "saved", which is how the
 # *current* balance is stated ("I already saved RM200"), and a marker that
 # matched it would file the money already put aside as the thing being aimed at.
-_GOAL_TARGET_MARKERS = ("goal of", "target of", "goal", "target", "savings", "saving")
-
-
 def _goal_target_sen(text: str) -> int | None:
-    lowered = text.casefold()
-    for marker in _GOAL_TARGET_MARKERS:
-        location = lowered.find(marker)
-        if location < 0:
-            continue
-        amount = _amount_sen(text[location : location + 120])
-        if amount is not None:
-            return amount
-    return None
+    """Offline-only fallback when a language-model interpreter is unavailable.
+
+    Live goal intake is semantic, schema-constrained LLM interpretation.  The
+    offline model cannot infer arbitrary phrasing, so it uses no trigger-word
+    catalogue: for a new goal, the target must not be lower than the amount
+    already saved, making the largest stated goal-related amount the only safe
+    provisional candidate. The goal graph still validates the result before it
+    can reach an approval.
+    """
+    amounts = _amounts_sen(text)
+    return max(amounts) if amounts else None
 
 
 def _years_from(day: date, years: int) -> date:
@@ -1293,13 +1340,8 @@ def _goal_workflow_args(
     )
     args: dict[str, Any] = {"action": action}
     if action == "create":
-        # The goal form uses the same starting value.  If the user did not say
-        # they already saved anything, zero is the only non-invented balance;
-        # the complete value is still visible and editable before approval.
-        args.update({"goal_type": goal_type, "name": name, "current_saved_sen": 0})
+        args.update({"goal_type": goal_type, "name": name})
         target = _goal_target_sen(text)
-        if target is None and amounts:
-            target = amounts[0]
         if target is not None:
             args["target_amount_sen"] = target
         saved = _amount_near(text, "already saved") or _amount_near(text, "saved")
@@ -1340,6 +1382,22 @@ def _goal_workflow_args(
         if deadline is not None:
             args["target_date"] = deadline
     return args
+
+
+def _goal_request_with_history(text: str, history: str) -> str:
+    """Join a goal follow-up to the user's most recent goal request.
+
+    The model sees the rendered history, but its tool-call arguments only carry
+    the current sentence.  This gives the typed goal workflow the same context
+    without treating an earlier assistant reply as a user-stated financial fact.
+    """
+    earlier = [
+        line.removeprefix("User: ") for line in history.splitlines() if line.startswith("User: ")
+    ]
+    for said in reversed(earlier[-4:]):
+        if _GOAL_WORKFLOW.search(said):
+            return f"{said}. Follow-up: {text}"
+    return text
 
 
 _PART_TIME_WORK = re.compile(
@@ -1729,6 +1787,12 @@ class OfflineChatModel(BaseChatModel):
 
         today = _today_from(messages)
         arguments = route.arguments(text, self.attachment, today) if route.arguments else {}
+        if route is _GOAL_ROUTE and _goal_followup(text, self.history):
+            arguments = {
+                "start_goal_planning": _goal_workflow_args(
+                    _goal_request_with_history(text, self.history), self.attachment, today
+                )
+            }
         if route is _PART_TIME:
             arguments = {"recommend_part_time_jobs": _part_time_args(text, self.history)}
         calls = [
@@ -1876,6 +1940,10 @@ def get_chat_model(
     attachment: dict[str, Any] | None = None,
     history: str = "",
     temperature: float | None = None,
+    timeout_seconds: float | None = None,
+    max_retries: int | None = None,
+    max_tokens: int | None = None,
+    extra_body: dict[str, Any] | None = None,
 ) -> BaseChatModel:
     """The model for one call.
 
@@ -1905,9 +1973,15 @@ def get_chat_model(
             api_key=settings.dashscope_api_key,
             model=model,
             streaming=streaming,
-            timeout=settings.butler_request_timeout_seconds,
-            max_retries=1,
+            timeout=(
+                settings.butler_request_timeout_seconds
+                if timeout_seconds is None
+                else timeout_seconds
+            ),
+            max_retries=1 if max_retries is None else max_retries,
             **({} if temperature is None else {"temperature": temperature}),
+            **({} if max_tokens is None else {"max_tokens": max_tokens}),
+            **({} if extra_body is None else {"extra_body": extra_body}),
         )
 
     main = one(settings.butler_model)

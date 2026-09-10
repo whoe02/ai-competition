@@ -7,6 +7,7 @@ import { api } from "../api/client";
 import {
   ask,
   decide,
+  resumeAnswer,
   type ApprovalView,
   type AppAction,
   type ChangeSetLine,
@@ -31,6 +32,7 @@ import { takeButlerHandoff } from "../lib/butlerHandoff";
 type Attachment = (Capture & { preview?: string }) | null;
 
 type Turn = {
+  id?: string;
   role: "user" | "kira";
   text: string;
   evidence: EvidenceRow[];
@@ -38,6 +40,7 @@ type Turn = {
   approval?: ApprovalView | null;
   approvals?: ApprovalView[];
   applied?: boolean;
+  resumeMessageId?: string;
 };
 
 /** What the graph is doing right now, before there is an answer to show. */
@@ -132,6 +135,7 @@ export function Butler({
   const loaded = useRef(false);
   const sending = useRef(false);
   const activeThread = useRef<string | undefined>(thread?.id);
+  const activeMessage = useRef<string | undefined>(undefined);
   const conversations = useQuery({
     queryKey: ["butler", "conversations"],
     queryFn: () => api.get<Pick<ButlerThread, "id" | "title">[]>("/v1/butler/threads"),
@@ -146,10 +150,15 @@ export function Butler({
     const pending = thread.pending_approvals;
     setTurns(
       thread.messages.map((message, index) => ({
+        id: message.id,
         role: message.role === "user" ? "user" : "kira",
         text: message.content,
         evidence: message.evidence as EvidenceRow[],
         attachment: (message.attachment as Attachment) ?? null,
+        resumeMessageId:
+          index === thread.messages.length - 1 && message.role === "user"
+            ? message.id
+            : undefined,
         approvals:
           index === thread.messages.length - 1 && message.role !== "user"
             ? pending.map((approval) =>
@@ -186,7 +195,11 @@ export function Butler({
       // The stream never opened, or it died mid-turn. Either way the user is
       // owed a sentence: a silent failure reads as the Butler ignoring them.
       setTurns((previous) => [
-        ...previous,
+        ...previous.map((turn) =>
+          turn.id === activeMessage.current
+            ? { ...turn, resumeMessageId: activeMessage.current }
+            : turn,
+        ),
         {
           role: "kira",
           text: `Something broke: ${error instanceof Error ? error.message : "I could not reach the server."}`,
@@ -215,6 +228,22 @@ export function Butler({
     let state = initial;
     for await (const event of events) {
       switch (event.type) {
+        case "message":
+          activeMessage.current = event.id;
+          setTurns((previous) => {
+            let index = -1;
+            for (let position = previous.length - 1; position >= 0; position -= 1) {
+              const candidate = previous[position];
+              if (candidate?.role === "user" && !candidate.id) {
+                index = position;
+                break;
+              }
+            }
+            return previous.map((turn, position) =>
+              position === index ? { ...turn, id: event.id } : turn,
+            );
+          });
+          break;
         case "thinking":
           state = { ...state, thinking: event.text };
           break;
@@ -246,6 +275,8 @@ export function Butler({
           };
           break;
         case "done": {
+          setTurns((previous) => previous.map((turn) =>
+            turn.id === activeMessage.current ? { ...turn, resumeMessageId: undefined } : turn));
           // The mid-stream approval event carries the arguments a card needs to
           // be editable, but `done` is what says a proposal is still standing.
           // The graph replays its pending approval even on the turn that
@@ -271,6 +302,10 @@ export function Butler({
           break;
         }
         case "error":
+          setTurns((previous) => previous.map((turn) =>
+            turn.id === activeMessage.current
+              ? { ...turn, resumeMessageId: activeMessage.current }
+              : turn));
           setTurns((previous) => [
             ...previous,
             { role: "kira", text: `Something broke: ${event.message}`, evidence: [] },
@@ -293,6 +328,7 @@ export function Butler({
       { role: "user", text: trimmed, evidence: [], attachment: attached },
     ]);
     setLive({ ...EMPTY, thinking: "Starting your conversation" });
+    activeMessage.current = undefined;
     void (async () => {
       try {
         if (!activeThread.current && onThreadStarted) {
@@ -310,6 +346,23 @@ export function Butler({
         }]);
         setText(trimmed);
         setLive(null);
+      } finally {
+        sending.current = false;
+      }
+    })();
+  };
+
+  const resume = (messageId: string) => {
+    const threadId = activeThread.current;
+    if (!threadId || live || sending.current) return;
+    sending.current = true;
+    activeMessage.current = messageId;
+    setTurns((previous) => previous.map((turn) =>
+      turn.id === messageId ? { ...turn, resumeMessageId: undefined } : turn));
+    setLive({ ...EMPTY, thinking: "Resuming your saved request" });
+    void (async () => {
+      try {
+        await consume(resumeAnswer(threadId, messageId));
       } finally {
         sending.current = false;
       }
@@ -405,6 +458,16 @@ export function Butler({
             <div className="bubble-user" key={index}>
               {turn.attachment && <AttachmentTag attachment={turn.attachment} />}
               <span style={{ display: "block" }}>{turn.text}</span>
+              {turn.resumeMessageId && (
+                <button
+                  className="btn btn-accent btn-sm"
+                  style={{ marginTop: 12 }}
+                  disabled={busy}
+                  onClick={() => resume(turn.resumeMessageId!)}
+                >
+                  Resume Butler&rsquo;s answer
+                </button>
+              )}
             </div>
           ) : (
             <div className="bubble-kira" key={index}>

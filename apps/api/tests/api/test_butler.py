@@ -13,8 +13,9 @@ from sqlalchemy import select
 from kira.api.deps import stream_session_factory
 from kira.api.routers import butler as butler_router
 from kira.api.schemas import ButlerAskRequest
-from kira.db.models import User
+from kira.db.models import ROLE_KIRA, ROLE_USER, User
 from kira.seed.demo import DEMO_EMAIL, DEMO_PASSWORD, seed_demo_user
+from kira.services import butler_thread
 
 
 @pytest.fixture
@@ -121,6 +122,53 @@ class TestAsking:
         body = (await butler_client.get("/v1/butler/thread")).json()
         assert [message["role"] for message in body["messages"]] == ["user", "kira"]
         assert body["messages"][1]["evidence"]
+
+    async def test_an_interrupted_message_resumes_without_adding_a_second_user_turn(
+        self, butler_client, session, monkeypatch
+    ):
+        user = (await session.execute(select(User))).scalar_one()
+        thread = await butler_thread.ensure_thread(session, user)
+        asked = await butler_thread.append(
+            session, user, thread, role=ROLE_USER, content="Recommend work for both goals"
+        )
+        await session.commit()
+
+        async def resumed(*_, **__):
+            yield {
+                "type": "done",
+                "answer": "I resumed both saved recommendation results.",
+                "evidence": [["Goal", "Wedding"], ["Goal", "Emergency"]],
+                "tools_used": ["recommend_part_time_jobs", "recommend_part_time_jobs"],
+                "approval": None,
+            }
+
+        monkeypatch.setattr(butler_router, "stream_interrupted_turn", resumed)
+        response = await butler_client.post(
+            f"/v1/butler/threads/{thread.id}/messages/{asked.id}/resume"
+        )
+
+        assert response.status_code == 200
+        assert parse(response.text)[-1]["type"] == "done"
+        messages = (await butler_client.get(f"/v1/butler/threads/{thread.id}")).json()[
+            "messages"
+        ]
+        assert [message["role"] for message in messages] == [ROLE_USER, ROLE_KIRA]
+        assert messages[-1]["content"] == "I resumed both saved recommendation results."
+
+    async def test_only_the_latest_unanswered_user_message_can_be_resumed(
+        self, butler_client, session
+    ):
+        user = (await session.execute(select(User))).scalar_one()
+        thread = await butler_thread.ensure_thread(session, user)
+        asked = await butler_thread.append(session, user, thread, role=ROLE_USER, content="Hi")
+        await butler_thread.append(session, user, thread, role=ROLE_KIRA, content="Hello")
+        await session.commit()
+
+        response = await butler_client.post(
+            f"/v1/butler/threads/{thread.id}/messages/{asked.id}/resume"
+        )
+
+        assert response.status_code == 409
 
     async def test_an_attachment_is_read_and_kept_with_the_turn(self, butler_client):
         attachment = {

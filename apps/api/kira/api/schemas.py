@@ -85,7 +85,13 @@ GoalType = Literal[
     "custom_goal",
 ]
 GoalStatus = Literal[
-    "draft", "active", "at_risk", "needs_replan", "paused", "achieved", "cancelled",
+    "draft",
+    "active",
+    "at_risk",
+    "needs_replan",
+    "paused",
+    "achieved",
+    "cancelled",
     "deleted",
 ]
 
@@ -187,6 +193,11 @@ class GoalPlanCalculationResponse(ResponseModel):
 
 
 class PartTimeJobOptionResponse(ResponseModel):
+    source_job_id: str
+    job_source: Literal["remotive", "arbeitnow"]
+    job_company: str
+    job_location: str
+    apply_url: str
     role_title: str
     typical_tasks: str
     why_relevant: str
@@ -210,7 +221,6 @@ class PartTimeJobOptionResponse(ResponseModel):
     projected_completion_with_max_income: date | None
     days_saved_min: int | None
     days_saved_max: int | None
-    safe_to_spend_today_change_sen: int
     future_daily_safe_to_spend_increase_min_sen: int
     future_daily_safe_to_spend_increase_max_sen: int
     cautions: list[str]
@@ -239,7 +249,7 @@ class PartTimeJobRecommendationResponse(ResponseModel):
     reason: str | None = None
     recommendations: list[PartTimeJobOptionResponse] = Field(default_factory=list)
     overall_guidance: str | None = None
-    source: Literal["llm"] | None = None
+    source: Literal["job_board_ranked"] | None = None
     preferences: PartTimePreferencesResponse
     expected_monthly_income_sen: int | None = None
     monthly_income_before_sen: int | None = None
@@ -250,7 +260,6 @@ class PartTimeJobRecommendationResponse(ResponseModel):
     feasible_after: bool | None = None
     projected_completion_before: date | None = None
     projected_completion_after: date | None = None
-    safe_to_spend_changes: bool
     cash_effect: str
 
 

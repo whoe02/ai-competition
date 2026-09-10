@@ -30,6 +30,7 @@ from kira.api.schemas import (
     PartTimeRecommendationImpactRequest,
     PartTimeRecommendationRequest,
 )
+from kira.config import get_settings
 from kira.db.models import Goal, GoalPlanRecord
 from kira.engine import GoalImpact, GoalPlan, GoalScenario
 from kira.services import butler_thread
@@ -317,7 +318,15 @@ async def post_part_time_recommendation(
             _as_of_utc(),
             available_hours_per_week=body.available_hours_per_week,
             work_mode=body.work_mode,
-            model=get_chat_model(temperature=0.2),
+            model=get_chat_model(
+                temperature=0.2,
+                timeout_seconds=get_settings().part_time_model_timeout_seconds,
+                max_retries=get_settings().part_time_model_max_retries,
+                max_tokens=get_settings().part_time_model_max_tokens,
+                extra_body={
+                    "enable_thinking": get_settings().part_time_model_enable_thinking,
+                },
+            ),
             transport_limitations=body.transport_limitations,
         )
     except GoalNotFound as exc:

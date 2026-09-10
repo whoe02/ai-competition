@@ -72,7 +72,7 @@ class TestAnAmountWithAScaleOnIt:
 
 
 class TestTheTargetComesFromTheGoalClause:
-    def test_the_lunch_is_not_mistaken_for_the_target(self):
+    def test_the_offline_fallback_uses_the_largest_stated_amount_as_the_target(self):
         args = _goal_workflow_args(REAL, None)
         assert args["action"] == "create"
         assert args["target_amount_sen"] == ONE_MILLION_SEN
@@ -80,7 +80,7 @@ class TestTheTargetComesFromTheGoalClause:
     def test_a_sentence_with_only_a_goal_in_it_is_unchanged(self):
         args = _goal_workflow_args("i want to set a goal of saving 1 million", None)
         assert args["target_amount_sen"] == ONE_MILLION_SEN
-        assert args["current_saved_sen"] == 0
+        assert "current_saved_sen" not in args
 
     def test_long_term_becomes_an_editable_five_year_draft(self):
         args = _goal_workflow_args(
@@ -89,7 +89,7 @@ class TestTheTargetComesFromTheGoalClause:
             date(2026, 9, 9),
         )
         assert args["target_date"] == "2031-09-09"
-        assert args["current_saved_sen"] == 0
+        assert "current_saved_sen" not in args
 
     def test_money_already_put_aside_is_not_the_target(self):
         """The marker list excludes "save" precisely because of this sentence."""

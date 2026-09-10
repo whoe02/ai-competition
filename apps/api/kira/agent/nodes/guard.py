@@ -9,6 +9,7 @@ write is routed to approval rather than to execution.
 from __future__ import annotations
 
 import json
+import logging
 import time
 from typing import Any
 
@@ -21,6 +22,8 @@ from kira.agent.policy import refusal_for
 from kira.agent.state import ButlerContext, ButlerState
 from kira.agent.tools import REGISTRY
 from kira.config import get_settings
+
+log = logging.getLogger("uvicorn.error.kira.butler")
 
 
 def _last_ai(state: ButlerState) -> AIMessage | None:
@@ -44,6 +47,7 @@ async def guard(state: ButlerState, runtime: Runtime[ButlerContext]) -> dict:
     reply = _last_ai(state)
     calls = list(getattr(reply, "tool_calls", None) or [])
     if not calls:
+        log.info("butler.node guard no_calls thread_id=%s", runtime.context.thread_id)
         # Cleared, not left standing. `refusals` says what THIS pass turned
         # away, and `route_after_guard` reads it to decide whether the turn is
         # heading for compose with nothing at all. A pass that proposed nothing
@@ -67,6 +71,11 @@ async def guard(state: ButlerState, runtime: Runtime[ButlerContext]) -> dict:
     # every result comes back to the model rather than straight to the answer.
     started = state.get("started_at") or 0.0
     if started and time.monotonic() - started > settings.butler_turn_budget_seconds:
+        log.info(
+            "butler.node guard budget_exhausted thread_id=%s calls=%s",
+            context.thread_id,
+            [call.get("name") for call in calls],
+        )
         events.emit(runtime, events.THINKING, text="That is long enough — answering now")
         return {
             "approved_reads": [],
@@ -81,6 +90,11 @@ async def guard(state: ButlerState, runtime: Runtime[ButlerContext]) -> dict:
         }
 
     if state.get("iterations", 0) > settings.butler_max_tool_iterations:
+        log.info(
+            "butler.node guard iteration_cap thread_id=%s calls=%s",
+            context.thread_id,
+            [call.get("name") for call in calls],
+        )
         # Refusals cleared for the same reason as above, and here it is
         # load-bearing rather than tidy: this branch is the stop, and a stale
         # list left in the state would have `route_after_guard` send the run
@@ -120,15 +134,27 @@ async def guard(state: ButlerState, runtime: Runtime[ButlerContext]) -> dict:
         if blocked is not None:
             refusals.append(blocked)
             responses.append(_refusal(call, blocked))
+            log.info(
+                "butler.node guard refused thread_id=%s tool=%s reason=%s",
+                context.thread_id,
+                name,
+                blocked,
+            )
             events.emit(runtime, events.THINKING, text="That one is off limits")
             continue
 
         try:
-            args = spec.args_model.model_validate(call.get("args") or {})
+            args = spec.args_model.model_validate(raw_args)
         except ValidationError as exc:
             reason = f"{name} was called with arguments it cannot accept: {exc.errors()}"
             refusals.append(reason)
             responses.append(_refusal(call, reason))
+            log.info(
+                "butler.node guard refused thread_id=%s tool=%s reason=%s",
+                context.thread_id,
+                name,
+                reason,
+            )
             continue
 
         # Protected resources are refused whatever the tier, and before anything runs.
@@ -138,6 +164,12 @@ async def guard(state: ButlerState, runtime: Runtime[ButlerContext]) -> dict:
         if blocked is not None:
             refusals.append(blocked)
             responses.append(_refusal(call, blocked))
+            log.info(
+                "butler.node guard refused thread_id=%s tool=%s reason=%s",
+                context.thread_id,
+                name,
+                blocked,
+            )
             events.emit(runtime, events.THINKING, text="That one is off limits")
             continue
 
@@ -173,6 +205,14 @@ async def guard(state: ButlerState, runtime: Runtime[ButlerContext]) -> dict:
     # unanswered with nothing on screen saying so. So they run together — the
     # reads first, then the handoff, which `route_after_tools` already does.
 
+    log.info(
+        "butler.node guard permitted thread_id=%s reads=%s writes=%s workflow=%s refusals=%s",
+        context.thread_id,
+        [call["name"] for call in reads],
+        [call["name"] for call in writes],
+        workflow["name"] if workflow else None,
+        len(refusals),
+    )
     return {
         "approved_reads": reads,
         "pending_write": writes[0]

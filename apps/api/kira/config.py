@@ -13,9 +13,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     # `enable_decoding=False` stops the env sources from JSON-parsing list
     # fields before validation, so CORS_ORIGINS can be written plainly.
-    model_config = SettingsConfigDict(
-        env_file=".env", extra="ignore", enable_decoding=False
-    )
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore", enable_decoding=False)
 
     database_url: str = "postgresql+asyncpg://kira:kira@localhost:5432/kira"
     jwt_secret: str = "development-only-replace-with-a-secure-jwt-secret"
@@ -60,6 +58,22 @@ class Settings(BaseSettings):
     butler_reasoning_temperature: float = 0.0
     butler_compose_temperature: float = 0.6
     butler_memory_limit: int = 40
+    # Public job-board lookups are bounded before candidates are shown to the
+    # model. The model ranks these live records; it never invents vacancies.
+    job_search_timeout_seconds: float = 8.0
+    job_search_candidate_limit: int = Field(default=24, ge=3, le=50)
+    # A job board can return very long HTML-derived descriptions. Bound the
+    # context by size (not by assumed job titles) so ranking remains responsive.
+    part_time_job_context_max_characters: int = Field(default=3_200, ge=1_000, le=30_000)
+    part_time_job_description_characters: int = Field(default=160, ge=80, le=1_000)
+    # Live job ranking has a concise, structured response. Give it one bounded
+    # attempt instead of turning a transient provider stall into two full waits.
+    part_time_model_timeout_seconds: float = Field(default=25.0, gt=0, le=60)
+    part_time_model_max_retries: int = Field(default=0, ge=0, le=2)
+    part_time_model_max_tokens: int = Field(default=900, ge=256, le=2_000)
+    # Qwen 3.5 enables thinking by default. Ranking a bounded source set needs
+    # a concise JSON decision, so this is independently configurable.
+    part_time_model_enable_thinking: bool = False
     # The Plan screen's ask box. Far shorter than the Butler's own timeout above,
     # because the two are waited on differently: a conversation may take its time
     # and shows tokens arriving, where this one holds a screen of live figures

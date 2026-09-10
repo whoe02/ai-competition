@@ -1427,12 +1427,18 @@ export interface components {
         };
         /** FinancialProfileUpdateRequest */
         FinancialProfileUpdateRequest: {
+            /** Display Name */
+            display_name?: string | null;
             /** Monthly Income Sen */
             monthly_income_sen?: number | null;
             /** Next Payday */
             next_payday?: string | null;
             /** Job Title */
             job_title?: string | null;
+            /** Cycle Start */
+            cycle_start?: string | null;
+            /** Cycle Days */
+            cycle_days?: number | null;
         };
         /** ForesightResponse */
         ForesightResponse: {
@@ -2060,6 +2066,19 @@ export interface components {
         };
         /** PartTimeJobOptionResponse */
         PartTimeJobOptionResponse: {
+            /** Source Job Id */
+            source_job_id: string;
+            /**
+             * Job Source
+             * @enum {string}
+             */
+            job_source: "remotive" | "arbeitnow";
+            /** Job Company */
+            job_company: string;
+            /** Job Location */
+            job_location: string;
+            /** Apply Url */
+            apply_url: string;
             /** Role Title */
             role_title: string;
             /** Typical Tasks */
@@ -2106,8 +2125,6 @@ export interface components {
             days_saved_min: number | null;
             /** Days Saved Max */
             days_saved_max: number | null;
-            /** Safe To Spend Today Change Sen */
-            safe_to_spend_today_change_sen: number;
             /** Future Daily Safe To Spend Increase Min Sen */
             future_daily_safe_to_spend_increase_min_sen: number;
             /** Future Daily Safe To Spend Increase Max Sen */
@@ -2143,7 +2160,7 @@ export interface components {
             /** Overall Guidance */
             overall_guidance?: string | null;
             /** Source */
-            source?: "llm" | null;
+            source?: "job_board_ranked" | null;
             preferences: components["schemas"]["PartTimePreferencesResponse"];
             /** Expected Monthly Income Sen */
             expected_monthly_income_sen?: number | null;
@@ -2163,8 +2180,6 @@ export interface components {
             projected_completion_before?: string | null;
             /** Projected Completion After */
             projected_completion_after?: string | null;
-            /** Safe To Spend Changes */
-            safe_to_spend_changes: boolean;
             /** Cash Effect */
             cash_effect: string;
         };

@@ -54,6 +54,9 @@ export function GoalDetail({
     const stored = storedPartTime.data;
     if (stored?.status === "available") {
       setPartTime((current) => current ?? stored);
+      setAvailableHours(String(stored.preferences.available_hours_per_week));
+      setWorkMode(stored.preferences.work_mode);
+      setTransportLimitations(stored.preferences.transport_limitations);
     } else if (storedPartTime.isSuccess) {
       setPartTime(null);
     }
@@ -141,6 +144,9 @@ export function GoalDetail({
         goalName={detail.name}
         recommendation={partTime}
         onBack={() => setShowRecommendations(false)}
+        onRecommendAgain={() => void loadPartTimeRecommendation()}
+        isRefreshing={partTimeMutation.isPending}
+        refreshFailed={partTimeMutation.isError}
       />
     );
   }
@@ -212,7 +218,12 @@ export function GoalDetail({
               <div className="goal-part-time-ready">
                 <span className="goal-part-time-ready-mark"><IcCheck size={15} /></span>
                 <div><b>Three work ideas are ready</b><p>Includes estimated pay and goal-date effects.</p></div>
-                <button className="btn btn-primary btn-sm" onClick={() => setShowRecommendations(true)}>View ideas</button>
+                <div className="goal-part-time-ready-actions">
+                  <button className="btn btn-primary btn-sm" onClick={() => setShowRecommendations(true)}>View ideas</button>
+                  <button className="btn btn-line btn-sm" disabled={partTimeMutation.isPending} onClick={() => void loadPartTimeRecommendation()}>
+                    {partTimeMutation.isPending ? "Searching…" : "Find different jobs"}
+                  </button>
+                </div>
               </div>
             )}
           </section>
@@ -302,10 +313,16 @@ function PartTimeRecommendationPage({
   goalName,
   recommendation,
   onBack,
+  onRecommendAgain,
+  isRefreshing,
+  refreshFailed,
 }: {
   goalName: string;
   recommendation: PartTimeJobRecommendation;
   onBack: () => void;
+  onRecommendAgain: () => void;
+  isRefreshing: boolean;
+  refreshFailed: boolean;
 }) {
   return (
     <div className="goal-screen goal-recommendations-page">
@@ -315,7 +332,14 @@ function PartTimeRecommendationPage({
           <p className="eyebrow">{goalName}</p>
           <h2>Three ways to explore</h2>
           <p>{recommendation.overall_guidance ?? "Choose only an option that fits your life and commitments."}</p>
+          <div className="goal-recommendations-refresh">
+            <button className="btn btn-sm" disabled={isRefreshing} onClick={onRecommendAgain}>
+              {isRefreshing ? "Searching live jobs…" : "Show me different jobs"}
+            </button>
+            <small>We’ll search the live job boards again and avoid these listings.</small>
+          </div>
         </section>
+        {refreshFailed && <p className="goal-inline-error" role="alert">Kira could not refresh the live jobs. Your current recommendations are still here.</p>}
         <div className="goal-part-time-options">
           {(recommendation.recommendations ?? []).map((item, index) => (
             <article className="goal-part-time-option" key={`${item.role_title}-${index}`}>
@@ -324,6 +348,15 @@ function PartTimeRecommendationPage({
                 <span>{item.work_arrangement}</span>
               </div>
               <h3>{item.role_title}</h3>
+              <p className="goal-part-time-source">{item.job_company} · {item.job_location} · via {item.job_source === "arbeitnow" ? "Arbeitnow" : "Remotive"}</p>
+              <a
+                className="btn btn-line btn-sm goal-part-time-apply"
+                href={item.apply_url}
+                target="_blank"
+                rel="noreferrer"
+              >
+                View & apply on {item.job_source === "arbeitnow" ? "Arbeitnow" : "Remotive"}
+              </a>
               <dl>
                 <div><dt>Typical work</dt><dd>{item.typical_tasks}</dd></div>
                 <div><dt>Why it fits</dt><dd>{item.why_relevant}</dd></div>
@@ -343,7 +376,6 @@ function PartTimeRecommendationPage({
                 <span>Monthly goal saving <b>RM{fmt(item.goal_contribution_monthly_before_sen)} → {moneyRange(item.goal_contribution_monthly_with_job_min_sen, item.goal_contribution_monthly_with_job_max_sen)}</b></span>
                 <span>Goal completion <b>{formatGoalDate(recommendation.projected_completion_before ?? null)} → {completionRange(item.projected_completion_with_max_income, item.projected_completion_with_min_income)}</b></span>
                 <span>Time saved <b>{daysRange(item.days_saved_min, item.days_saved_max)}</b></span>
-                <span>Safe to Spend today <b>No change</b></span>
                 <span>Potential daily capacity after goal <b>+{moneyRange(item.future_daily_safe_to_spend_increase_min_sen, item.future_daily_safe_to_spend_increase_max_sen)}</b></span>
               </div>
               {(item.cautions ?? []).map((caution) => <small key={caution}>{caution}</small>)}
@@ -352,7 +384,7 @@ function PartTimeRecommendationPage({
         </div>
         <section className="goal-part-time-card">
           <p className="eyebrow">How to read this forecast</p>
-          <p className="goal-muted">Pay is an AI estimate before costs or tax, not a guaranteed offer. Calculations assume all side income goes to this goal. Safe to Spend today remains unchanged until income is actually received and confirmed.</p>
+          <p className="goal-muted">Pay is an AI estimate before costs or tax, not a guaranteed offer. Calculations assume all side income goes to this goal.</p>
           <p className="goal-muted">The future daily amount applies only after the goal finishes, if the work continues and your commitments remain unchanged.</p>
         </section>
       </div>

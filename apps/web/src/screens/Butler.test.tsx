@@ -640,6 +640,58 @@ describe("When the turn cannot be sent", () => {
   });
 });
 
+describe("When a Butler turn is interrupted", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("detects an unexpected stream ending and offers checkpoint recovery", async () => {
+    const stream = controlled();
+    vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(stream.response)));
+    const user = setup();
+    await user.type(screen.getByLabelText("Ask Kira"), "Find work for both goals{Enter}");
+    stream.push({ type: "message", id: "interrupted-1", role: "user" });
+    stream.close();
+
+    expect(await screen.findByText(/interrupted before Butler finished/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Resume Butler’s answer" })).toBeEnabled();
+  });
+
+  it("resumes the saved message instead of posting the user request twice", async () => {
+    const interrupted = {
+      ...EMPTY_THREAD,
+      messages: [{
+        id: "interrupted-2",
+        role: "user",
+        content: "Find work for both goals",
+        evidence: [],
+        attachment: null,
+        created_at: "2026-09-10T10:00:00Z",
+      }],
+    } as ButlerThread;
+    vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(streamed(sse({
+      type: "done",
+      answer: "I restored recommendations for both goals.",
+      evidence: [["Goal", "Wedding"], ["Goal", "Emergency"]],
+      tools_used: ["recommend_part_time_jobs", "recommend_part_time_jobs"],
+      approval: null,
+    })))));
+    const user = setup(interrupted);
+
+    await user.click(screen.getByRole("button", { name: "Resume Butler’s answer" }));
+
+    expect(await screen.findByText("I restored recommendations for both goals.")).toBeInTheDocument();
+    expect(fetch).toHaveBeenCalledWith(
+      "/v1/butler/threads/t1/messages/interrupted-2/resume",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(fetch).not.toHaveBeenCalledWith(
+      "/v1/butler/threads/t1/messages",
+      expect.anything(),
+    );
+  });
+});
+
 describe("Butler · a question handed over from another screen", () => {
   const HANDED = "under RM15, and what's actually good tonight";
 

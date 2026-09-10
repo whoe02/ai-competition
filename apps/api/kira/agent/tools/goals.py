@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 
 from kira.agent.llm import get_chat_model
 from kira.agent.tools.spec import EvidenceRow, ToolContext, ToolResult, ToolSpec, money_str
+from kira.config import get_settings
 from kira.money import Money
 from kira.services import goals as goal_service
 from kira.services.goal_planning import GoalNotFound as PlannedGoalNotFound
@@ -118,7 +119,15 @@ async def _recommend_part_time(ctx: ToolContext, args: PartTimeRecommendationArg
             datetime.combine(ctx.today, time.min, tzinfo=UTC),
             available_hours_per_week=args.available_hours_per_week,
             work_mode=args.work_mode,
-            model=get_chat_model(temperature=0.2),
+            model=get_chat_model(
+                temperature=0.2,
+                timeout_seconds=get_settings().part_time_model_timeout_seconds,
+                max_retries=get_settings().part_time_model_max_retries,
+                max_tokens=get_settings().part_time_model_max_tokens,
+                extra_body={
+                    "enable_thinking": get_settings().part_time_model_enable_thinking,
+                },
+            ),
             transport_limitations=args.transport_limitations,
         )
     except PlannedGoalNotFound:
@@ -152,7 +161,7 @@ async def _recommend_part_time(ctx: ToolContext, args: PartTimeRecommendationArg
         f" · {round(ratio / 100)}% of income" if isinstance(ratio, int) else ""
     )
     recommendation_status = (
-        "Three ideas ready"
+        f"{len(value.get('recommendations', []))} live ideas ready"
         if status == "available"
         else str(value.get("reason") or "Unavailable")
     )
@@ -192,6 +201,10 @@ async def _recommend_part_time(ctx: ToolContext, args: PartTimeRecommendationArg
                     f"hours/week · {hourly_min}–{hourly_max}/hour · estimated "
                     f"{monthly_min}–{monthly_max}/month · {item.get('why_relevant')}",
                 ),
+                EvidenceRow(
+                    f"Apply for {item.get('role_title')}",
+                    str(item.get("apply_url") or "Application link unavailable"),
+                ),
             )
     return ToolResult(value, evidence)
 
@@ -215,7 +228,8 @@ SPECS = (
         kind="read",
         label="Finding relevant part-time work",
         description=(
-            "Return three read-only AI part-time job recommendations for one goal, using the "
+            "Return up to three suitable read-only AI part-time job recommendations for one "
+            "goal, using the "
             "user's profile job title, weekly availability, work-mode preference and "
             "transport limits. Each includes an AI-estimated hourly pay range and "
             "backend-calculated daily, weekly, monthly and goal-timeline effects. Ask for "

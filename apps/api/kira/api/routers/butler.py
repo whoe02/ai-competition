@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from kira.agent import events
 from kira.agent.goal_graph.presentation import goal_evidence, goal_resume_answer
 from kira.agent.goal_graph.run import resume_goal_run
-from kira.agent.run import stream_resume, stream_turn
+from kira.agent.run import stream_interrupted_turn, stream_resume, stream_turn
 from kira.agent.scheduled_approvals import ScheduledApprovalError, apply_scheduled_approval
 from kira.api.deps import CurrentUser, SessionDep, SessionFactory, StreamSessionDep
 from kira.api.schemas import (
@@ -56,6 +56,9 @@ def _turn_lock(thread_id: uuid.UUID) -> asyncio.Lock:
 NO_THREAD = HTTPException(status.HTTP_404_NOT_FOUND, "No such conversation")
 NO_APPROVAL = HTTPException(status.HTTP_404_NOT_FOUND, "No such approval")
 SETTLED = HTTPException(status.HTTP_409_CONFLICT, "That approval has already been decided")
+NOT_UNANSWERED = HTTPException(
+    status.HTTP_409_CONFLICT, "That message already has an answer or is not the latest message"
+)
 NO_MEMORY = HTTPException(status.HTTP_404_NOT_FOUND, "No such memory")
 
 
@@ -150,6 +153,28 @@ async def post_message(
     )
 
 
+@router.post("/threads/{thread_id}/messages/{message_id}/resume")
+async def resume_interrupted_message(
+    thread_id: uuid.UUID,
+    message_id: uuid.UUID,
+    user: CurrentUser,
+    session: SessionDep,
+    factory: StreamSessionDep,
+) -> StreamingResponse:
+    """Resume one persisted user turn without replaying its actions."""
+    try:
+        thread = await butler_thread.get_thread(session, user, thread_id)
+    except butler_thread.ThreadNotFound as exc:
+        raise NO_THREAD from exc
+    history = await butler_thread.messages(session, thread)
+    if not history or history[-1].id != message_id or history[-1].role != ROLE_USER:
+        raise NOT_UNANSWERED
+    return StreamingResponse(
+        _resume_interrupted(factory, user.id, thread_id, message_id),
+        media_type="text/event-stream",
+    )
+
+
 @router.post("/messages")
 async def post_default_message(
     body: ButlerAskRequest,
@@ -229,6 +254,48 @@ async def _run_locked(
                 tool_calls=[{"name": name} for name in final.get("tools_used") or []],
             )
         await session.commit()
+
+
+async def _resume_interrupted(
+    factory: SessionFactory,
+    user_id: uuid.UUID,
+    thread_id: uuid.UUID,
+    message_id: uuid.UUID,
+) -> AsyncIterator[str]:
+    async with _turn_lock(thread_id):
+        async with factory() as session:
+            user = (
+                await session.execute(select(User).where(User.id == user_id))
+            ).scalar_one()
+            thread = await butler_thread.get_thread(session, user, thread_id)
+            history = await butler_thread.messages(session, thread)
+            if not history or history[-1].id != message_id or history[-1].role != ROLE_USER:
+                yield _sse({"type": events.ERROR, "message": NOT_UNANSWERED.detail})
+                return
+
+            final: dict[str, Any] = {}
+            async for event in stream_interrupted_turn(
+                session,
+                user,
+                thread,
+                message_id=message_id,
+                today=today_for(),
+            ):
+                if event.get("type") == events.DONE:
+                    final = event
+                yield _sse(event)
+
+            if final.get("answer"):
+                await butler_thread.append(
+                    session,
+                    user,
+                    thread,
+                    role=ROLE_KIRA,
+                    content=final["answer"],
+                    evidence=final.get("evidence") or [],
+                    tool_calls=[{"name": name} for name in final.get("tools_used") or []],
+                )
+            await session.commit()
 
 
 @router.post("/approvals/{approval_id}/respond")

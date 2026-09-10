@@ -115,6 +115,9 @@ class AgentContext:
     tools: ToolContext
     thread_id: uuid.UUID
     request_id: uuid.UUID
+    # The user-only conversation transcript that the workflow's specialist
+    # interprets. It is deliberately unavailable to ordinary tool handlers.
+    conversation: str = ""
     model_factory: Callable[..., Any] | None = None
     # emit(event_type, **data). A no-op when nobody is streaming.
     emit: Callable[..., None] = lambda *_, **__: None

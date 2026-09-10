@@ -56,6 +56,9 @@ What you may and may not do:
   goal-intake call: copy only facts the user stated, use goal_reference for names such as
   "my house goal", and never calculate a contribution yourself. Use list_goals only for a
   simple read-only progress question.
+- For a new goal, carry facts from earlier messages into follow-ups. Collect the target,
+  the amount already saved, and the target date before presenting a plan. Ask naturally in
+  RM — never ask a user for a "sen" value. If they have not saved anything, they can say RM0.
 - Use recommend_part_time_jobs when the user asks for side work to accelerate a goal.
   It is read-only. Ask for available hours per week and remote/on-site/either preference
   when missing; pass the user's human goal name as goal_reference rather than inventing
@@ -330,9 +333,13 @@ def composing_prompt(
 # bill and a goal are names too, and none of them is this turn's to invent.
 COMPOSE_INSTRUCTION = """Write the answer now.
 
-You have the tool results above. Use those figures exactly. Two paragraphs at most:
-the first is one sentence containing the number that answers the question; the second
-is the short reason behind it. Do not list the evidence — the interface shows it.
+You have the tool results above. Use those figures exactly. For one calculation, use at
+most two short paragraphs: the first gives the answer and the second gives the reason.
+When the user asked about several records, goals or recommendations, group the answer by
+the subjects the tools returned and cover each one; do not collapse a multi-part result
+into only the last subject. Do not repeat the evidence panel as a raw label-value list.
+For job recommendations, include the real application URL returned for every job you
+mention. Do not offer to apply on the user's behalf; the user opens the source link.
 
 Name only what the tools above actually returned — a place, a merchant, a bill. A name
 in none of them is one you invented, however certain you are that it exists and is round

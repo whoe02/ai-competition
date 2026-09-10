@@ -23,7 +23,7 @@ import json
 import uuid
 from typing import Any
 
-from langchain_core.messages import ToolMessage
+from langchain_core.messages import HumanMessage, ToolMessage
 from langgraph.runtime import Runtime
 
 from kira.agent import events
@@ -62,6 +62,20 @@ def _failed(call: dict[str, Any], reason: str) -> ToolMessage:
     )
 
 
+def _conversation(state: ButlerState) -> str:
+    """Give a specialist the user turns it needs, never the model's hidden state."""
+    history = state.get("history_block", "").strip()
+    latest = next(
+        (
+            message.content
+            for message in reversed(state.get("messages", []))
+            if isinstance(message, HumanMessage) and isinstance(message.content, str)
+        ),
+        "",
+    )
+    return "\n".join(part for part in (history, f"User: {latest}" if latest else "") if part)
+
+
 async def delegate(state: ButlerState, runtime: Runtime[ButlerContext]) -> dict:
     call = state.get("pending_workflow")
     if not call:  # pragma: no cover - only reachable via the guard, which sets it
@@ -81,6 +95,7 @@ async def delegate(state: ButlerState, runtime: Runtime[ButlerContext]) -> dict:
         tools=await tool_context(runtime, state.get("attachment")),
         thread_id=context.thread_id,
         request_id=context.source_message_id or uuid.uuid4(),
+        conversation=_conversation(state),
         model_factory=context.model_factory,
         emit=lambda event, **data: events.emit(runtime, event, **data),
     )
