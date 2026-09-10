@@ -113,6 +113,14 @@ class PaddleOcrAdapter:
     """Read a receipt with PaddleOCR and extract a conservative proposal."""
 
     def __init__(self, language: str = "en") -> None:
+        self._language = language
+        self._image = None
+        self._numpy = None
+        self._ocr = None
+
+    def _load(self) -> None:
+        if self._ocr is not None:
+            return
         try:
             import numpy as np
             from paddleocr import PaddleOCR
@@ -124,7 +132,7 @@ class PaddleOcrAdapter:
         self._image = Image
         self._numpy = np
         self._ocr = PaddleOCR(
-            lang=language,
+            lang=self._language,
             use_doc_orientation_classify=False,
             use_doc_unwarping=False,
             use_textline_orientation=False,
@@ -132,6 +140,7 @@ class PaddleOcrAdapter:
 
     def read_receipt(self, image: bytes) -> ReceiptRead:
         try:
+            self._load()
             source = self._image.open(BytesIO(image)).convert("RGB")
             result = self._ocr.predict(self._numpy.asarray(source))
             lines: list[str] = []
@@ -161,17 +170,24 @@ class WhisperVoiceAdapter:
     """Transcribe a voice note locally with faster-whisper."""
 
     def __init__(self, model: str = "small", language: str = "en") -> None:
+        self._model_name = model
+        self._language = language
+        self._model = None
+
+    def _load(self) -> None:
+        if self._model is not None:
+            return
         try:
             from faster_whisper import WhisperModel
         except ImportError as exc:
             raise CaptureProviderError(
                 "Whisper capture requires the capture dependencies"
             ) from exc
-        self._language = language
-        self._model = WhisperModel(model, device="cpu", compute_type="int8")
+        self._model = WhisperModel(self._model_name, device="cpu", compute_type="int8")
 
     def transcribe(self, audio: bytes) -> VoiceRead:
         try:
+            self._load()
             with tempfile.NamedTemporaryFile(suffix=".audio") as source:
                 source.write(audio)
                 source.flush()

@@ -32,6 +32,7 @@ services:
       CAPTURE_VOICE_PROVIDER: ${CAPTURE_VOICE_PROVIDER:-whisper}
       CAPTURE_VOICE_MODEL: ${CAPTURE_VOICE_MODEL:-small}
       CAPTURE_VOICE_LANGUAGE: ${CAPTURE_VOICE_LANGUAGE:-en}
+      PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK: "True"
       # Unset means the Butler runs on its offline model: the graph, the tools,
       # the approvals and the evidence are identical, only the prose differs.
       DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
@@ -47,6 +48,8 @@ services:
       ROUTING_TIMEOUT_SECONDS: ${ROUTING_TIMEOUT_SECONDS:-2.5}
     ports:
       - "${KIRA_PORT:-8001}:8000"
+    volumes:
+      - kira-model-cache:/home/kira/.paddlex
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/v1/health')"]
       interval: 5s
@@ -68,3 +71,4 @@ services:
 
 volumes:
   kira-db:
+  kira-model-cache:
