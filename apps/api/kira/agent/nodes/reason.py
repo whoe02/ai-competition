@@ -11,7 +11,7 @@ from langchain_core.messages import AIMessage, SystemMessage
 from langgraph.runtime import Runtime
 
 from kira.agent import events, prompt
-from kira.agent.llm import OfflineChatModel, get_chat_model
+from kira.agent.llm import OfflineChatModel, _last_human, get_chat_model, route_for
 from kira.agent.state import ButlerContext, ButlerState
 from kira.agent.tools import REGISTRY
 from kira.config import get_settings
@@ -60,6 +60,19 @@ async def agent(state: ButlerState, runtime: Runtime[ButlerContext]) -> dict:
         )
         reply = await fallback.ainvoke(conversation)
         reply.response_metadata["kira_fallback"] = str(exc)
+
+    # Some online models answer a goal follow-up in prose instead of continuing
+    # the typed workflow. The user has supplied the missing fields, so leaving
+    # the turn tool-less would discard the conversation and trigger the compose
+    # node's honest no-results response. Recover only for the deterministic goal
+    # route; ordinary conversation should remain entirely model-driven.
+    if isinstance(reply, AIMessage) and not reply.tool_calls:
+        route = route_for(_last_human(conversation), attachment, history)
+        if route.name == "goal_workflow":
+            fallback = OfflineChatModel(attachment=attachment, history=history).bind_tools(
+                REGISTRY.schemas()
+            )
+            reply = await fallback.ainvoke(conversation)
 
     if not isinstance(reply, AIMessage):  # pragma: no cover - defensive
         reply = AIMessage(content=str(reply))
