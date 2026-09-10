@@ -4,7 +4,6 @@ import type { BriefingInboxResponse, DashboardToday } from "@kira/contracts";
 
 import type { Tab } from "../App";
 import type { PlanView } from "./Plan";
-import { ClaimLine, type Band } from "../components/ClaimLine";
 import { IcArrow, IcChev, IcInbox, IcLock, IcSpark } from "../components/Icons";
 import { Odometer } from "../components/Odometer";
 import { Reveal } from "../components/Reveal";
@@ -33,7 +32,6 @@ type TodayProps = {
 };
 
 export function Today({ data, isLoading, isError, briefing, go, onRetry }: TodayProps) {
-  const [picked, setPicked] = useState<Band | null>(null);
   const [maths, setMaths] = useState(false);
 
   // A wrong number is worse than no number, so neither state guesses.
@@ -101,23 +99,32 @@ export function Today({ data, isLoading, isError, briefing, go, onRetry }: Today
       <main className="pad">
         <Reveal>
           <section className="figure hero-parallax">
-            <p className="figure-label">Safe to spend today</p>
-            <Odometer sen={data.safe_today_sen} size={62} />
-            <p className="figure-note">
-              Your bills, the RM{fmt(data.buffer_sen)} buffer and this cycle&apos;s goal savings are
-              already set aside. This is what is left, across the {data.days_to_payday} days to payday.
-            </p>
-
-            <div className="figure-claim">
-              <ClaimLine data={data} picked={picked} onPick={setPicked} />
+            <p className="figure-label">Today&apos;s pace</p>
+            <div className="hero-pace-head">
+              <div>
+                <Odometer sen={spent} size={52} />
+                <p className="hero-pace-limit">of RM{fmt(share)} daily budget</p>
+              </div>
+              <p className="hero-pace-left" aria-label={`RM${fmt(data.safe_today_sen)}`}>
+                <b>RM{fmt(data.safe_today_sen)}</b>
+                <span>left today</span>
+              </p>
             </div>
+            <span className="hero-pace-bar" aria-label={`${Math.round(pacePct * 100)}% of today's budget used`}>
+              <i className={paceOver ? "over" : ""} style={{ width: `${Math.max(pacePct * 100, 1.5)}%` }} />
+            </span>
+            <p className="figure-note">
+              {paceOver
+                ? `RM${fmt(spent - share)} past today’s share. The days ahead now absorb it.`
+                : "Bills, your emergency buffer and goal savings are already protected."}
+            </p>
 
             <button
               className="hero-toggle"
               aria-expanded={maths}
               onClick={() => setMaths((visible) => !visible)}
             >
-              {maths ? "Hide the working" : "Show the working"}
+              {maths ? "Hide the calculation" : "Show how today is protected"}
             </button>
 
             {maths && (
@@ -137,81 +144,73 @@ export function Today({ data, isLoading, isError, briefing, go, onRetry }: Today
           </section>
         </Reveal>
 
-        {share > 0 && (
-          <Reveal delay={20}>
-            <section className="pace" aria-label="Today's pace">
-              <p className="pace-head">
-                <span className="led-cap">Today&apos;s pace</span>
-                <span className="pace-v">
-                  {fmt(spent)} <em>of {fmt(share)}</em>
-                </span>
-              </p>
-              <span className="pace-bar">
-                <i className={paceOver ? "over" : ""} style={{ width: `${Math.max(pacePct * 100, 1.5)}%` }} />
-              </span>
-              <p className="pace-note">
-                {paceOver
-                  ? `RM${fmt(spent - share)} past today's share — the days ahead absorb it.`
-                  : `RM${fmt(data.safe_today_sen)} of today's share is still yours.`}
-              </p>
-            </section>
-          </Reveal>
-        )}
-
         <Reveal delay={30}>
           <div className="ledger">
-            {(briefing || data.drafts_waiting > 0) && (
+            {waiting > 0 && (
               <section className="led-group group-alert">
                 <p className="led-cap-row">
                   <span className="led-cap">Waiting on you</span>
-                  {waiting > 0 && <span className="led-tally">{waiting} to review</span>}
+                  <span className="led-tally">{waiting} to review</span>
                 </p>
                 <div className="alerts">
-                  {briefing && (
-                    <button
-                      className="alert-row"
-                      onClick={() => go("butler")}
-                      aria-label="Open Kira's morning briefing"
-                    >
-                      <span className="alert-ic spark">
-                        <IcSpark size={16} />
+                {briefing && (
+                  <button
+                    className="alert-row"
+                    onClick={() => go("butler")}
+                    aria-label="Open Kira's morning briefing"
+                  >
+                    <span className="alert-ic spark">
+                      <IcSpark size={16} />
+                    </span>
+                    <span className="led-body">
+                      <b className="led-t">
+                        Kira did {briefing.proposal_count + 1} thing
+                        {briefing.proposal_count === 0 ? "" : "s"} last night
+                      </b>
+                      <span className="led-s">
+                        {briefing.pending_proposal_count > 0
+                          ? `${briefing.pending_proposal_count} decision${briefing.pending_proposal_count === 1 ? "" : "s"} ready for you.`
+                          : briefing.summary}
                       </span>
-                      <span className="led-body">
-                        <b className="led-t">
-                          Kira did {briefing.proposal_count + 1} thing
-                          {briefing.proposal_count === 0 ? "" : "s"} last night
-                        </b>
-                        <span className="led-s">
-                          {briefing.pending_proposal_count > 0
-                            ? `${briefing.pending_proposal_count} decision${briefing.pending_proposal_count === 1 ? "" : "s"} ready for you.`
-                            : briefing.summary}
-                        </span>
-                      </span>
-                      <IcChev size={17} className="led-chev" />
-                    </button>
-                  )}
+                    </span>
+                    <IcChev size={17} className="led-chev" />
+                  </button>
+                )}
 
-                  {data.drafts_waiting > 0 && (
-                    <button
-                      className="alert-row"
-                      onClick={() => go("activity")}
-                      aria-label={`Review ${data.drafts_waiting} captures waiting on you`}
-                    >
-                      <span className="alert-ic inbox">
-                        <IcInbox size={16} />
-                      </span>
-                      <span className="led-body">
-                        <b className="led-t">
-                          {data.drafts_waiting} capture{data.drafts_waiting === 1 ? "" : "s"} waiting on you
-                        </b>
-                        <span className="led-s">Nothing enters your ledger until you confirm it.</span>
-                      </span>
-                      <IcChev size={17} className="led-chev" />
-                    </button>
-                  )}
+                {data.drafts_waiting > 0 && (
+                  <button
+                    className="alert-row"
+                    onClick={() => go("activity")}
+                    aria-label={`Review ${data.drafts_waiting} captures waiting on you`}
+                  >
+                    <span className="alert-ic inbox">
+                      <IcInbox size={16} />
+                    </span>
+                    <span className="led-body">
+                      <b className="led-t">
+                        {data.drafts_waiting} capture{data.drafts_waiting === 1 ? "" : "s"} waiting on you
+                      </b>
+                      <span className="led-s">Nothing enters your ledger until you confirm it.</span>
+                    </span>
+                    <IcChev size={17} className="led-chev" />
+                  </button>
+                )}
+
                 </div>
               </section>
             )}
+
+            <section className="invite">
+              <p className="voice">
+                {meal
+                  ? `RM${fmt(data.safe_today_sen)} is what today has room for. Shall I find you somewhere for ${meal.toLowerCase()} within reach?`
+                  : `RM${fmt(data.safe_today_sen)} is what today has room for. Shall I show you what is within reach?`}
+              </p>
+              <button className="btn btn-accent invite-go" onClick={() => go("plan")}>
+                Plan my day
+                <IcArrow size={17} />
+              </button>
+            </section>
 
             {next && (
               <section className="led-group group-next">
@@ -290,20 +289,6 @@ export function Today({ data, isLoading, isError, briefing, go, onRetry }: Today
               )}
             </button>
           </div>
-        </Reveal>
-
-        <Reveal delay={50}>
-          <section className="invite">
-            <p className="voice">
-              {meal
-                ? `RM${fmt(data.safe_today_sen)} is what today has room for. Shall I find you somewhere for ${meal.toLowerCase()} within reach?`
-                : `RM${fmt(data.safe_today_sen)} is what today has room for. Shall I show you what is within reach?`}
-            </p>
-            <button className="btn btn-accent invite-go" onClick={() => go("plan")}>
-              Plan my day
-              <IcArrow size={17} />
-            </button>
-          </section>
         </Reveal>
       </main>
     </>

@@ -293,6 +293,7 @@ async def correct_draft(
     merchant: str | None = None,
     amount_sen: int | None = None,
     category: str | None = None,
+    occurred_on: date | None = None,
     note: str | None = None,
 ) -> TransactionView:
     """Fix what a draft says before it is counted. Drafts only, never the ledger.
@@ -309,7 +310,7 @@ async def correct_draft(
     not 71% sure of the RM19.90 the user typed over it — the figure is the
     user's now, and a UI that kept underlining it would be doubting the human.
     """
-    if merchant is None and amount_sen is None and category is None and note is None:
+    if merchant is None and amount_sen is None and category is None and occurred_on is None and note is None:
         raise InvalidTransaction("a correction needs at least one field")
     if merchant is not None and not merchant.strip():
         raise InvalidTransaction("a transaction needs a merchant")
@@ -327,6 +328,8 @@ async def correct_draft(
         txn.confidence = None
     if category is not None:
         txn.category = category
+    if occurred_on is not None:
+        txn.occurred_on = occurred_on
     if note is not None:
         txn.note = note
     await session.flush()

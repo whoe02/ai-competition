@@ -500,12 +500,14 @@ export function Butler({
 
       {sheet === "scan" && (
         <ScanSheet
+          demo
           onClose={() => setSheet(null)}
           onAsk={(question, read) => send(question, read)}
         />
       )}
       {sheet === "voice" && (
         <VoiceSheet
+          demo
           onClose={() => setSheet(null)}
           onAsk={(question, read) => send(question, read)}
         />

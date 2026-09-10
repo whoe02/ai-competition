@@ -1,14 +1,35 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { Capture } from "@kira/contracts";
 
 import { useCreateDraft, useReadCapture } from "../api/hooks";
-import { IcArrow, IcCam, IcImg } from "./Icons";
+import { IcArrow, IcCam } from "./Icons";
 import { Sheet } from "./Sheet";
 
 type ScanSheetProps = {
   onClose: () => void;
   onAsk: (text: string, attachment: Capture & { preview?: string }) => void;
+  /** Runs the camera prototype locally, without uploading a placeholder file. */
+  demo?: boolean;
+};
+
+const DEMO_RECEIPT: Capture = {
+  kind: "receipt",
+  is_transaction: true,
+  source: "receipt",
+  merchant: "Nasi Kandar Pelita",
+  amount_sen: 1890,
+  occurred_on: "2026-09-03",
+  category: "food",
+  confidence: 94,
+  note: "Line item total matched, tax line ignored.",
+  transcript: "",
+  fields: [
+    { label: "Merchant", value: "Nasi Kandar Pelita", confidence: 94 },
+    { label: "Total", value: "RM18.90", confidence: 94 },
+    { label: "Date", value: "3 Sep 2026", confidence: 94 },
+    { label: "Category", value: "Food & drink", confidence: 83 },
+  ],
 };
 
 /**
@@ -19,30 +40,53 @@ type ScanSheetProps = {
  * in the queue. The bytes go to the reader; what comes back is a proposal
  * with a confidence on every field, and it stays a proposal until confirmed.
  */
-export function ScanSheet({ onClose, onAsk }: ScanSheetProps) {
+export function ScanSheet({ onClose, onAsk, demo = false }: ScanSheetProps) {
   return (
     <Sheet label="Scan a receipt" onClose={onClose}>
       <div className="grab" />
-      <ScanBody onClose={onClose} onAsk={onAsk} />
+      <ScanBody onClose={onClose} onAsk={onAsk} demo={demo} />
     </Sheet>
   );
 }
 
 /** The reading itself, so the entry sheet can host it beside the other ways in. */
-export function ScanBody({ onClose, onAsk }: ScanSheetProps) {
+export function ScanBody({ onClose, onAsk, demo = false }: ScanSheetProps) {
   const fileRef = useRef<HTMLInputElement>(null);
+  const demoTimer = useRef<number | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
+  const [demoResult, setDemoResult] = useState<Capture | null>(null);
+  const [demoStage, setDemoStage] = useState<"aiming" | "reading">("aiming");
   const read = useReadCapture("receipt");
   const draft = useCreateDraft();
-  const result = read.data;
+  const result = demoResult ?? (demo ? undefined : read.data);
   const canSave = Boolean(
     result?.is_transaction && result.merchant && result.amount_sen !== null,
   );
 
+  useEffect(() => () => {
+    if (demoTimer.current !== null) window.clearTimeout(demoTimer.current);
+  }, []);
+
   const onFile = async (file: File | undefined) => {
     if (!file) return;
+    setDemoResult(null);
     setPreview(URL.createObjectURL(file));
     read.mutate(file);
+  };
+
+  const startDemoRead = () => {
+    setDemoStage("reading");
+    demoTimer.current = window.setTimeout(() => {
+      setDemoResult(DEMO_RECEIPT);
+      demoTimer.current = null;
+    }, 650);
+  };
+
+  const resetDemo = () => {
+    if (demoTimer.current !== null) window.clearTimeout(demoTimer.current);
+    demoTimer.current = null;
+    setDemoResult(null);
+    setDemoStage("aiming");
   };
 
   return (
@@ -50,30 +94,51 @@ export function ScanBody({ onClose, onAsk }: ScanSheetProps) {
       <div className="sheet-head">
         <div>
           <p className="eyebrow on-ink" style={{ margin: 0 }}>
-            {result ? "What I read" : "Receipt"}
+            {result ? "What I read" : demo ? "Camera" : "Receipt"}
           </p>
           <h2 style={{ margin: "5px 0 0", fontSize: 20, fontWeight: 800, letterSpacing: "-.03em" }}>
-            {result ? "Check it before I use it" : "Show me the receipt"}
+            {result ? "Check it before I use it" : demo ? "Scan the receipt" : "Show me the receipt"}
           </h2>
         </div>
       </div>
 
-      {!result && (
+      {demo && !result && (
+        <>
+          <div className="scanframe demo-camera" aria-label="Receipt camera preview">
+            <div className="receipt" aria-hidden="true">
+              <strong>PELITA</strong><hr />
+              <div className="r-row"><span>Nasi kandar</span><span>18.90</span></div>
+              <div className="r-row r-tot"><span>TOTAL</span><span>RM18.90</span></div>
+            </div>
+            <span className="scan-guide" />
+            {demoStage === "reading" && <span className="laser" />}
+          </div>
+          {demoStage === "reading" ? (
+            <div className="capture-status" role="status">
+              <span className="thinking"><i /><i /><i /></span>
+              Reading the receipt…
+            </div>
+          ) : (
+            <div style={{ display: "flex", gap: 9, marginTop: 16 }}>
+              <button className="btn btn-sm btn-ghost" style={{ flex: 1 }} onClick={onClose}>
+                Cancel
+              </button>
+              <button className="btn btn-accent btn-sm" style={{ flex: 1 }} onClick={startDemoRead}>
+                Scan receipt <IcArrow size={14} />
+              </button>
+            </div>
+          )}
+          <p className="sheet-note">Preview only. Nothing reaches your ledger until you review it.</p>
+        </>
+      )}
+
+      {!demo && !result && !read.isPending && (
         <>
           <div className="pick-grid">
             <button className="pick" onClick={() => fileRef.current?.click()}>
               <IcCam size={22} />
               <b>Take a photo</b>
               <span>Camera, or the camera roll.</span>
-            </button>
-            <button
-              className="pick"
-              onClick={() => read.mutate(new Blob(["sample-receipt"]))}
-              disabled={read.isPending}
-            >
-              <IcImg size={22} />
-              <b>Use a sample</b>
-              <span>A Malaysian lunch receipt.</span>
             </button>
           </div>
           <input
@@ -130,6 +195,11 @@ export function ScanBody({ onClose, onAsk }: ScanSheetProps) {
           </div>
           <p className="sheet-note">{result.note}</p>
           <div style={{ display: "flex", gap: 9, marginTop: 18 }}>
+            {demo && (
+              <button className="btn btn-sm btn-ghost" onClick={resetDemo}>
+                Scan again
+              </button>
+            )}
             {canSave && (
               <button
                 className="btn btn-sm btn-ghost"

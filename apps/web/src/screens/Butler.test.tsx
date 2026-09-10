@@ -218,6 +218,19 @@ describe("Butler", () => {
     expect(screen.getByRole("button", { name: "Why did safe-to-spend drop?" })).toBeInTheDocument();
   });
 
+  it("opens interactive camera and voice demos without a sample action", async () => {
+    const user = setup();
+
+    await user.click(screen.getByRole("button", { name: "Scan a receipt" }));
+    expect(screen.getByLabelText("Receipt camera preview")).toBeInTheDocument();
+    expect(screen.queryByText(/Use a sample/)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    await user.click(screen.getByRole("button", { name: "Record a voice note" }));
+    expect(screen.getByRole("button", { name: "Record" })).toBeInTheDocument();
+    expect(screen.queryByText(/Use a sample/)).not.toBeInTheDocument();
+  });
+
   it("shows the question, then the streamed answer", async () => {
     const user = setup();
     await user.type(screen.getByLabelText("Ask Kira"), "Can I afford RM20 lunch?{Enter}");

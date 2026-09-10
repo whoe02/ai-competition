@@ -1,16 +1,19 @@
 import { useState, type CSSProperties, type ReactNode } from "react";
 
-import type { Transaction } from "@kira/contracts";
+import type { Category, Transaction, TransactionCorrection } from "@kira/contracts";
 
 import { fmt, parseSen, toRinggitInput } from "../lib/money";
 import { SourceIcon, sourceLabel } from "./TxnRow";
+
+export type DraftCorrection = TransactionCorrection;
 
 type DraftCardProps = {
   draft: Transaction;
   onConfirm: (id: string) => void;
   onDiscard: (id: string) => void;
   /** Resolves when the correction is saved, and rejects when it is not. */
-  onCorrect: (id: string, amountSen: number) => void | Promise<unknown>;
+  onCorrect: (id: string, correction: DraftCorrection) => void | Promise<unknown>;
+  categories?: Category[];
   settling: boolean;
   correcting: boolean;
 };
@@ -49,6 +52,7 @@ export function DraftCard({
   onConfirm,
   onDiscard,
   onCorrect,
+  categories,
   settling,
   correcting,
 }: DraftCardProps) {
@@ -56,15 +60,26 @@ export function DraftCard({
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [typed, setTyped] = useState(() => toRinggitInput(draft.amount_sen));
+  const [merchant, setMerchant] = useState(draft.merchant);
+  const [category, setCategory] = useState(draft.category);
+  const [occurredOn, setOccurredOn] = useState(draft.occurred_on);
+  const [note, setNote] = useState(draft.note);
   const [failed, setFailed] = useState(false);
   // Null the whole time the entry is half-typed, so nothing can submit "19."
   // as RM19.00 on its way to RM19.90.
   const sen = parseSen(typed);
   const busy = settling || correcting;
-  const hintId = `amount-hint-${draft.id}`;
+  const hintId = `edit-hint-${draft.id}`;
+  const categoryOptions = categories?.length
+    ? categories
+    : [{ slug: draft.category, label: draft.category_label }];
 
   const startCorrecting = () => {
     setTyped(toRinggitInput(draft.amount_sen));
+    setMerchant(draft.merchant);
+    setCategory(draft.category);
+    setOccurredOn(draft.occurred_on);
+    setNote(draft.note);
     setFailed(false);
     setEditing(true);
   };
@@ -72,6 +87,7 @@ export function DraftCard({
   const stopCorrecting = () => {
     setFailed(false);
     setEditing(false);
+    setOpen(false);
   };
 
   /**
@@ -84,9 +100,20 @@ export function DraftCard({
    * with the failure said beside it, until it saves or the user gives up on it.
    */
   const save = async () => {
-    if (sen === null) return;
+    if (sen === null || !merchant.trim() || !category || !occurredOn) return;
+    const correction: DraftCorrection = {
+      ...(merchant.trim() !== draft.merchant ? { merchant: merchant.trim() } : {}),
+      ...(sen !== draft.amount_sen ? { amount_sen: sen } : {}),
+      ...(category !== draft.category ? { category } : {}),
+      ...(occurredOn !== draft.occurred_on ? { occurred_on: occurredOn } : {}),
+      ...(note !== draft.note ? { note } : {}),
+    };
+    if (Object.keys(correction).length === 0) {
+      stopCorrecting();
+      return;
+    }
     try {
-      await onCorrect(draft.id, sen);
+      await onCorrect(draft.id, correction);
       setFailed(false);
       setEditing(false);
     } catch {
@@ -135,51 +162,34 @@ export function DraftCard({
       {open && (
         <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
           <DetailRow label="Merchant" index={0}>
-            <b>{draft.merchant}</b>
+            {editing ? (
+              <input
+                className="amt-input draft-text-input"
+                value={merchant}
+                aria-label="Merchant"
+                aria-invalid={!merchant.trim()}
+                onChange={(event) => setMerchant(event.target.value)}
+              />
+            ) : <b>{draft.merchant}</b>}
           </DetailRow>
 
           <DetailRow label="Amount" index={1}>
-            {editing ? (
-              <span style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                  <span style={{ color: "var(--muted)" }}>RM</span>
-                  <input
-                    className="amt-input"
-                    value={typed}
-                    inputMode="decimal"
-                    autoFocus
-                    aria-label="Amount in ringgit"
-                    aria-invalid={sen === null}
-                    aria-describedby={hintId}
-                    onChange={(event) => setTyped(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") void save();
-                    }}
-                  />
-                </span>
-                <button
-                  className="btn btn-primary btn-sm"
-                  disabled={sen === null || busy}
-                  onClick={() => void save()}
-                >
-                  {failed ? "Try again" : "Save"}
-                </button>
-                <button className="btn btn-ghost btn-sm" onClick={stopCorrecting}>
-                  Cancel
-                </button>
-              </span>
-            ) : (
-              <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <b>RM{fmt(draft.amount_sen)}</b>
-                <button
-                  className="btn btn-ghost btn-sm"
-                  disabled={busy}
-                  onClick={startCorrecting}
-                >
-                  Correct
-                </button>
-              </span>
-            )}
+            {editing ? <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+              <span style={{ color: "var(--muted)" }}>RM</span>
+              <input
+                className="amt-input"
+                value={typed}
+                inputMode="decimal"
+                autoFocus
+                aria-label="Amount in ringgit"
+                aria-invalid={sen === null}
+                aria-describedby={hintId}
+                onChange={(event) => setTyped(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") void save();
+                }}
+              />
+            </span> : <b>RM{fmt(draft.amount_sen)}</b>}
           </DetailRow>
 
           {editing && (
@@ -194,26 +204,38 @@ export function DraftCard({
                 lineHeight: 1.5,
               }}
             >
-              {/* Named as still-unsaved rather than as a generic failure: what
-                  the user needs to know is not that a request failed but that
-                  the amount on this draft is still the one that was read, and
-                  that confirming now would spend that figure. */}
               {failed
-                ? "That didn't save, so this draft still says RM"
-                  + fmt(draft.amount_sen)
-                  + ". Your figure is still here — try again before you confirm it."
+                ? "That didn't save. Your edits are still here — try again before you confirm this draft."
                 : sen === null
                   ? "Ringgit and sen, like 19.90."
-                  : "Saving replaces what was read with your figure."}
+                  : !merchant.trim()
+                    ? "Add a merchant before saving."
+                    : "Review every detail, then save the draft."}
             </p>
           )}
 
           <DetailRow label={income ? "Income type" : "Category"} index={2}>
-            <b>{income ? (draft.income_type ?? "other") : draft.category}</b>
+            {editing && !income ? (
+              <select className="amt-input draft-category-input" value={category} aria-label="Category" onChange={(event) => setCategory(event.target.value)}>
+                {categoryOptions.map((option) => <option key={option.slug} value={option.slug}>{option.label}</option>)}
+              </select>
+            ) : <b>{income ? (draft.income_type ?? "other") : draft.category_label}</b>}
           </DetailRow>
           <DetailRow label="Date" index={3}>
-            <b>{draft.occurred_on}</b>
+            {editing ? <input className="amt-input draft-date-input" type="date" value={occurredOn} aria-label="Date" onChange={(event) => setOccurredOn(event.target.value)} /> : <b>{draft.occurred_on}</b>}
           </DetailRow>
+          <DetailRow label="Note" index={4}>
+            {editing ? <textarea className="amt-input draft-text-input draft-note-input" value={note} aria-label="Note" maxLength={280} onChange={(event) => setNote(event.target.value)} /> : <b>{draft.note || "None"}</b>}
+          </DetailRow>
+
+          {editing && (
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button className="btn btn-primary btn-sm" disabled={sen === null || !merchant.trim() || !category || !occurredOn || busy} onClick={() => void save()}>
+                {failed ? "Try again" : "Save changes"}
+              </button>
+              <button className="btn btn-ghost btn-sm" disabled={busy} onClick={stopCorrecting}>Cancel</button>
+            </div>
+          )}
         </div>
       )}
 
@@ -226,8 +248,19 @@ export function DraftCard({
         >
           {income ? "Confirm income" : "Confirm"}
         </button>
-        <button className="btn btn-line btn-sm" onClick={() => setOpen((shown) => !shown)}>
-          {open ? "Close" : "Details"}
+        <button
+          className="btn btn-line btn-sm"
+          disabled={busy}
+          onClick={() => {
+            if (open) {
+              stopCorrecting();
+            } else {
+              setOpen(true);
+              startCorrecting();
+            }
+          }}
+        >
+          {open ? "Close" : "Edit"}
         </button>
         <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => onDiscard(draft.id)}>
           Discard

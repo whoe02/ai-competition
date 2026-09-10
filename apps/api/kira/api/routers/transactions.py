@@ -194,6 +194,7 @@ async def patch_transaction(
             merchant=body.merchant,
             amount_sen=body.amount_sen,
             category=body.category,
+            occurred_on=body.occurred_on,
             note=body.note,
         )
     except TransactionNotFound as exc:

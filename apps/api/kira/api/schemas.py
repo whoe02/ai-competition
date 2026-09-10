@@ -868,4 +868,5 @@ class CorrectTransactionRequest(BaseModel):
     merchant: str | None = Field(default=None, min_length=1, max_length=120)
     amount_sen: int | None = Field(default=None, gt=0)
     category: str | None = Field(default=None, max_length=40)
+    occurred_on: date | None = None
     note: str | None = Field(default=None, max_length=280)

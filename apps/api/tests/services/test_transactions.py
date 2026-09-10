@@ -246,11 +246,13 @@ class TestCorrectDraft:
             draft.id,
             merchant="  Grab — office to Mid Valley  ",
             category="transport",
+            occurred_on=date(2026, 9, 1),
             note="",
         )
 
         assert corrected.merchant == "Grab — office to Mid Valley"
         assert corrected.category == "transport"
+        assert corrected.occurred_on == date(2026, 9, 1)
         assert corrected.note == ""
 
     async def test_leaves_out_of_what_was_not_named(self, session):

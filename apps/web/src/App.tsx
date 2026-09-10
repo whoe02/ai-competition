@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 
+import type { ForesightDriver } from "@kira/contracts";
+
 import {
   useActivity,
   useButlerThread,
@@ -11,6 +13,7 @@ import {
   useCategories,
   useHindsight,
   useFinancialProfile,
+  useForesight,
   useUpdateFinancialProfile,
   useMemories,
   useUnconfirm,
@@ -69,6 +72,7 @@ export function App() {
   const screenRef = useRef<HTMLDivElement>(null);
   const dashboard = useDashboardToday(signedIn);
   const briefing = useBriefingToday(signedIn);
+  const foresight = useForesight(signedIn && tab === "plan");
   const hindsight = useHindsight(signedIn && tab === "butler");
   const [category, setCategory] = useState<string | null>(null);
   const activity = useActivity(signedIn && tab === "activity", category);
@@ -150,6 +154,22 @@ export function App() {
       return;
     }
     if (command.action === "navigate" && command.tab) go(command.tab);
+  };
+
+  const proposeDriver = (driver: ForesightDriver) => {
+    const amount = `RM${(Math.abs(driver.lever.delta.sen) / 100).toFixed(2)}`;
+    const goal = dashboard.data?.goals.find((item) => item.id === driver.lever.target_id);
+    const outlook = foresight.data?.outlooks.find(
+      (item) => item.goal_id === driver.lever.target_id,
+    );
+    const text =
+      driver.lever.kind === "goal_monthly" && goal
+        ? `Please replan my ${goal.name} goal${outlook ? ` with target date ${outlook.target_date}` : ""} using the latest forecast. Calculate safe deterministic options and ask for approval before changing the active plan.`
+        : driver.lever.kind === "commitment_amount"
+          ? `Please help me propose reducing this commitment by ${amount}. Show me the approval card; do not apply anything yet.`
+          : `Help me make a plan to spend ${amount} less each day. Do not change anything yet.`;
+    setPending({ text });
+    go("butler");
   };
 
   const dark = tab === "butler";
@@ -236,8 +256,8 @@ export function App() {
                       // mutateAsync, not mutate: the card holds the entry open
                       // until the server answers, so a correction that failed
                       // cannot close as though it had been saved.
-                      onCorrect={(id, amountSen) =>
-                        correct.mutateAsync({ id, amount_sen: amountSen })}
+                      onCorrect={(id, correction) => correct.mutateAsync({ id, ...correction })}
+                      categories={categories.data}
                       settlingId={settlingId}
                       correctingId={correctingId}
                       category={category}
@@ -263,6 +283,11 @@ export function App() {
                     <Plan
                       key={planView}
                       initialView={planView}
+                      data={foresight.data}
+                      goals={dashboard.data?.goals}
+                      isLoading={foresight.isLoading}
+                      isError={foresight.isError}
+                      onDriver={proposeDriver}
                       recommendationGoalId={recommendationGoalId ?? undefined}
                       onRecommendationOpened={() => setRecommendationGoalId(null)}
                     />

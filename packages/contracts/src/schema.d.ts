@@ -1143,6 +1143,8 @@ export interface components {
             amount_sen?: number | null;
             /** Category */
             category?: string | null;
+            /** Occurred On */
+            occurred_on?: string | null;
             /** Note */
             note?: string | null;
         };

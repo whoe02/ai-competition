@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 
-import type { Activity as ActivityData, Transaction } from "@kira/contracts";
+import type { Activity as ActivityData, Category, Transaction } from "@kira/contracts";
 
 import type { Tab } from "../App";
 import { CategoryChips } from "../components/CategoryChips";
-import { DraftCard } from "../components/DraftCard";
+import { DraftCard, type DraftCorrection } from "../components/DraftCard";
 import { IcArrow } from "../components/Icons";
 import { Reveal } from "../components/Reveal";
 import { Sheet } from "../components/Sheet";
@@ -22,7 +22,8 @@ type ActivityProps = {
   onDiscard: (id: string) => void;
   onUnconfirm: (id: string) => void;
   /** Resolves when the correction is saved, and rejects when it is not. */
-  onCorrect: (id: string, amountSen: number) => void | Promise<unknown>;
+  onCorrect: (id: string, correction: DraftCorrection) => void | Promise<unknown>;
+  categories?: Category[];
   settlingId: string | null;
   correctingId: string | null;
   category: string | null;
@@ -38,6 +39,7 @@ export function Activity({
   onDiscard,
   onUnconfirm,
   onCorrect,
+  categories,
   settlingId,
   correctingId,
   category,
@@ -126,6 +128,7 @@ export function Activity({
                     onConfirm={onConfirm}
                     onDiscard={onDiscard}
                     onCorrect={onCorrect}
+                    categories={categories}
                     settling={settlingId === draft.id}
                     correcting={correctingId === draft.id}
                   />

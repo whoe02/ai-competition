@@ -38,11 +38,11 @@ const QUESTION = {
   fields: [],
 };
 
-function setup(onAsk = vi.fn()) {
+function setup(onAsk = vi.fn(), demo: boolean | typeof QUESTION = false) {
   const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
-      <VoiceSheet onClose={vi.fn()} onAsk={onAsk} />
+      <VoiceSheet onClose={vi.fn()} onAsk={onAsk} demo={demo} />
     </QueryClientProvider>,
   );
   return { user: userEvent.setup(), onAsk };
@@ -78,24 +78,29 @@ describe("VoiceSheet", () => {
     const { user } = setup();
     await user.click(screen.getByRole("button", { name: /Record/ }));
     await waitFor(() =>
-      expect(screen.getByText(/will not give me the microphone/)).toBeInTheDocument(),
+      expect(screen.getByText(/Allow it in your browser settings/)).toBeInTheDocument(),
     );
   });
 
-  it("shows the transcript and flags how sure it was", async () => {
-    const { user } = setup();
-    await user.click(screen.getByRole("button", { name: "Use a sample" }));
+  it("runs the demo through an interactive recording and transcription sequence", async () => {
+    const { user } = setup(vi.fn(), true);
 
+    expect(screen.getByRole("button", { name: /Record/ })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /Record/ }));
+    expect(screen.getByRole("button", { name: "Stop" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Stop" }));
     await waitFor(() =>
       expect(screen.getByText(/Grab from the office to KLCC/)).toBeInTheDocument(),
     );
     expect(screen.getByText(/71% confidence/)).toBeInTheDocument();
     expect(screen.getByText(/worth a second look/)).toBeInTheDocument();
+    expect(screen.queryByText(/Use a sample/)).not.toBeInTheDocument();
   });
 
   it("sends the transcript as the question, not the guessed amount", async () => {
-    const { user, onAsk } = setup();
-    await user.click(screen.getByRole("button", { name: "Use a sample" }));
+    const { user, onAsk } = setup(vi.fn(), true);
+    await user.click(screen.getByRole("button", { name: /Record/ }));
+    await user.click(screen.getByRole("button", { name: "Stop" }));
     await waitFor(() => screen.getByRole("button", { name: /Ask Kira/ }));
 
     await user.click(screen.getByRole("button", { name: /Ask Kira/ }));
@@ -109,9 +114,10 @@ describe("VoiceSheet", () => {
       json: () => Promise.resolve(QUESTION),
       text: () => Promise.resolve(""),
     } as unknown as Response);
-    const { user, onAsk } = setup();
-    await user.click(screen.getByRole("button", { name: "Use a sample" }));
+    const { user, onAsk } = setup(vi.fn(), QUESTION);
 
+    await user.click(screen.getByRole("button", { name: /Record/ }));
+    await user.click(screen.getByRole("button", { name: "Stop" }));
     await waitFor(() => expect(screen.getByText(QUESTION.transcript)).toBeInTheDocument());
     expect(screen.queryByRole("button", { name: "Save as draft" })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /Ask Kira about this/ }));

@@ -24,11 +24,11 @@ const READ = {
   ],
 };
 
-function setup(onAsk = vi.fn(), onClose = vi.fn()) {
+function setup(onAsk = vi.fn(), onClose = vi.fn(), demo = false) {
   const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
-      <ScanSheet onClose={onClose} onAsk={onAsk} />
+      <ScanSheet onClose={onClose} onAsk={onAsk} demo={demo} />
     </QueryClientProvider>,
   );
   return { user: userEvent.setup(), onAsk, onClose };
@@ -61,19 +61,22 @@ describe("ScanSheet", () => {
     expect(screen.getByLabelText("Receipt photo")).toHaveAttribute("capture", "environment");
   });
 
-  it("shows each field with how sure the reader was", async () => {
-    const { user } = setup();
-    await user.click(screen.getByRole("button", { name: /Use a sample/ }));
+  it("runs the demo through an interactive camera and scan sequence", async () => {
+    const { user } = setup(vi.fn(), vi.fn(), true);
 
+    expect(screen.getByLabelText("Receipt camera preview")).toBeInTheDocument();
+    expect(screen.queryByText("Nasi Kandar Pelita")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /Scan receipt/ }));
     await waitFor(() => expect(screen.getByText("Nasi Kandar Pelita")).toBeInTheDocument());
     expect(screen.getByText("RM18.90")).toBeInTheDocument();
     // The category was inferred, not read, and says so.
     expect(screen.getByText("83%")).toBeInTheDocument();
+    expect(screen.queryByText(/Use a sample/)).not.toBeInTheDocument();
   });
 
   it("sends the read to the Butler as an attachment", async () => {
-    const { user, onAsk } = setup();
-    await user.click(screen.getByRole("button", { name: /Use a sample/ }));
+    const { user, onAsk } = setup(vi.fn(), vi.fn(), true);
+    await user.click(screen.getByRole("button", { name: /Scan receipt/ }));
     await waitFor(() => screen.getByRole("button", { name: /Ask Kira/ }));
 
     await user.click(screen.getByRole("button", { name: /Ask Kira/ }));
@@ -84,8 +87,8 @@ describe("ScanSheet", () => {
   });
 
   it("saves it as a draft, and only as a draft", async () => {
-    const { user } = setup();
-    await user.click(screen.getByRole("button", { name: /Use a sample/ }));
+    const { user } = setup(vi.fn(), vi.fn(), true);
+    await user.click(screen.getByRole("button", { name: /Scan receipt/ }));
     await waitFor(() => screen.getByRole("button", { name: "Save as draft" }));
 
     await user.click(screen.getByRole("button", { name: "Save as draft" }));

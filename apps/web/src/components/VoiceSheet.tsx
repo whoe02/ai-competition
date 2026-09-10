@@ -9,42 +9,67 @@ import { Sheet } from "./Sheet";
 type VoiceSheetProps = {
   onClose: () => void;
   onAsk: (text: string, attachment: Capture) => void;
+  /** Runs the recording prototype locally, without recording placeholder audio. */
+  demo?: boolean | Capture;
 };
 
 const BARS = 34;
+const DEMO_VOICE: Capture = {
+  kind: "voice",
+  is_transaction: true,
+  source: "voice",
+  merchant: "Grab — office to KLCC",
+  amount_sen: 1400,
+  occurred_on: "2026-09-03",
+  category: "transport",
+  confidence: 71,
+  note: "Heard 'fourteen ringgit'. Amount is worth a second look.",
+  transcript: "Grab from the office to KLCC, fourteen ringgit",
+  fields: [
+    { label: "Merchant", value: "Grab — office to KLCC", confidence: 71 },
+    { label: "Total", value: "RM14.00", confidence: 71 },
+    { label: "Date", value: "3 Sep 2026", confidence: 71 },
+    { label: "Category", value: "Transport", confidence: 60 },
+  ],
+};
 
 /**
  * Say it rather than type it.
  *
  * The recording is real — `getUserMedia` and `MediaRecorder` — and the bytes
- * go to the same reader the receipt does. Where the browser will not give us a
- * microphone, the sheet says so and offers the sample instead of pretending.
+ * go to the same reader the receipt does. The Butler's demo shortcut uses a
+ * deterministic transcription, so the demo never needs microphone permission.
  */
-export function VoiceSheet({ onClose, onAsk }: VoiceSheetProps) {
+export function VoiceSheet({ onClose, onAsk, demo = false }: VoiceSheetProps) {
   return (
     <Sheet label="Voice note" onClose={onClose}>
       <div className="grab" />
-      <VoiceBody onClose={onClose} onAsk={onAsk} />
+      <VoiceBody onClose={onClose} onAsk={onAsk} demo={demo} />
     </Sheet>
   );
 }
 
 /** The listening itself, so the entry sheet can host it beside the other ways in. */
-export function VoiceBody({ onClose, onAsk }: VoiceSheetProps) {
-  const [stage, setStage] = useState<"idle" | "listening" | "denied">("idle");
+export function VoiceBody({ onClose, onAsk, demo = false }: VoiceSheetProps) {
+  const [stage, setStage] = useState<"idle" | "listening" | "denied" | "transcribing">("idle");
   const [ms, setMs] = useState(0);
   const bars = useRef<(HTMLElement | null)[]>([]);
   const recorder = useRef<MediaRecorder | null>(null);
   const chunks = useRef<Blob[]>([]);
   const analyser = useRef<AnalyserNode | null>(null);
+  const demoTimer = useRef<number | null>(null);
   const read = useReadCapture("voice");
   const draft = useCreateDraft();
-  const result = read.data;
+  const [demoResult, setDemoResult] = useState<Capture | null>(null);
+  const result = demoResult ?? read.data;
   const canSave = Boolean(
     result?.is_transaction && result.merchant && result.amount_sen !== null,
   );
 
-  useEffect(() => () => stopTracks(recorder.current), []);
+  useEffect(() => () => {
+    stopTracks(recorder.current);
+    if (demoTimer.current !== null) window.clearTimeout(demoTimer.current);
+  }, []);
 
   useEffect(() => {
     if (stage !== "listening") return;
@@ -70,6 +95,12 @@ export function VoiceBody({ onClose, onAsk }: VoiceSheetProps) {
   }, [stage]);
 
   const start = async () => {
+    if (demo) {
+      setDemoResult(null);
+      setMs(0);
+      setStage("listening");
+      return;
+    }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const context = new AudioContext();
@@ -94,7 +125,22 @@ export function VoiceBody({ onClose, onAsk }: VoiceSheetProps) {
   };
 
   const stop = () => {
+    if (demo) {
+      setStage("transcribing");
+      demoTimer.current = window.setTimeout(() => {
+        setDemoResult(demo === true ? DEMO_VOICE : demo);
+        setStage("idle");
+        demoTimer.current = null;
+      }, 650);
+      return;
+    }
     recorder.current?.stop();
+    setStage("idle");
+  };
+
+  const tryAgain = () => {
+    setDemoResult(null);
+    setMs(0);
     setStage("idle");
   };
 
@@ -105,10 +151,10 @@ export function VoiceBody({ onClose, onAsk }: VoiceSheetProps) {
       <div className="sheet-head">
         <div>
           <p className="eyebrow on-ink" style={{ margin: 0 }}>
-            {result ? "Before I answer" : stage === "listening" ? "Listening" : "Voice"}
+            {result ? "Before I answer" : stage === "listening" ? "Listening" : stage === "transcribing" ? "Transcribing" : "Voice"}
           </p>
           <h2 style={{ margin: "5px 0 0", fontSize: 20, fontWeight: 800, letterSpacing: "-.03em" }}>
-            {result ? "Did I hear that right?" : "Say it however you like"}
+            {result ? "Did I hear that right?" : stage === "transcribing" ? "Writing that down" : "Say it however you like"}
           </h2>
         </div>
       </div>
@@ -133,15 +179,15 @@ export function VoiceBody({ onClose, onAsk }: VoiceSheetProps) {
           </div>
           {stage === "listening" && <p className="timer">{duration}</p>}
           {stage === "denied" && (
-            <p className="sheet-note">
-              This browser will not give me the microphone. Use the sample and I will read it
-              the same way.
+              <p className="sheet-note">
+              This browser will not give me the microphone. Allow it in your browser settings
+              and try recording again.
             </p>
           )}
         </>
       )}
 
-      {read.isPending && (
+      {(read.isPending || stage === "transcribing") && (
         <div style={{ display: "flex", alignItems: "center", gap: 11, marginTop: 16 }}>
           <span className="thinking">
             <i />
@@ -178,6 +224,11 @@ export function VoiceBody({ onClose, onAsk }: VoiceSheetProps) {
       <div style={{ display: "flex", gap: 9, marginTop: 20 }}>
         {result ? (
           <>
+            {demo && (
+              <button className="btn btn-sm btn-ghost" onClick={tryAgain}>
+                Try again
+              </button>
+            )}
             {canSave && (
               <button
                 className="btn btn-sm btn-ghost"
@@ -217,21 +268,13 @@ export function VoiceBody({ onClose, onAsk }: VoiceSheetProps) {
               <IcStop size={13} /> Stop
             </button>
           </>
-        ) : (
+        ) : stage !== "transcribing" && !read.isPending ? (
           <>
-            <button
-              className="btn btn-sm btn-ghost"
-              style={{ flex: 1 }}
-              disabled={read.isPending}
-              onClick={() => read.mutate(new Blob(["sample-voice-note"]))}
-            >
-              Use a sample
-            </button>
             <button className="btn btn-accent btn-sm" style={{ flex: 1 }} onClick={() => void start()}>
               <IcMic size={14} /> Record
             </button>
           </>
-        )}
+        ) : null}
       </div>
     </>
   );

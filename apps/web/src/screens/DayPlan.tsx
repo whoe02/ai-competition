@@ -953,8 +953,8 @@ export function DayPlan() {
     roomSen === 0
       ? { ok: false, label: "Nothing left in today's room" }
       : sliderValue > roomSen
-        ? { ok: false, label: "Above today's room" }
-        : { ok: true, label: "Inside today's room" };
+        ? { ok: false, label: `RM${fmt(sliderValue - roomSen)} above available today` }
+        : { ok: true, label: "Within today's available money" };
   // Stated by the server, never inferred: with the list empty the ceiling is
   // the obvious culprit and the wrong one whenever nothing was in range at all,
   // or whenever the halal filter took out everything that was. The counts nest,
@@ -1063,21 +1063,23 @@ export function DayPlan() {
 
         <Reveal>
           <section className="capbar">
-            <div className="cap-row">
+            <div className="cap-available">
               <div>
-                <p className="eyebrow on-ink" style={{ margin: 0 }}>Spending ceiling</p>
+                <p className="eyebrow on-ink" style={{ margin: 0 }}>Available to spend today</p>
                 <div style={{ marginTop: 9 }}>
-                  <Odometer sen={sliderValue} size={34} />
+                  <Odometer sen={roomSen} size={42} />
                 </div>
-              </div>
-              <div style={{ textAlign: "right" }}>
-                <p className="eyebrow on-ink" style={{ margin: 0 }}>Room today</p>
-                <div className="money" style={{ fontSize: 17, color: "#EDF1ED", marginTop: 7 }}>
-                  RM{fmt(roomSen)}
-                </div>
+                <p className="cap-available-note">After bills, goals and planned expenses</p>
               </div>
             </div>
 
+            <div className="cap-budget">
+              <div>
+                <p className="eyebrow on-ink" style={{ margin: 0 }}>Set an outing budget</p>
+                <p className="cap-budget-help">Choose the most you want to spend on this outing.</p>
+              </div>
+              <div className="money cap-budget-value">RM{fmt(sliderValue)}</div>
+            </div>
             <input
               className="slider"
               type="range"

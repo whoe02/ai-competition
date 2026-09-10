@@ -347,14 +347,13 @@ describe("App", () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     await user.click(await screen.findByRole("button", { name: /sign in/i }));
     await user.click(await screen.findByRole("button", { name: /^Activity$/i }));
-    await user.click(await screen.findByRole("button", { name: "Details" }));
     const readsBefore = dashboardReads;
 
-    await user.click(screen.getByRole("button", { name: "Correct" }));
+    await user.click(screen.getByRole("button", { name: "Edit" }));
     const field = screen.getByLabelText("Amount in ringgit");
     await user.clear(field);
     await user.type(field, "19.90");
-    await user.click(screen.getByRole("button", { name: "Save" }));
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
 
     // Ringgit on screen, sen on the wire.
     await waitFor(() => expect(corrected).toEqual({ amount_sen: 1990 }));

@@ -21,9 +21,11 @@ type GoalFilter = "all" | "short" | "long";
 type GoalPage = { name: "home" } | { name: "create" } | { name: "detail"; goalId: string };
 
 export function GoalPlanner({
+  onOpenForesight,
   recommendationGoalId,
   onRecommendationOpened,
 }: {
+  onOpenForesight?: () => void;
   recommendationGoalId?: string;
   onRecommendationOpened?: () => void;
 }) {
@@ -60,6 +62,7 @@ export function GoalPlanner({
     <GoalsHome
       onCreate={() => setPage({ name: "create" })}
       onView={(goalId) => setPage({ name: "detail", goalId })}
+      onOpenForesight={onOpenForesight}
     />
   );
 }
@@ -67,9 +70,11 @@ export function GoalPlanner({
 function GoalsHome({
   onCreate,
   onView,
+  onOpenForesight,
 }: {
   onCreate: () => void;
   onView: (goalId: string) => void;
+  onOpenForesight?: () => void;
 }) {
   const dashboard = useDashboardToday(true);
   const [filter, setFilter] = useState<GoalFilter>("all");
@@ -119,6 +124,14 @@ function GoalsHome({
             ))}
           </div>
         </Reveal>
+
+        {onOpenForesight && (
+          <Reveal delay={70}>
+            <button className="btn btn-line goal-full-button" onClick={onOpenForesight}>
+              Open Foresight
+            </button>
+          </Reveal>
+        )}
 
         {dashboard.isLoading && (
           <Reveal delay={105}>

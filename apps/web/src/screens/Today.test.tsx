@@ -49,9 +49,11 @@ function renderToday(overrides: Partial<Parameters<typeof Today>[0]> = {}) {
 }
 
 describe("Today", () => {
-  it("shows the safe-to-spend figure", () => {
+  it("makes today's spending pace the lead figure", () => {
     renderToday();
-    expect(screen.getByLabelText("RM52.97")).toBeInTheDocument();
+    expect(screen.getByLabelText("RM0.00")).toBeInTheDocument();
+    expect(screen.getByText("of RM52.97 daily budget")).toBeInTheDocument();
+    expect(screen.getByText("left today")).toBeInTheDocument();
   });
 
   it("greets the user by name", () => {
@@ -94,7 +96,7 @@ describe("Today", () => {
   it("shows the working on request, and it reconciles", async () => {
     renderToday();
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: /show the working/i }));
+    await user.click(screen.getByRole("button", { name: /show how today is protected/i }));
 
     expect(screen.getByText("4,180.40")).toBeInTheDocument();
     expect(screen.getByText("−2,003.00")).toBeInTheDocument();
@@ -192,9 +194,9 @@ describe("Today", () => {
     expect(container.querySelectorAll(".card.card-row")).toHaveLength(0);
   });
 
-  it("says nothing at all when nothing is waiting", () => {
+  it("hides the review surface when nothing is waiting", () => {
     const { container } = renderToday({ data: { ...DATA, drafts_waiting: 0 } as DashboardToday });
-    expect(container.querySelector(".alerts")).not.toBeInTheDocument();
+    expect(container.querySelector(".group-alert")).not.toBeInTheDocument();
   });
 
   it("keeps every goal reachable when there are more than two", () => {

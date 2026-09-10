@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -83,6 +83,11 @@ function renderActivity(overrides: Partial<Parameters<typeof Activity>[0]> = {})
     onDiscard: vi.fn(),
     onUnconfirm: vi.fn(),
     onCorrect: vi.fn(),
+    categories: [
+      { slug: "transport", label: "Transport" },
+      { slug: "food", label: "Food & drink" },
+      { slug: "groceries", label: "Groceries" },
+    ],
     settlingId: null,
     correctingId: null,
     category: null,
@@ -239,51 +244,64 @@ describe("Activity", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
-  it("leaves drafts to their own inline details", async () => {
+  it("opens the draft editor inline rather than in a sheet", async () => {
     renderActivity();
     await userEvent.click(
-      within(draftCard("Nasi Kandar Pelita")).getByRole("button", { name: "Details" }),
+      within(draftCard("Nasi Kandar Pelita")).getByRole("button", { name: "Edit" }),
     );
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
-  it("offers to correct the amount in the draft's details", async () => {
+  it("opens every draft detail for editing", async () => {
     renderActivity();
     const card = draftCard("Grab — office to KLCC");
     expect(within(card).queryByLabelText("Amount in ringgit")).not.toBeInTheDocument();
 
-    await userEvent.click(within(card).getByRole("button", { name: "Details" }));
-    await userEvent.click(within(card).getByRole("button", { name: "Correct" }));
+    await userEvent.click(within(card).getByRole("button", { name: "Edit" }));
 
     // Seeded with the figure that was read, in plain ringgit for typing over.
     expect(within(card).getByLabelText("Amount in ringgit")).toHaveValue("14.00");
+    expect(within(card).getByLabelText("Merchant")).toHaveValue("Grab — office to KLCC");
+    expect(within(card).getByLabelText("Category")).toHaveValue("transport");
+    expect(within(card).getByLabelText("Date")).toHaveValue("2026-09-03");
+    expect(within(card).getByLabelText("Note")).toHaveValue("Heard 'fourteen ringgit'.");
   });
 
-  it("corrects the misheard amount in sen, not ringgit", async () => {
+  it("saves every changed draft detail", async () => {
     const { props } = renderActivity();
     const card = draftCard("Grab — office to KLCC");
-    await userEvent.click(within(card).getByRole("button", { name: "Details" }));
-    await userEvent.click(within(card).getByRole("button", { name: "Correct" }));
+    await userEvent.click(within(card).getByRole("button", { name: "Edit" }));
 
     const field = within(card).getByLabelText("Amount in ringgit");
     await userEvent.clear(field);
     await userEvent.type(field, "19.90");
-    await userEvent.click(within(card).getByRole("button", { name: "Save" }));
+    await userEvent.clear(within(card).getByLabelText("Merchant"));
+    await userEvent.type(within(card).getByLabelText("Merchant"), "Grab — Mid Valley");
+    await userEvent.selectOptions(within(card).getByLabelText("Category"), "food");
+    fireEvent.change(within(card).getByLabelText("Date"), { target: { value: "2026-09-01" } });
+    await userEvent.clear(within(card).getByLabelText("Note"));
+    await userEvent.type(within(card).getByLabelText("Note"), "Actual fare after the stopover.");
+    await userEvent.click(within(card).getByRole("button", { name: "Save changes" }));
 
-    expect(props.onCorrect).toHaveBeenCalledWith("d1", 1990);
+    expect(props.onCorrect).toHaveBeenCalledWith("d1", {
+      merchant: "Grab — Mid Valley",
+      amount_sen: 1990,
+      category: "food",
+      occurred_on: "2026-09-01",
+      note: "Actual fare after the stopover.",
+    });
   });
 
   it("will not submit a half-typed amount", async () => {
     const { props } = renderActivity();
     const card = draftCard("Grab — office to KLCC");
-    await userEvent.click(within(card).getByRole("button", { name: "Details" }));
-    await userEvent.click(within(card).getByRole("button", { name: "Correct" }));
+    await userEvent.click(within(card).getByRole("button", { name: "Edit" }));
 
     const field = within(card).getByLabelText("Amount in ringgit");
     await userEvent.clear(field);
     await userEvent.type(field, "19.");
 
-    const save = within(card).getByRole("button", { name: "Save" });
+    const save = within(card).getByRole("button", { name: "Save changes" });
     expect(save).toBeDisabled();
     await userEvent.click(save);
     expect(props.onCorrect).not.toHaveBeenCalled();
@@ -294,32 +312,31 @@ describe("Activity", () => {
   it("will not submit nothing, or less than nothing", async () => {
     const { props } = renderActivity();
     const card = draftCard("Grab — office to KLCC");
-    await userEvent.click(within(card).getByRole("button", { name: "Details" }));
-    await userEvent.click(within(card).getByRole("button", { name: "Correct" }));
+    await userEvent.click(within(card).getByRole("button", { name: "Edit" }));
     const field = within(card).getByLabelText("Amount in ringgit");
 
     await userEvent.clear(field);
-    expect(within(card).getByRole("button", { name: "Save" })).toBeDisabled();
+    expect(within(card).getByRole("button", { name: "Save changes" })).toBeDisabled();
     await userEvent.type(field, "0");
-    expect(within(card).getByRole("button", { name: "Save" })).toBeDisabled();
+    expect(within(card).getByRole("button", { name: "Save changes" })).toBeDisabled();
     await userEvent.clear(field);
     await userEvent.type(field, "-5");
-    expect(within(card).getByRole("button", { name: "Save" })).toBeDisabled();
+    expect(within(card).getByRole("button", { name: "Save changes" })).toBeDisabled();
     expect(props.onCorrect).not.toHaveBeenCalled();
   });
 
   it("leaves the read alone when the correction is cancelled", async () => {
     const { props } = renderActivity();
     const card = draftCard("Grab — office to KLCC");
-    await userEvent.click(within(card).getByRole("button", { name: "Details" }));
-    await userEvent.click(within(card).getByRole("button", { name: "Correct" }));
-    await userEvent.type(within(card).getByLabelText("Amount in ringgit"), "9");
+    await userEvent.click(within(card).getByRole("button", { name: "Edit" }));
+    const field = within(card).getByLabelText("Amount in ringgit");
+    await userEvent.clear(field);
+    await userEvent.type(field, "19.90");
     await userEvent.click(within(card).getByRole("button", { name: "Cancel" }));
 
     expect(props.onCorrect).not.toHaveBeenCalled();
     expect(within(card).queryByLabelText("Amount in ringgit")).not.toBeInTheDocument();
-    // Once in the card's head, once in the details row it was cancelled from.
-    expect(within(card).getAllByText("RM14.00")).toHaveLength(2);
+    expect(within(card).getAllByText("RM14.00")).toHaveLength(1);
   });
 
   it("keeps the entry open and says so when the correction does not save", async () => {
@@ -329,17 +346,16 @@ describe("Activity", () => {
     const onCorrect = vi.fn().mockRejectedValue(new Error("network down"));
     renderActivity({ onCorrect });
     const card = draftCard("Grab — office to KLCC");
-    await userEvent.click(within(card).getByRole("button", { name: "Details" }));
-    await userEvent.click(within(card).getByRole("button", { name: "Correct" }));
+    await userEvent.click(within(card).getByRole("button", { name: "Edit" }));
     const field = within(card).getByLabelText("Amount in ringgit");
     await userEvent.clear(field);
     await userEvent.type(field, "19.90");
-    await userEvent.click(within(card).getByRole("button", { name: "Save" }));
+    await userEvent.click(within(card).getByRole("button", { name: "Save changes" }));
 
-    expect(onCorrect).toHaveBeenCalledWith("d1", 1990);
+    expect(onCorrect).toHaveBeenCalledWith("d1", { amount_sen: 1990 });
     // Said, not swallowed — and it names the figure the draft still carries
     // rather than only that a request failed.
-    expect(await within(card).findByText(/didn't save, so this draft still says RM14\.00/))
+    expect(await within(card).findByText(/That didn't save\. Your edits are still here/))
       .toBeInTheDocument();
     // The typed figure is still there to retry, not thrown away.
     expect(within(card).getByLabelText("Amount in ringgit")).toHaveValue("19.90");
@@ -350,17 +366,19 @@ describe("Activity", () => {
     const onCorrect = vi.fn().mockRejectedValue(new Error("network down"));
     renderActivity({ onCorrect });
     const card = draftCard("Grab — office to KLCC");
-    await userEvent.click(within(card).getByRole("button", { name: "Details" }));
-    await userEvent.click(within(card).getByRole("button", { name: "Correct" }));
-    await userEvent.click(within(card).getByRole("button", { name: "Save" }));
+    await userEvent.click(within(card).getByRole("button", { name: "Edit" }));
+    const field = within(card).getByLabelText("Amount in ringgit");
+    await userEvent.clear(field);
+    await userEvent.type(field, "19.90");
+    await userEvent.click(within(card).getByRole("button", { name: "Save changes" }));
     await within(card).findByText(/didn't save/);
 
     await userEvent.click(within(card).getByRole("button", { name: "Cancel" }));
-    await userEvent.click(within(card).getByRole("button", { name: "Correct" }));
+    await userEvent.click(within(card).getByRole("button", { name: "Edit" }));
 
     // A complaint about the last attempt must not greet the next one.
     expect(within(card).queryByText(/didn't save/)).not.toBeInTheDocument();
-    expect(within(card).getByRole("button", { name: "Save" })).toBeInTheDocument();
+    expect(within(card).getByRole("button", { name: "Save changes" })).toBeInTheDocument();
   });
 
   it("stops claiming a corrected amount was read with any confidence", () => {
@@ -456,14 +474,13 @@ describe("Activity · a draft the day planner made", () => {
     const { props } = renderActivity(withPlan());
     const card = draftCard("Kopi Kaki");
 
-    await userEvent.click(within(card).getByRole("button", { name: "Details" }));
-    await userEvent.click(within(card).getByRole("button", { name: "Correct" }));
+    await userEvent.click(within(card).getByRole("button", { name: "Edit" }));
     const field = within(card).getByLabelText("Amount in ringgit");
     await userEvent.clear(field);
     // The bill came to more than the estimate, which is the ordinary case.
     await userEvent.type(field, "20.10");
-    await userEvent.click(within(card).getByRole("button", { name: "Save" }));
-    expect(props.onCorrect).toHaveBeenCalledWith("d3", 2010);
+    await userEvent.click(within(card).getByRole("button", { name: "Save changes" }));
+    expect(props.onCorrect).toHaveBeenCalledWith("d3", { amount_sen: 2010 });
 
     await userEvent.click(within(card).getByRole("button", { name: "Confirm" }));
     expect(props.onConfirm).toHaveBeenCalledWith("d3");
