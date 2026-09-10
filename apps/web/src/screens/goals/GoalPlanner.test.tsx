@@ -605,6 +605,78 @@ describe("Goal Planner", () => {
     expect(screen.getByRole("button", { name: "See work recommendations" })).toBeEnabled();
   });
 
+  it("shows an honest empty live-search result and lets the user search again", async () => {
+    let resolveStoredRecommendation: ((response: Response) => void) | undefined;
+    const storedRecommendation = new Promise<Response>((resolve) => {
+      resolveStoredRecommendation = resolve;
+    });
+    const dashboard = {
+      ...DASHBOARD,
+      goals: [{
+        id: LONG_ID,
+        name: "First home",
+        horizon: "long" as const,
+        target_sen: 5_000_000,
+        saved_sen: 800_000,
+        monthly_sen: 150_000,
+        months_left: 28,
+        note: "",
+      }],
+    } satisfies DashboardToday;
+    const notAvailable = {
+      recommendation_schema_version: 5,
+      goal_id: LONG_ID,
+      plan_version: 1,
+      status: "not_available",
+      eligible: false,
+      reason: "No suitable part-time roles currently match your profile and availability.",
+      recommendations: [],
+      overall_guidance: null,
+      source: null,
+      preferences: {
+        available_hours_per_week: 21,
+        work_mode: "either",
+        transport_limitations: "",
+      },
+      feasible_before: true,
+      projected_completion_before: "2028-12-15",
+      cash_effect: null,
+    };
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.endsWith("/v1/dashboard/today")) return json(dashboard);
+      if (url.endsWith(`/v1/goals/${LONG_ID}`)) return json(DETAIL);
+      if (url.endsWith(`/v1/goals/${LONG_ID}/plan`)) return json(PLAN);
+      if (url.endsWith(`/v1/goals/${LONG_ID}/part-time-recommendation`)) {
+        return init?.method === "POST" ? json(notAvailable) : storedRecommendation;
+      }
+      return json({}, 404);
+    });
+    const user = userEvent.setup();
+    renderGoals();
+
+    await user.click(await screen.findByRole("button", { name: "View plan" }));
+    await user.clear(await screen.findByLabelText("Available hours each week"));
+    await user.type(screen.getByLabelText("Available hours each week"), "21");
+    await user.click(screen.getByRole("button", { name: "See work recommendations" }));
+
+    expect(await screen.findByText("No suitable live match yet")).toBeVisible();
+    expect(screen.getByText(notAvailable.reason)).toBeVisible();
+    resolveStoredRecommendation?.(json(null));
+    await waitFor(() => {
+      expect(screen.getByText("No suitable live match yet")).toBeVisible();
+    });
+    await user.click(screen.getByRole("button", { name: "Search related roles again" }));
+    await waitFor(() => {
+      const posts = vi.mocked(fetch).mock.calls.filter(
+        ([input, init]) => String(input).endsWith(
+          `/v1/goals/${LONG_ID}/part-time-recommendation`,
+        ) && init?.method === "POST",
+      );
+      expect(posts).toHaveLength(2);
+    });
+  });
+
   it("opens and highlights the AI work section from an offer notification", async () => {
     vi.mocked(fetch).mockImplementation(async (input) => {
       const url = String(input);

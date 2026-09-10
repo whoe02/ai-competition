@@ -192,6 +192,35 @@ recommendations array may contain zero to three objects. Do not use job_1,
 job_2, job_3, or any alternative top-level keys.
 """
 
+PART_TIME_SEARCH_QUERY_PROMPT = """You plan live job-board searches for part-time work.
+
+Given the user's current position title and work constraints, return the original title
+plus up to three related position-title queries that use transferable skills and could
+realistically have compatible part-time, contract, freelance, or flexible openings.
+Generate queries from the supplied context; do not use a fixed role catalogue. Keep each
+query concise and distinct. Do not invent a job listing or employer. Return only valid
+JSON in this exact shape: {"queries": ["position title", "related position title"]}.
+"""
+
+
+class JobSearchPlan(BaseModel):
+    queries: list[str] = Field(min_length=1, max_length=4)
+
+    @field_validator("queries")
+    @classmethod
+    def clean_queries(cls, values: list[str]) -> list[str]:
+        cleaned: list[str] = []
+        seen: set[str] = set()
+        for value in values:
+            query = " ".join(value.split())[:80]
+            key = query.casefold()
+            if query and key not in seen:
+                cleaned.append(query)
+                seen.add(key)
+        if not cleaned:
+            raise ValueError("at least one usable search query is required")
+        return cleaned
+
 
 class PartTimeJobOption(BaseModel):
     source_job_id: str = Field(min_length=3, max_length=160)
@@ -710,6 +739,51 @@ async def _live_job_candidates(job_title: str) -> list[JobListing]:
     return selected
 
 
+async def _dynamic_job_queries(
+    model: Any,
+    *,
+    job_title: str,
+    available_hours_per_week: int,
+    work_mode: WorkMode,
+    transport_limitations: str,
+) -> list[str]:
+    """Ask the LLM for semantic search variants; always retain the user's title."""
+    original = " ".join(job_title.split())
+    context = {
+        "current_job_title": original,
+        "available_hours_per_week": available_hours_per_week,
+        "preferred_work_mode": work_mode,
+        "transport_limitations": transport_limitations.strip() or "none provided",
+    }
+    try:
+        structured = model.with_structured_output(
+            JobSearchPlan,
+            method="json_mode",
+            include_raw=False,
+        )
+        result = await structured.ainvoke(
+            [
+                SystemMessage(content=PART_TIME_SEARCH_QUERY_PROMPT),
+                HumanMessage(content=json.dumps(context, ensure_ascii=False)),
+            ]
+        )
+        plan = result if isinstance(result, JobSearchPlan) else JobSearchPlan.model_validate(result)
+    except Exception as exc:
+        logger.warning("part_time_query_expansion_failed error_type=%s", type(exc).__name__)
+        return [original]
+
+    queries = [original, *plan.queries]
+    unique: list[str] = []
+    seen: set[str] = set()
+    for query in queries:
+        key = query.casefold()
+        if key not in seen:
+            unique.append(query)
+            seen.add(key)
+    logger.info("part_time_query_expansion queries=%s", json.dumps(unique, ensure_ascii=False))
+    return unique[:4]
+
+
 def _validated_job_selection(
     result: object,
     *,
@@ -753,10 +827,33 @@ async def _job_set(
     job_search: JobSearch = _live_job_candidates,
     excluded_job_ids: set[str] | None = None,
 ) -> PartTimeJobSet:
-    candidates = await job_search(user.job_title)
+    queries = [user.job_title]
+    if job_search is _live_job_candidates:
+        queries = await _dynamic_job_queries(
+            model,
+            job_title=user.job_title,
+            available_hours_per_week=available_hours_per_week,
+            work_mode=work_mode,
+            transport_limitations=transport_limitations,
+        )
+    search_results = await gather(
+        *(job_search(query) for query in queries),
+        return_exceptions=True,
+    )
+    candidates = []
+    for query, result in zip(queries, search_results, strict=True):
+        if isinstance(result, Exception):
+            logger.warning(
+                "part_time_expanded_search_unavailable query=%r error_type=%s",
+                query,
+                type(result).__name__,
+            )
+            continue
+        candidates.extend(result)
+    candidates = list({candidate.id: candidate for candidate in candidates}.values())
     if not candidates:
         raise PartTimeRecommendationError(
-            "No current job listings matched your title. Try a broader title later."
+            "No current live listings matched your title or related positions. Try again later."
         )
     excluded_job_ids = excluded_job_ids or set()
     unseen_candidates = [

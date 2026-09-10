@@ -177,6 +177,42 @@ def test_part_time_selection_can_report_no_suitable_current_listing():
     assert selected.recommendations == []
 
 
+async def test_part_time_search_queries_are_generated_from_profile_and_constraints():
+    class _QueryModel:
+        def with_structured_output(self, schema, **kwargs):
+            assert schema is part_time_service.JobSearchPlan
+            assert kwargs["method"] == "json_mode"
+            return self
+
+        async def ainvoke(self, messages):
+            assert "json" in messages[0].content.casefold()
+            context = json.loads(messages[1].content)
+            assert context["current_job_title"] == "Human resource"
+            assert context["available_hours_per_week"] == 21
+            return {
+                "queries": [
+                    "Human Resources Coordinator",
+                    "Recruitment Coordinator",
+                    "Talent Acquisition Assistant",
+                ]
+            }
+
+    queries = await part_time_service._dynamic_job_queries(
+        _QueryModel(),
+        job_title="Human resource",
+        available_hours_per_week=21,
+        work_mode="either",
+        transport_limitations="",
+    )
+
+    assert queries == [
+        "Human resource",
+        "Human Resources Coordinator",
+        "Recruitment Coordinator",
+        "Talent Acquisition Assistant",
+    ]
+
+
 def test_part_time_rejects_an_unreasonably_wide_hourly_estimate() -> None:
     with pytest.raises(ValueError, match="range is too wide"):
         PartTimeJobOption.model_validate(

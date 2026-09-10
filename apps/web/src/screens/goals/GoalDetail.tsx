@@ -51,8 +51,12 @@ export function GoalDetail({
   const shouldFocusPartTimeRef = useRef(initialFocusPartTime);
 
   useEffect(() => {
+    // The response to the user's latest search is authoritative. A slower
+    // initial GET may contain an older saved recommendation and must not
+    // replace it after the POST completes.
+    if (partTimeMutation.data) return;
     const stored = storedPartTime.data;
-    if (stored?.status === "available") {
+    if (stored) {
       setPartTime((current) => current ?? stored);
       setAvailableHours(String(stored.preferences.available_hours_per_week));
       setWorkMode(stored.preferences.work_mode);
@@ -60,7 +64,7 @@ export function GoalDetail({
     } else if (storedPartTime.isSuccess) {
       setPartTime(null);
     }
-  }, [storedPartTime.data, storedPartTime.isSuccess]);
+  }, [storedPartTime.data, storedPartTime.isSuccess, partTimeMutation.data]);
 
   useEffect(() => {
     if (!shouldFocusPartTimeRef.current || !goal.isSuccess || !plan.isSuccess || focusedPartTimeRef.current) return;
@@ -213,7 +217,17 @@ export function GoalDetail({
             )}
             {partTimeMutation.isError && <p className="goal-inline-error" role="alert">Kira could not prepare a recommendation. Your plan is unchanged.</p>}
             {partTime?.status === "not_available" ? (
-              <p className="goal-muted">{partTime.reason}</p>
+              <div className="goal-part-time-empty" role="status">
+                <b>No suitable live match yet</b>
+                <p className="goal-muted">{partTime.reason}</p>
+                <button
+                  className="btn btn-line btn-sm"
+                  disabled={partTimeMutation.isPending}
+                  onClick={() => void loadPartTimeRecommendation()}
+                >
+                  {partTimeMutation.isPending ? "Searching related roles…" : "Search related roles again"}
+                </button>
+              </div>
             ) : partTime && (
               <div className="goal-part-time-ready">
                 <span className="goal-part-time-ready-mark"><IcCheck size={15} /></span>
