@@ -37,7 +37,6 @@ class GoalIntent(BaseModel):
     current_saved_sen: int | None = Field(default=None, strict=True, ge=0)
     target_date: date | None = None
     contribution_per_payday_sen: int | None = Field(default=None, strict=True, gt=0)
-    priority: Literal["protected", "important", "flexible"] | None = None
     funding_account_ids: list[uuid.UUID] = Field(default_factory=list)
     proposed_spend_sen: int | None = Field(default=None, strict=True, ge=0)
     scenario_id: uuid.UUID | None = None
@@ -77,7 +76,6 @@ class PlanEdit(BaseModel):
     current_saved_sen: int | None = Field(default=None, strict=True, ge=0)
     target_date: date | None = None
     contribution_per_payday_sen: int | None = Field(default=None, strict=True, gt=0)
-    priority: Literal["protected", "important", "flexible"] | None = None
 
 
 class ApprovalDecision(BaseModel):

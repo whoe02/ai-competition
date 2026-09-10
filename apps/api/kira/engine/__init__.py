@@ -3,7 +3,6 @@
 from kira.engine.goal_planning import (
     ALLOCATION_CALCULATION_VERSION,
     CALCULATION_VERSION,
-    GOAL_PRIORITIES,
     GOAL_STATUSES,
     GOAL_TYPES,
     LONG_TERM_GOAL_TYPES,
@@ -44,7 +43,6 @@ __all__ = [
     "CommitmentInput",
     "CALCULATION_VERSION",
     "ALLOCATION_CALCULATION_VERSION",
-    "GOAL_PRIORITIES",
     "GOAL_STATUSES",
     "GOAL_TYPES",
     "LONG_TERM_GOAL_TYPES",

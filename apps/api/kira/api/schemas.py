@@ -64,7 +64,6 @@ class GoalSummaryResponse(ResponseModel):
     id: uuid.UUID
     name: str
     horizon: str
-    priority: Literal["protected", "important", "flexible"]
     target_sen: int
     saved_sen: int
     monthly_sen: int
@@ -85,7 +84,6 @@ GoalType = Literal[
     "education_family_goal",
     "custom_goal",
 ]
-GoalPriority = Literal["protected", "important", "flexible"]
 GoalStatus = Literal[
     "draft", "active", "at_risk", "needs_replan", "paused", "achieved", "cancelled",
     "deleted",
@@ -98,7 +96,6 @@ class GoalCreateRequest(BaseModel):
     target_amount_sen: int = Field(strict=True, gt=0)
     current_saved_sen: int = Field(default=0, strict=True, ge=0)
     target_date: date
-    priority: GoalPriority = "flexible"
     funding_account_ids: list[uuid.UUID] = Field(default_factory=list)
 
 
@@ -112,7 +109,6 @@ class GoalDetailResponse(ResponseModel):
     current_saved_sen: int
     target_date: date | None
     horizon: Literal["short", "long"]
-    priority: GoalPriority
     status: GoalStatus
     funding_account_ids: list[uuid.UUID]
     current_plan_version: int | None = None
@@ -196,6 +192,27 @@ class PartTimeJobOptionResponse(ResponseModel):
     why_relevant: str
     work_arrangement: str
     first_step: str
+    estimated_hourly_rate_min_sen: int
+    estimated_hourly_rate_max_sen: int
+    suggested_hours_per_week: int
+    suggested_work_days_per_week: int
+    pay_estimate_basis: str
+    estimated_daily_income_min_sen: int
+    estimated_daily_income_max_sen: int
+    estimated_weekly_income_min_sen: int
+    estimated_weekly_income_max_sen: int
+    estimated_monthly_income_min_sen: int
+    estimated_monthly_income_max_sen: int
+    goal_contribution_monthly_before_sen: int
+    goal_contribution_monthly_with_job_min_sen: int
+    goal_contribution_monthly_with_job_max_sen: int
+    projected_completion_with_min_income: date | None
+    projected_completion_with_max_income: date | None
+    days_saved_min: int | None
+    days_saved_max: int | None
+    safe_to_spend_today_change_sen: int
+    future_daily_safe_to_spend_increase_min_sen: int
+    future_daily_safe_to_spend_increase_max_sen: int
     cautions: list[str]
 
 
@@ -212,8 +229,9 @@ class PartTimeRecommendationRequest(BaseModel):
 
 
 class PartTimeJobRecommendationResponse(ResponseModel):
-    """Read-only AI work idea and an optional user-supplied scenario."""
+    """Read-only AI work ideas with deterministic income and goal forecasts."""
 
+    recommendation_schema_version: int
     goal_id: uuid.UUID
     plan_version: int
     status: Literal["available", "not_available"]
@@ -295,7 +313,6 @@ class GoalGraphIntentRequest(BaseModel):
     current_saved_sen: int | None = Field(default=None, strict=True, ge=0)
     target_date: date | None = None
     contribution_per_payday_sen: int | None = Field(default=None, strict=True, gt=0)
-    priority: GoalPriority | None = None
     funding_account_ids: list[uuid.UUID] = Field(default_factory=list)
     proposed_spend_sen: int | None = Field(default=None, strict=True, ge=0)
     scenario_id: uuid.UUID | None = None
@@ -725,7 +742,6 @@ class CreateTransactionRequest(BaseModel):
 class GoalIncomeAllocationItemResponse(ResponseModel):
     goal_id: uuid.UUID
     name: str
-    priority: GoalPriority
     amount_sen: int
     income_share_bp: int
     remaining_after_sen: int

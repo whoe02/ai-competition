@@ -21,11 +21,9 @@ def goal_evidence(state: GoalGraphState, currency: str) -> list[list[str]]:
     rows: list[list[str]] = []
     plan = state.get("current_goal_plan")
     if plan is not None:
-        definition = state.get("goal_definition")
         affordability = plan.affordability_status.replace("_", " ").title()
         rows.extend(
             [
-                ["Goal priority", definition.priority.title() if definition else "Not set"],
                 ["Goal target", _money(plan.target_amount_sen, currency)],
                 ["Already saved", _money(plan.current_saved_sen, currency)],
                 ["Remaining", _money(plan.remaining_amount_sen, currency)],

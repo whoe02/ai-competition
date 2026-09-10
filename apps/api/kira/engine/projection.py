@@ -116,9 +116,6 @@ _BLOCK_DAYS = 7
 DEFAULT_SEED = 20260828
 
 _P10, _P50, _P90 = 10, 50, 90
-_PRIORITY_ORDER = {"protected": 0, "important": 1, "flexible": 2}
-
-
 def _percentile(sorted_values: list[int], percentile: int) -> int:
     """The value at ``percentile`` of an ascending list, by nearest rank.
 
@@ -141,11 +138,7 @@ def _datable_goals(snapshot: Snapshot, days: int) -> tuple[GoalInput, ...]:
                 for goal in snapshot.goals
                 if goal.target_date is not None and snapshot.today < goal.target_date <= horizon_end
             ),
-            key=lambda goal: (
-                _PRIORITY_ORDER.get(goal.priority, _PRIORITY_ORDER["flexible"]),
-                goal.target_date,
-                goal.id,
-            ),
+            key=lambda goal: (goal.target_date, goal.id),
         )
     )
 

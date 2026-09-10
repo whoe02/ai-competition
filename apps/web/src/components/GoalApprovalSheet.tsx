@@ -28,8 +28,6 @@ export function GoalApprovalSheet({
   const [targetDate, setTargetDate] = useState(approval.after.target_date);
   const targetSen = parseSen(target);
   const contributionSen = parseSen(contribution);
-  const priorityChanged = approval.afterPriority !== null
-    && approval.beforePriority !== approval.afterPriority;
 
   const decide = async (
     action: "accept" | "edit" | "reject",
@@ -70,18 +68,6 @@ export function GoalApprovalSheet({
             </section>
           )}
           <GoalPlanPreview plan={approval.after} title="Proposed plan" compact />
-          {priorityChanged && (
-            <section className="goal-priority-change" aria-label="Priority change effect">
-              <p className="eyebrow">Funding order changes</p>
-              <div>
-                <span>{approval.beforePriority ? priorityLabel(approval.beforePriority) : "New goal"}</span>
-                <b>→</b>
-                <strong>{priorityLabel(approval.afterPriority!)}</strong>
-              </div>
-              <p>{priorityEffect(approval.afterPriority!)}</p>
-              <small>The required contribution stays the same because the target amount and date are unchanged.</small>
-            </section>
-          )}
         </div>
       ) : (
         <div className="goal-form goal-sheet-form">
@@ -131,18 +117,4 @@ export function GoalApprovalSheet({
       <p className="goal-sheet-note">Nothing changes until you approve. Protected bills and your emergency buffer remain off limits.</p>
     </Sheet>
   );
-}
-
-function priorityLabel(priority: "protected" | "important" | "flexible"): string {
-  return priority.replace(/^./, (letter) => letter.toUpperCase());
-}
-
-function priorityEffect(priority: "protected" | "important" | "flexible"): string {
-  if (priority === "protected") {
-    return "This goal receives available goal money first; Important and Flexible goals may receive less when cash is tight.";
-  }
-  if (priority === "important") {
-    return "Protected goals are funded first, then this goal, followed by Flexible goals.";
-  }
-  return "This goal is funded after Protected and Important goals and may be underfunded first when cash is tight.";
 }

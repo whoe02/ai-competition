@@ -97,22 +97,6 @@ export function useSelectGoalScenario() {
   });
 }
 
-export function useChangeGoalPriority() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({ goalId, priority }: { goalId: string; priority: "protected" | "important" | "flexible" }) =>
-      runStructuredGoal(
-        structuredRequest({
-          action: "recalculate",
-          goal_id: goalId,
-          priority,
-          wants_scenarios: false,
-        }),
-      ),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: butlerThreadKey }),
-  });
-}
-
 export function useGoalScenarios() {
   return useMutation({
     mutationFn: (goalId: string) =>
@@ -154,15 +138,6 @@ export function useStoredPartTimeRecommendation(goalId: string | null) {
         `/v1/goals/${goalId}/part-time-recommendation`,
       ),
     enabled: Boolean(goalId),
-  });
-}
-
-export function usePartTimeRecommendationImpact() {
-  return useMutation({
-    mutationFn: ({ goalId, expectedMonthlyIncomeSen }: { goalId: string; expectedMonthlyIncomeSen: number }) =>
-      api.post<PartTimeJobRecommendation>(`/v1/goals/${goalId}/part-time-recommendation/impact`, {
-        expected_monthly_income_sen: expectedMonthlyIncomeSen,
-      }),
   });
 }
 

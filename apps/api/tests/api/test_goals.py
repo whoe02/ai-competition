@@ -20,7 +20,6 @@ def payload(**changes):
         "target_amount_sen": 120_000,
         "current_saved_sen": 20_000,
         "target_date": "2026-12-02",
-        "priority": "important",
         "funding_account_ids": [],
     }
     value.update(changes)
@@ -39,6 +38,7 @@ class TestGoalContracts:
         body = created.json()
         assert body["goal"]["status"] == "draft"
         assert body["goal"]["horizon"] == "short"
+        assert "priority" not in body["goal"]
         assert body["plan"]["version"] == 1
         assert body["plan"]["calculation_version"] == "goal-plan-v1"
         assert body["plan"]["evidence_refs"]
@@ -48,6 +48,7 @@ class TestGoalContracts:
         plan = await client.get(f"/v1/goals/{goal_id}/plan", headers=auth(token))
         assert detail.status_code == 200
         assert detail.json()["goal_type"] == "travel"
+        assert "priority" not in detail.json()
         assert plan.status_code == 200
         assert len(plan.json()["milestones"]) == 4
 
@@ -94,8 +95,7 @@ class TestGoalContracts:
             f"/v1/goals/{goal_id}/part-time-recommendation", headers=auth(token)
         )
         assert stored.status_code == 200, stored.text
-        assert stored.json()["plan_version"] == record.version
-        assert stored.json()["preferences"]["work_mode"] == "remote"
+        assert stored.json() is None
 
         impact = await client.post(
             f"/v1/goals/{goal_id}/impact",
@@ -174,6 +174,7 @@ class TestGoalContracts:
 def test_request_contract_keeps_target_date_as_a_date():
     request = GoalCreateRequest.model_validate(payload())
     assert request.target_date == date(2026, 12, 2)
+    assert "priority" not in GoalCreateRequest.model_json_schema()["properties"]
 
 
 async def test_structured_goal_graph_run_and_approval_resume(client, session):
@@ -200,7 +201,6 @@ async def test_structured_goal_graph_run_and_approval_resume(client, session):
                 "target_amount_sen": 3_000_000,
                 "current_saved_sen": 0,
                 "target_date": "2027-04-04",
-                "priority": "important",
             },
         },
         headers=headers,
@@ -227,7 +227,6 @@ async def test_structured_goal_graph_run_and_approval_resume(client, session):
                 "target_amount_sen": 100_000,
                 "current_saved_sen": 20_000,
                 "target_date": "2026-12-31",
-                "priority": "important",
             },
         },
         headers=headers,

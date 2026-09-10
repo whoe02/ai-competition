@@ -35,7 +35,6 @@ def goal(**changes) -> GoalDefinition:
         target_amount_sen=10_001,
         current_saved_sen=0,
         target_date=date(2026, 10, 5),
-        priority="important",
         status="active",
     )
     return replace(base, **changes)
@@ -53,7 +52,7 @@ def snapshot(**changes) -> FinancialSnapshot:
             ProtectedCommitment("bill-1", "Rent", 30_000, date(2026, 9, 4), True, "commitment:1"),
         ),
         emergency_buffer_sen=20_000,
-        active_goal_plans=(ActiveGoalReserve("other-goal", 10_000, "protected"),),
+        active_goal_plans=(ActiveGoalReserve("other-goal", 10_000),),
         data_confidence="high",
         evidence_refs=("account:1", "income:1", "commitment:1"),
         pay_cycle_days=30,
@@ -74,11 +73,11 @@ class TestIntegerSen:
 
 
 class TestIncomeAllocation:
-    def test_priority_date_and_id_make_the_split_reproducible(self):
+    def test_target_date_and_id_make_the_split_reproducible(self):
         needs = (
-            GoalFundingNeed("z", "Flexible", "flexible", date(2026, 9, 20), 20_000, 20_000),
-            GoalFundingNeed("b", "Protected later", "protected", date(2026, 11, 1), 30_000, 30_000),
-            GoalFundingNeed("a", "Protected soon", "protected", date(2026, 10, 1), 30_000, 30_000),
+            GoalFundingNeed("z", "Soonest", date(2026, 9, 20), 20_000, 20_000),
+            GoalFundingNeed("b", "Later", date(2026, 11, 1), 30_000, 30_000),
+            GoalFundingNeed("a", "Soon", date(2026, 10, 1), 30_000, 30_000),
         )
         first = allocate_income_to_goals(
             income_transaction_id="income-1",
@@ -94,8 +93,8 @@ class TestIncomeAllocation:
         )
         assert first == second
         assert [(item.goal_id, item.amount_sen) for item in first.allocations] == [
+            ("z", 20_000),
             ("a", 30_000),
-            ("b", 20_000),
         ]
         assert sum(item.amount_sen for item in first.allocations) == 50_000
         assert all(isinstance(item.income_share_bp, int) for item in first.allocations)
@@ -159,9 +158,7 @@ class TestGoalAffordability:
             income_amount_sen=80_000,
             snapshot=snapshot(cash_available_sen=55_000),
             goals=(
-                GoalFundingNeed(
-                    "goal", "House", "important", date(2028, 1, 1), 80_000, 80_000
-                ),
+                GoalFundingNeed("goal", "House", date(2028, 1, 1), 80_000, 80_000),
             ),
         )
         # RM30,000 bill + RM20,000 buffer leave RM5,000; the engine cannot

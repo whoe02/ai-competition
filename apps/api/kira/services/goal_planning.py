@@ -67,7 +67,6 @@ def definition_from_record(goal: Goal) -> GoalDefinition:
         target_amount_sen=goal.target.sen,
         current_saved_sen=goal.saved.sen,
         target_date=goal.target_date,
-        priority=goal.priority,
         status=goal.status,
         funding_account_ids=tuple(goal.funding_account_ids),
     )
@@ -194,7 +193,6 @@ async def load_financial_snapshot(
             ActiveGoalReserve(
                 goal_id=str(goal.id),
                 next_required_reserve_sen=plan.next_required_reserve.sen,
-                priority=goal.priority,
             )
             for plan, goal in latest_by_goal.values()
         ),
@@ -307,7 +305,6 @@ async def create_draft_goal(
     target_amount_sen: int,
     current_saved_sen: int,
     target_date: date,
-    priority: str,
     funding_account_ids: tuple[uuid.UUID, ...],
     as_of_utc: datetime,
     goal_id: uuid.UUID | None = None,
@@ -335,7 +332,6 @@ async def create_draft_goal(
         target_amount_sen=target_amount_sen,
         current_saved_sen=current_saved_sen,
         target_date=target_date,
-        priority=priority,
         status="draft",
         funding_account_ids=tuple(str(value) for value in funding_account_ids),
     )
@@ -354,7 +350,6 @@ async def create_draft_goal(
         goal_type=goal_type,
         currency=user.currency,
         target_date=target_date,
-        priority=priority,
         status="draft",
         funding_account_ids=[str(value) for value in funding_account_ids],
     )
@@ -470,7 +465,6 @@ async def apply_approved_plan_change(
     goal.saved = Money(definition.current_saved_sen, definition.currency)
     goal.target_date = definition.target_date
     goal.horizon = classify_goal_horizon(definition, as_of_utc.astimezone(UTC).date())
-    goal.priority = definition.priority
     if plan.remaining_amount_sen == 0:
         goal.status = "achieved"
     else:

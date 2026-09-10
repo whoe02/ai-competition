@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { GoalScenario, PartTimeJobRecommendation } from "@kira/contracts";
 
@@ -6,9 +6,7 @@ import {
   approvalFromRun,
   useGoal,
   useGoalPlan,
-  useChangeGoalPriority,
   useGoalScenarios,
-  usePartTimeRecommendationImpact,
   usePartTimeRecommendation,
   useStoredPartTimeRecommendation,
   useSelectGoalScenario,
@@ -17,7 +15,7 @@ import type { GoalApproval } from "../../api/goals";
 import { GoalApprovalSheet } from "../../components/GoalApprovalSheet";
 import { IcCheck } from "../../components/Icons";
 import { GoalPlanPreview, formatGoalDate } from "../../components/GoalPlanPreview";
-import { fmt, parseSen } from "../../lib/money";
+import { fmt } from "../../lib/money";
 import { GoalScreenHead } from "./GoalCreate";
 import { goalTypeLabel, statusLabel } from "./goalUi";
 
@@ -25,29 +23,32 @@ export function GoalDetail({
   goalId,
   onBack,
   initialShowRecommendations = false,
+  initialFocusPartTime = false,
 }: {
   goalId: string;
   onBack: () => void;
   initialShowRecommendations?: boolean;
+  initialFocusPartTime?: boolean;
 }) {
   const goal = useGoal(goalId);
   const plan = useGoalPlan(goalId);
   const scenarioMutation = useGoalScenarios();
   const selectScenario = useSelectGoalScenario();
-  const changePriority = useChangeGoalPriority();
   const partTimeMutation = usePartTimeRecommendation();
-  const partTimeImpact = usePartTimeRecommendationImpact();
   const storedPartTime = useStoredPartTimeRecommendation(goalId);
   const [scenarios, setScenarios] = useState<GoalScenario[] | null>(null);
   const [selected, setSelected] = useState<GoalScenario | null>(null);
   const [approval, setApproval] = useState<GoalApproval | null>(null);
   const [notice, setNotice] = useState("");
   const [partTime, setPartTime] = useState<PartTimeJobRecommendation | null>(null);
-  const [expectedIncome, setExpectedIncome] = useState("");
   const [availableHours, setAvailableHours] = useState("8");
   const [workMode, setWorkMode] = useState<"remote" | "on_site" | "either">("either");
   const [transportLimitations, setTransportLimitations] = useState("");
   const [showRecommendations, setShowRecommendations] = useState(initialShowRecommendations);
+  const [highlightPartTime, setHighlightPartTime] = useState(false);
+  const partTimeSectionRef = useRef<HTMLElement>(null);
+  const focusedPartTimeRef = useRef(false);
+  const shouldFocusPartTimeRef = useRef(initialFocusPartTime);
 
   useEffect(() => {
     const stored = storedPartTime.data;
@@ -57,6 +58,20 @@ export function GoalDetail({
       setPartTime(null);
     }
   }, [storedPartTime.data, storedPartTime.isSuccess]);
+
+  useEffect(() => {
+    if (!shouldFocusPartTimeRef.current || !goal.isSuccess || !plan.isSuccess || focusedPartTimeRef.current) return;
+    focusedPartTimeRef.current = true;
+    setHighlightPartTime(true);
+    const frame = window.requestAnimationFrame(() => {
+      partTimeSectionRef.current?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+    });
+    const timer = window.setTimeout(() => setHighlightPartTime(false), 2800);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(timer);
+    };
+  }, [goal.isSuccess, plan.isSuccess]);
 
   if (goal.isLoading || plan.isLoading) {
     return <GoalState title="Loading your goal…" detail="Reading the latest approved plan." />;
@@ -104,18 +119,6 @@ export function GoalDetail({
     }
   };
 
-  const reviewPriority = async (priority: "protected" | "important" | "flexible") => {
-    if (priority === detail.priority) return;
-    try {
-      const run = await changePriority.mutateAsync({ goalId, priority });
-      const nextApproval = approvalFromRun(run);
-      if (!nextApproval) throw new Error(run.errors?.join(" ") || "No approval draft returned");
-      setApproval(nextApproval);
-    } catch {
-      // A priority never changes until its calculated plan is explicitly approved.
-    }
-  };
-
   const loadPartTimeRecommendation = async () => {
     const parsedHours = Number.parseInt(availableHours, 10);
     if (!Number.isInteger(parsedHours) || parsedHours < 1 || parsedHours > 40) return;
@@ -132,26 +135,11 @@ export function GoalDetail({
     }
   };
 
-  const previewPartTimeImpact = async () => {
-    const expectedMonthlyIncomeSen = parseSen(expectedIncome);
-    if (expectedMonthlyIncomeSen === null) return;
-    try {
-      setPartTime(await partTimeImpact.mutateAsync({ goalId, expectedMonthlyIncomeSen }));
-    } catch {
-      // This read-only preview never changes the active plan.
-    }
-  };
-
   if (showRecommendations && partTime?.status === "available") {
     return (
       <PartTimeRecommendationPage
         goalName={detail.name}
         recommendation={partTime}
-        expectedIncome={expectedIncome}
-        onExpectedIncomeChange={setExpectedIncome}
-        impactPending={partTimeImpact.isPending}
-        impactError={partTimeImpact.isError}
-        onPreview={() => void previewPartTimeImpact()}
         onBack={() => setShowRecommendations(false)}
       />
     );
@@ -179,37 +167,17 @@ export function GoalDetail({
           </div>
           <div className="goal-detail-dates">
             <span>Target <b>{formatGoalDate(detail.target_date)}</b></span>
-            <span>Priority <b>{detail.priority}</b></span>
           </div>
-        </section>
-
-        <section className="goal-priority-section" aria-label="Goal funding priority">
-          <div className="goal-section-head">
-            <div><p className="eyebrow">Funding priority</p><h3>Choose what gets funded first</h3></div>
-          </div>
-          <p className="goal-muted">Protected goals are funded after bills and your emergency buffer, then Important, then Flexible. Within a level, the earlier target date comes first.</p>
-          <div className="goal-priority-options">
-            {(["protected", "important", "flexible"] as const).map((priority) => (
-              <button
-                type="button"
-                className={detail.priority === priority ? "selected" : ""}
-                aria-pressed={detail.priority === priority}
-                disabled={changePriority.isPending}
-                key={priority}
-                onClick={() => void reviewPriority(priority)}
-              >
-                {priority.replace(/^./, (letter) => letter.toUpperCase())}
-              </button>
-            ))}
-          </div>
-          {changePriority.isError && <p className="goal-inline-error" role="alert">Kira could not prepare that priority change. Your current plan is unchanged.</p>}
-          <p className="goal-priority-help">Changing priority recalculates the plan and asks for approval before it affects future income allocations.</p>
         </section>
 
         <GoalPlanPreview plan={currentPlan} title="Approved calculation" />
 
         {currentPlan.remaining_amount_sen > 0 && (
-          <section className="goal-part-time-section" aria-label="Part-time work reminder">
+          <section
+            ref={partTimeSectionRef}
+            className={`goal-part-time-section ${highlightPartTime ? "goal-part-time-highlight" : ""}`}
+            aria-label="Part-time work reminder"
+          >
             <div className="goal-section-head">
               <div><p className="eyebrow">Goal boost</p><h3>Could part-time work help?</h3></div>
               <span className="goal-health danger">Optional</span>
@@ -243,7 +211,7 @@ export function GoalDetail({
             ) : partTime && (
               <div className="goal-part-time-ready">
                 <span className="goal-part-time-ready-mark"><IcCheck size={15} /></span>
-                <div><b>Three work ideas are ready</b><p>Built around your availability and work preferences.</p></div>
+                <div><b>Three work ideas are ready</b><p>Includes estimated pay and goal-date effects.</p></div>
                 <button className="btn btn-primary btn-sm" onClick={() => setShowRecommendations(true)}>View ideas</button>
               </div>
             )}
@@ -333,20 +301,10 @@ function scenarioHealth(scenario: GoalScenario): { tone: "healthy" | "warning" |
 function PartTimeRecommendationPage({
   goalName,
   recommendation,
-  expectedIncome,
-  onExpectedIncomeChange,
-  impactPending,
-  impactError,
-  onPreview,
   onBack,
 }: {
   goalName: string;
   recommendation: PartTimeJobRecommendation;
-  expectedIncome: string;
-  onExpectedIncomeChange: (value: string) => void;
-  impactPending: boolean;
-  impactError: boolean;
-  onPreview: () => void;
   onBack: () => void;
 }) {
   return (
@@ -371,36 +329,59 @@ function PartTimeRecommendationPage({
                 <div><dt>Why it fits</dt><dd>{item.why_relevant}</dd></div>
                 <div><dt>First step</dt><dd>{item.first_step}</dd></div>
               </dl>
+              <div className="goal-part-time-pay">
+                <div><span>Estimated hourly</span><b>{moneyRange(item.estimated_hourly_rate_min_sen, item.estimated_hourly_rate_max_sen)}</b></div>
+                <div><span>Per work day</span><b>{moneyRange(item.estimated_daily_income_min_sen, item.estimated_daily_income_max_sen)}</b></div>
+                <div><span>Per week</span><b>{moneyRange(item.estimated_weekly_income_min_sen, item.estimated_weekly_income_max_sen)}</b></div>
+                <div><span>Per month</span><b>{moneyRange(item.estimated_monthly_income_min_sen, item.estimated_monthly_income_max_sen)}</b></div>
+              </div>
+              <p className="goal-part-time-basis">
+                {item.suggested_hours_per_week} hours across {item.suggested_work_days_per_week} {item.suggested_work_days_per_week === 1 ? "day" : "days"} weekly · {item.pay_estimate_basis}
+              </p>
+              <div className="goal-part-time-forecast">
+                <p className="eyebrow">Estimated goal effect</p>
+                <span>Monthly goal saving <b>RM{fmt(item.goal_contribution_monthly_before_sen)} → {moneyRange(item.goal_contribution_monthly_with_job_min_sen, item.goal_contribution_monthly_with_job_max_sen)}</b></span>
+                <span>Goal completion <b>{formatGoalDate(recommendation.projected_completion_before ?? null)} → {completionRange(item.projected_completion_with_max_income, item.projected_completion_with_min_income)}</b></span>
+                <span>Time saved <b>{daysRange(item.days_saved_min, item.days_saved_max)}</b></span>
+                <span>Safe to Spend today <b>No change</b></span>
+                <span>Potential daily capacity after goal <b>+{moneyRange(item.future_daily_safe_to_spend_increase_min_sen, item.future_daily_safe_to_spend_increase_max_sen)}</b></span>
+              </div>
               {(item.cautions ?? []).map((caution) => <small key={caution}>{caution}</small>)}
             </article>
           ))}
         </div>
         <section className="goal-part-time-card">
-          <p className="eyebrow">Optional scenario</p>
-          <label className="goal-part-time-input">Your realistic monthly side-income estimate (RM)
-            <input inputMode="decimal" placeholder="e.g. 800.00" value={expectedIncome} onChange={(event) => onExpectedIncomeChange(event.target.value)} />
-          </label>
-          {recommendation.monthly_income_after_sen !== undefined && recommendation.monthly_income_after_sen !== null && <div className="goal-part-time-impact">
-            <span>Income scenario <b>RM{fmt(recommendation.monthly_income_before_sen ?? 0)} → RM{fmt(recommendation.monthly_income_after_sen)}</b></span>
-            <span>Goal contribution share <b>{formatRatio(recommendation.contribution_ratio_before_bp)} → {formatRatio(recommendation.contribution_ratio_after_bp)}</b></span>
-            <span>Plan with this estimate <b>{recommendation.feasible_after ? "Feasible" : "Still needs adjustment"}</b></span>
-          </div>}
-          <button className="btn btn-primary btn-sm" disabled={impactPending || parseSen(expectedIncome) === null} onClick={onPreview}>{impactPending ? "Checking…" : "Show scenario effect"}</button>
-          <p className="goal-muted">This is a recommendation only. It does not create income or change your plan.</p>
-          {impactError && <p className="goal-inline-error" role="alert">Kira could not preview that amount. Your plan is unchanged.</p>}
+          <p className="eyebrow">How to read this forecast</p>
+          <p className="goal-muted">Pay is an AI estimate before costs or tax, not a guaranteed offer. Calculations assume all side income goes to this goal. Safe to Spend today remains unchanged until income is actually received and confirmed.</p>
+          <p className="goal-muted">The future daily amount applies only after the goal finishes, if the work continues and your commitments remain unchanged.</p>
         </section>
       </div>
     </div>
   );
 }
 
+function moneyRange(minimum: number, maximum: number): string {
+  const low = `RM${fmt(minimum)}`;
+  return minimum === maximum ? low : `${low}–RM${fmt(maximum)}`;
+}
+
+function completionRange(earliest: string | null, latest: string | null): string {
+  if (!earliest && !latest) return "Not available";
+  if (earliest === latest || !latest) return formatGoalDate(earliest);
+  if (!earliest) return formatGoalDate(latest);
+  return `${formatGoalDate(earliest)}–${formatGoalDate(latest)}`;
+}
+
+function daysRange(minimum: number | null, maximum: number | null): string {
+  if (minimum == null && maximum == null) return "Not available";
+  const low = minimum ?? maximum ?? 0;
+  const high = maximum ?? minimum ?? 0;
+  return low === high ? `${low} days` : `${low}–${high} days`;
+}
+
 function validAvailableHours(value: string): boolean {
   const hours = Number.parseInt(value, 10);
   return Number.isInteger(hours) && hours >= 1 && hours <= 40;
-}
-
-function formatRatio(value: number | null | undefined): string {
-  return value == null ? "—" : `${(value / 100).toFixed(0)}%`;
 }
 
 function GoalState({ title, detail }: { title: string; detail: string }) {

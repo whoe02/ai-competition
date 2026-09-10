@@ -6,7 +6,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DayPlan, Transaction } from "@kira/contracts";
 
 import { App } from "./App";
-import { announceGoalRecommendationReady } from "./lib/goalRecommendationEvents";
+import {
+  announceGoalRecommendationOffer,
+  announceGoalRecommendationReady,
+} from "./lib/goalRecommendationEvents";
 
 const DASHBOARD = {
   date: "2026-09-03",
@@ -452,6 +455,24 @@ describe("App", () => {
     expect(await screen.findByRole("tab", { name: "Goals" })).toHaveAttribute("aria-selected", "true");
     expect(await screen.findByText("We couldn’t load this plan")).toBeVisible();
     expect(screen.queryByRole("button", { name: /Work recommendations ready/ })).not.toBeInTheDocument();
+  });
+
+  it("delays the optional work prompt and opens the selected goal's AI section", async () => {
+    renderApp();
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    await user.click(await screen.findByRole("button", { name: /sign in/i }));
+
+    act(() => announceGoalRecommendationOffer("goal-recommendation-1", "First home"));
+    expect(screen.queryByRole("dialog", { name: "Part-time work suggestions" })).not.toBeInTheDocument();
+    act(() => vi.advanceTimersByTime(3000));
+
+    const prompt = await screen.findByRole("dialog", { name: "Part-time work suggestions" });
+    expect(within(prompt).getByText("Want to reach First home sooner?")).toBeVisible();
+    await user.click(within(prompt).getByRole("button", { name: "See suggestions" }));
+
+    expect(await screen.findByRole("tab", { name: "Goals" })).toHaveAttribute("aria-selected", "true");
+    expect(await screen.findByText("We couldn’t load this plan")).toBeVisible();
+    expect(screen.queryByRole("dialog", { name: "Part-time work suggestions" })).not.toBeInTheDocument();
   });
 });
 

@@ -645,18 +645,27 @@ def _compose_part_time(messages: Sequence[BaseMessage], text: str) -> str:
     jobs = [item for item in result.get("recommendations", []) if isinstance(item, dict)]
     if not jobs:
         return "I could not get the work ideas just now. Your goal plan is unchanged."
-    lines = [
-        f"{index}. {item.get('role_title')} — {item.get('why_relevant')} "
-        f"First step: {item.get('first_step')}"
-        for index, item in enumerate(jobs, start=1)
-    ]
+    lines = []
+    for index, item in enumerate(jobs, start=1):
+        completion = item.get("projected_completion_with_max_income")
+        completion_note = f" Earliest estimated completion: {completion}." if completion else ""
+        lines.append(
+            f"{index}. {item.get('role_title')} — {_rm(item.get('estimated_hourly_rate_min_sen'))}"
+            f"–{_rm(item.get('estimated_hourly_rate_max_sen'))}/hour, about "
+            f"{_rm(item.get('estimated_monthly_income_min_sen'))}"
+            f"–{_rm(item.get('estimated_monthly_income_max_sen'))}/month at "
+            f"{item.get('suggested_hours_per_week')} hours/week. "
+            f"{item.get('why_relevant')} First step: {item.get('first_step')}."
+            f"{completion_note}"
+        )
     guidance = result.get("overall_guidance")
     tail = f"\n{guidance}" if guidance else ""
     return (
         "Here are three part-time options matched to your goal and availability:\n"
         + "\n".join(lines)
         + tail
-        + "\nThese are recommendations only; no income or goal figure was changed."
+        + "\nThese are model-estimated forecasts, not confirmed income; no goal or "
+        "Safe to Spend figure was changed."
     )
 
 
@@ -888,7 +897,7 @@ def _compose_income_split(messages: Sequence[BaseMessage], text: str) -> str:
         f"I recommend {details}.\n"
         f"That earmarks {_rm(result.get('allocated_sen'))}; "
         f"{_rm(result.get('unallocated_income_sen'))} remains unallocated. "
-        "The split protects bills and your emergency buffer and follows goal priority."
+        "The split protects bills and your emergency buffer, then funds goals by target date."
     )
 
 

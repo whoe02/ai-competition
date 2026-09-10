@@ -42,7 +42,7 @@ async def _user(session) -> User:
     return user
 
 
-async def _active_goal(session, user, *, name: str, priority: str, target: int):
+async def _active_goal(session, user, *, name: str, target: int, target_date: date):
     goal, draft = await create_draft_goal(
         session,
         user,
@@ -50,8 +50,7 @@ async def _active_goal(session, user, *, name: str, priority: str, target: int):
         name=name,
         target_amount_sen=target,
         current_saved_sen=0,
-        target_date=date(2026, 9, 10),
-        priority=priority,
+        target_date=target_date,
         funding_account_ids=(),
         as_of_utc=AS_OF,
     )
@@ -69,11 +68,11 @@ async def _active_goal(session, user, *, name: str, priority: str, target: int):
 
 async def test_approved_income_split_updates_progress_versions_and_daily_reserve(session):
     user = await _user(session)
-    protected = await _active_goal(
-        session, user, name="Emergency", priority="protected", target=30_000
+    emergency = await _active_goal(
+        session, user, name="Emergency", target=30_000, target_date=date(2026, 9, 10)
     )
-    flexible = await _active_goal(
-        session, user, name="Holiday", priority="flexible", target=40_000
+    holiday = await _active_goal(
+        session, user, name="Holiday", target=40_000, target_date=date(2026, 10, 10)
     )
     income = Transaction(
         user_id=user.id,
@@ -98,8 +97,8 @@ async def test_approved_income_split_updates_progress_versions_and_daily_reserve
 
     applied = await apply_income_allocation(session, user, income.id, AS_OF)
     assert sum(item.amount_sen for item in applied.contributions) == 50_000
-    assert protected.saved.sen == 30_000
-    assert flexible.saved.sen == 20_000
+    assert emergency.saved.sen == 30_000
+    assert holiday.saved.sen == 20_000
     assert income.goal_allocation_applied is True
     assert all(item.plan_version == 3 for item in applied.contributions)
 

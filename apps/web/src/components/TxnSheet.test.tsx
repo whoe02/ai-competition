@@ -35,7 +35,6 @@ const PLAN = {
     {
       goal_id: "20000000-0000-0000-0000-000000000001",
       name: "House",
-      priority: "important",
       amount_sen: 150_000,
       income_share_bp: 3000,
       remaining_after_sen: 4_850_000,
@@ -67,7 +66,7 @@ describe("TxnSheet income allocation", () => {
       </QueryClientProvider>,
     );
 
-    expect(await screen.findByText(/House · important/)).toBeInTheDocument();
+    expect(await screen.findByText("House")).toBeInTheDocument();
     expect(screen.getByText(/RM1,500.00 · 30.00%/)).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Approve goal contributions" }));
     await waitFor(() => expect(fetch).toHaveBeenCalledWith(
@@ -94,7 +93,7 @@ describe("TxnSheet income allocation", () => {
       </QueryClientProvider>,
     );
 
-    await screen.findByText(/House · important/);
+    await screen.findByText("House");
     await userEvent.click(screen.getByRole("button", { name: "Not now" }));
     expect(await screen.findByText(/No goal contribution was made/)).toBeInTheDocument();
     expect(fetch).not.toHaveBeenCalledWith(

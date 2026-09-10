@@ -776,7 +776,7 @@ export interface paths {
         put?: never;
         /**
          * Post Part Time Recommendation
-         * @description Ask AI for job-type wording around a deterministic income projection.
+         * @description Ask AI for jobs and hourly ranges, then calculate their forecasts in code.
          */
         post: operations["post_part_time_recommendation_v1_goals__goal_id__part_time_recommendation_post"];
         delete?: never;
@@ -1476,12 +1476,6 @@ export interface components {
              * Format: date
              */
             target_date: string;
-            /**
-             * Priority
-             * @default flexible
-             * @enum {string}
-             */
-            priority: "protected" | "important" | "flexible";
             /** Funding Account Ids */
             funding_account_ids?: string[];
         };
@@ -1569,11 +1563,6 @@ export interface components {
              */
             horizon: "short" | "long";
             /**
-             * Priority
-             * @enum {string}
-             */
-            priority: "protected" | "important" | "flexible";
-            /**
              * Status
              * @enum {string}
              */
@@ -1611,8 +1600,6 @@ export interface components {
             target_date?: string | null;
             /** Contribution Per Payday Sen */
             contribution_per_payday_sen?: number | null;
-            /** Priority */
-            priority?: ("protected" | "important" | "flexible") | null;
             /** Funding Account Ids */
             funding_account_ids?: string[];
             /** Proposed Spend Sen */
@@ -1717,11 +1704,6 @@ export interface components {
             goal_id: string;
             /** Name */
             name: string;
-            /**
-             * Priority
-             * @enum {string}
-             */
-            priority: "protected" | "important" | "flexible";
             /** Amount Sen */
             amount_sen: number;
             /** Income Share Bp */
@@ -1949,11 +1931,6 @@ export interface components {
             name: string;
             /** Horizon */
             horizon: string;
-            /**
-             * Priority
-             * @enum {string}
-             */
-            priority: "protected" | "important" | "flexible";
             /** Target Sen */
             target_sen: number;
             /** Saved Sen */
@@ -2093,14 +2070,58 @@ export interface components {
             work_arrangement: string;
             /** First Step */
             first_step: string;
+            /** Estimated Hourly Rate Min Sen */
+            estimated_hourly_rate_min_sen: number;
+            /** Estimated Hourly Rate Max Sen */
+            estimated_hourly_rate_max_sen: number;
+            /** Suggested Hours Per Week */
+            suggested_hours_per_week: number;
+            /** Suggested Work Days Per Week */
+            suggested_work_days_per_week: number;
+            /** Pay Estimate Basis */
+            pay_estimate_basis: string;
+            /** Estimated Daily Income Min Sen */
+            estimated_daily_income_min_sen: number;
+            /** Estimated Daily Income Max Sen */
+            estimated_daily_income_max_sen: number;
+            /** Estimated Weekly Income Min Sen */
+            estimated_weekly_income_min_sen: number;
+            /** Estimated Weekly Income Max Sen */
+            estimated_weekly_income_max_sen: number;
+            /** Estimated Monthly Income Min Sen */
+            estimated_monthly_income_min_sen: number;
+            /** Estimated Monthly Income Max Sen */
+            estimated_monthly_income_max_sen: number;
+            /** Goal Contribution Monthly Before Sen */
+            goal_contribution_monthly_before_sen: number;
+            /** Goal Contribution Monthly With Job Min Sen */
+            goal_contribution_monthly_with_job_min_sen: number;
+            /** Goal Contribution Monthly With Job Max Sen */
+            goal_contribution_monthly_with_job_max_sen: number;
+            /** Projected Completion With Min Income */
+            projected_completion_with_min_income: string | null;
+            /** Projected Completion With Max Income */
+            projected_completion_with_max_income: string | null;
+            /** Days Saved Min */
+            days_saved_min: number | null;
+            /** Days Saved Max */
+            days_saved_max: number | null;
+            /** Safe To Spend Today Change Sen */
+            safe_to_spend_today_change_sen: number;
+            /** Future Daily Safe To Spend Increase Min Sen */
+            future_daily_safe_to_spend_increase_min_sen: number;
+            /** Future Daily Safe To Spend Increase Max Sen */
+            future_daily_safe_to_spend_increase_max_sen: number;
             /** Cautions */
             cautions: string[];
         };
         /**
          * PartTimeJobRecommendationResponse
-         * @description Read-only AI work idea and an optional user-supplied scenario.
+         * @description Read-only AI work ideas with deterministic income and goal forecasts.
          */
         PartTimeJobRecommendationResponse: {
+            /** Recommendation Schema Version */
+            recommendation_schema_version: number;
             /**
              * Goal Id
              * Format: uuid

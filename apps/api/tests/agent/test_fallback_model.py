@@ -13,7 +13,10 @@ from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 from pydantic import BaseModel
 
-from kira.agent.llm import FallbackChatModel, get_chat_model
+from kira.agent.llm import (
+    FallbackChatModel,
+    get_chat_model,
+)
 
 
 class Named(BaseChatModel):
@@ -122,4 +125,22 @@ def test_one_model_configured_is_left_unwrapped(monkeypatch) -> None:
     get_settings.cache_clear()
     assert not isinstance(get_chat_model(), FallbackChatModel)
 
+    get_settings.cache_clear()
+
+
+def test_part_time_recommendations_share_the_butler_model_ladder(monkeypatch) -> None:
+    from kira.config import get_settings
+
+    monkeypatch.setenv("DASHSCOPE_API_KEY", "sk-test")
+    monkeypatch.setenv("BUTLER_OFFLINE", "0")
+    monkeypatch.setenv("BUTLER_MODEL", "partner-model")
+    monkeypatch.setenv("BUTLER_FALLBACK_MODEL", "partner-fallback")
+    get_settings.cache_clear()
+
+    model = get_chat_model(temperature=0.2)
+
+    assert isinstance(model, FallbackChatModel)
+    assert model.primary.model_name == "partner-model"
+    assert model.secondary.model_name == "partner-fallback"
+    assert "part_time_recommender_model" not in type(get_settings()).model_fields
     get_settings.cache_clear()

@@ -66,6 +66,7 @@ async def _list(ctx: ToolContext, _: NoArgs) -> ToolResult:
 
 
 async def _recommend_part_time(ctx: ToolContext, args: PartTimeRecommendationArgs) -> ToolResult:
+    currency = ctx.currency
     try:
         goal = (
             await owned_goal(ctx.session, ctx.user, args.goal_id)
@@ -117,7 +118,7 @@ async def _recommend_part_time(ctx: ToolContext, args: PartTimeRecommendationArg
             datetime.combine(ctx.today, time.min, tzinfo=UTC),
             available_hours_per_week=args.available_hours_per_week,
             work_mode=args.work_mode,
-            model=get_chat_model(streaming=False, temperature=0.2),
+            model=get_chat_model(temperature=0.2),
             transport_limitations=args.transport_limitations,
         )
     except PlannedGoalNotFound:
@@ -169,15 +170,29 @@ async def _recommend_part_time(ctx: ToolContext, args: PartTimeRecommendationArg
         EvidenceRow("Recommendation status", recommendation_status),
     )
     if status == "available":
-        evidence += tuple(
-            EvidenceRow(
-                f"Work idea {index}",
-                f"{item.get('role_title')} · {item.get('work_arrangement')} · "
-                f"{item.get('why_relevant')} First step: {item.get('first_step')}",
+        for index, item in enumerate(value.get("recommendations", []), start=1):
+            if not isinstance(item, dict):
+                continue
+            hourly_min = money_str(
+                Money(int(item.get("estimated_hourly_rate_min_sen", 0)), currency)
             )
-            for index, item in enumerate(value.get("recommendations", []), start=1)
-            if isinstance(item, dict)
-        )
+            hourly_max = money_str(
+                Money(int(item.get("estimated_hourly_rate_max_sen", 0)), currency)
+            )
+            monthly_min = money_str(
+                Money(int(item.get("estimated_monthly_income_min_sen", 0)), currency)
+            )
+            monthly_max = money_str(
+                Money(int(item.get("estimated_monthly_income_max_sen", 0)), currency)
+            )
+            evidence += (
+                EvidenceRow(
+                    f"Work idea {index}",
+                    f"{item.get('role_title')} · {item.get('suggested_hours_per_week')} "
+                    f"hours/week · {hourly_min}–{hourly_max}/hour · estimated "
+                    f"{monthly_min}–{monthly_max}/month · {item.get('why_relevant')}",
+                ),
+            )
     return ToolResult(value, evidence)
 
 
@@ -202,8 +217,10 @@ SPECS = (
         description=(
             "Return three read-only AI part-time job recommendations for one goal, using the "
             "user's profile job title, weekly availability, work-mode preference and "
-            "transport limits. Ask for weekly hours and work mode if the user did not "
-            "provide them. Never use this to edit income."
+            "transport limits. Each includes an AI-estimated hourly pay range and "
+            "backend-calculated daily, weekly, monthly and goal-timeline effects. Ask for "
+            "weekly hours and work mode if the user did not provide them. Never use this "
+            "to edit income or Safe to Spend."
         ),
         args_model=PartTimeRecommendationArgs,
         handler=_recommend_part_time,

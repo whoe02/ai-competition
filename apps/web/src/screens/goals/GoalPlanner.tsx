@@ -23,23 +23,26 @@ type GoalPage = { name: "home" } | { name: "create" } | { name: "detail"; goalId
 export function GoalPlanner({
   onOpenForesight,
   recommendationGoalId,
+  recommendationFocusGoalId,
   onRecommendationOpened,
 }: {
   onOpenForesight?: () => void;
   recommendationGoalId?: string;
+  recommendationFocusGoalId?: string;
   onRecommendationOpened?: () => void;
 }) {
+  const destinationGoalId = recommendationGoalId ?? recommendationFocusGoalId;
   const [page, setPage] = useState<GoalPage>(
-    recommendationGoalId
-      ? { name: "detail", goalId: recommendationGoalId }
+    destinationGoalId
+      ? { name: "detail", goalId: destinationGoalId }
       : { name: "home" },
   );
 
   useEffect(() => {
-    if (!recommendationGoalId) return;
-    setPage({ name: "detail", goalId: recommendationGoalId });
+    if (!destinationGoalId) return;
+    setPage({ name: "detail", goalId: destinationGoalId });
     onRecommendationOpened?.();
-  }, [recommendationGoalId, onRecommendationOpened]);
+  }, [destinationGoalId, onRecommendationOpened]);
 
   if (page.name === "create") {
     return (
@@ -54,6 +57,7 @@ export function GoalPlanner({
       <GoalDetail
         goalId={page.goalId}
         initialShowRecommendations={page.goalId === recommendationGoalId}
+        initialFocusPartTime={page.goalId === recommendationFocusGoalId}
         onBack={() => setPage({ name: "home" })}
       />
     );
@@ -231,7 +235,7 @@ function GoalCard({
         onClick={onDelete}
       >×</button>
       <div className="goal-section-head">
-        <span className="goal-horizon">{goal.priority.replace(/^./, (letter) => letter.toUpperCase())} · {goal.horizon === "short" ? "Short-term" : "Long-term"}</span>
+        <span className="goal-horizon">{goal.horizon === "short" ? "Short-term" : "Long-term"}</span>
         <span className={`goal-health ${danger ? "danger" : "healthy"}`}>{health}</span>
       </div>
       <div className="goal-card-title"><div><p>{detail.data ? goalTypeLabel(detail.data.goal_type) : "Goal"}</p><h2>{goal.name}</h2></div><b>{progress}%</b></div>

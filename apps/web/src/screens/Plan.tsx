@@ -18,6 +18,7 @@ type PlanProps = {
   isError?: boolean;
   onDriver?: (driver: ForesightDriver) => void;
   recommendationGoalId?: string;
+  recommendationFocusGoalId?: string;
   onRecommendationOpened?: () => void;
 };
 
@@ -60,6 +61,7 @@ export function Plan({
   isError = false,
   onDriver = () => undefined,
   recommendationGoalId,
+  recommendationFocusGoalId,
   onRecommendationOpened,
 }: PlanProps) {
   const [view, setView] = useState<PlanView>(initialView);
@@ -113,29 +115,20 @@ export function Plan({
         </div>
       ) : (
         <div id="plan-goals-panel" role="tabpanel" aria-labelledby="plan-goals-tab">
-          {view === "foresight" ? (
-            <Foresight
-              data={data}
-              goals={goals}
-              isLoading={isLoading}
-              isError={isError}
-              onBack={() => setView("goals")}
-              onDriver={onDriver}
-            />
-          ) : (
-            <GoalPlanner
-              onOpenForesight={() => setView("foresight")}
-              recommendationGoalId={recommendationGoalId}
-              onRecommendationOpened={onRecommendationOpened}
-            />
-          )}
+          <GoalPlanner
+            recommendationGoalId={recommendationGoalId}
+            recommendationFocusGoalId={recommendationFocusGoalId}
+            onRecommendationOpened={onRecommendationOpened}
+          />
         </div>
       )}
     </>
   );
 }
 
-function Foresight({
+// Retained as an exported component while the forecast API is still consumed elsewhere;
+// it is no longer reachable from the Goals screen.
+export function Foresight({
   data,
   goals,
   isLoading,

@@ -122,7 +122,7 @@ function IncomeGoalAllocation({ txn }: { txn: Transaction }) {
                 <div style={{ display: "grid", gap: 7, marginTop: 10 }}>
                   {allocation.data.allocations.map((item) => (
                     <div key={item.goal_id} style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 13 }}>
-                      <span>{item.name} · {item.priority}</span>
+                      <span>{item.name}</span>
                       <b>RM{fmt(item.amount_sen)} · {(item.income_share_bp / 100).toFixed(2)}%</b>
                     </div>
                   ))}

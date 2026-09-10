@@ -44,7 +44,6 @@ def _value(plan) -> dict:
             {
                 "goal_id": item.goal_id,
                 "name": item.name,
-                "priority": item.priority,
                 "amount_sen": item.amount_sen,
                 "income_share_bp": item.income_share_bp,
                 "remaining_after_sen": item.remaining_after_sen,

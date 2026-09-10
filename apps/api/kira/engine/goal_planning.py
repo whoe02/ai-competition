@@ -34,16 +34,10 @@ LONG_TERM_GOAL_TYPES = frozenset(
     }
 )
 GOAL_TYPES = SHORT_TERM_GOAL_TYPES | LONG_TERM_GOAL_TYPES
-GOAL_PRIORITIES = frozenset({"protected", "important", "flexible"})
 GOAL_STATUSES = frozenset(
     {"draft", "active", "at_risk", "needs_replan", "paused", "achieved", "cancelled"}
 )
 DATA_CONFIDENCE_LEVELS = frozenset({"low", "medium", "high"})
-
-# This is deliberately a small, explicit hierarchy rather than an inferred score.
-# A user can see and change it; a model must never choose it for them.
-_PRIORITY_ORDER = {"protected": 0, "important": 1, "flexible": 2}
-
 
 def _require_int(name: str, value: int, *, minimum: int | None = 0) -> None:
     if isinstance(value, bool) or not isinstance(value, int):
@@ -68,7 +62,6 @@ class GoalDefinition:
     target_amount_sen: int
     current_saved_sen: int
     target_date: date
-    priority: str
     status: str
     funding_account_ids: tuple[str, ...] = ()
 
@@ -111,7 +104,6 @@ class ProtectedCommitment:
 class ActiveGoalReserve:
     goal_id: str
     next_required_reserve_sen: int
-    priority: str
 
     def __post_init__(self) -> None:
         _require_int("next_required_reserve_sen", self.next_required_reserve_sen)
@@ -239,14 +231,11 @@ class GoalFundingNeed:
 
     goal_id: str
     name: str
-    priority: str
     target_date: date
     remaining_amount_sen: int
     required_contribution_sen: int
 
     def __post_init__(self) -> None:
-        if self.priority not in GOAL_PRIORITIES:
-            raise ValueError(f"unsupported priority: {self.priority}")
         _require_int("remaining_amount_sen", self.remaining_amount_sen)
         _require_int("required_contribution_sen", self.required_contribution_sen)
 
@@ -255,7 +244,6 @@ class GoalFundingNeed:
 class GoalAllocation:
     goal_id: str
     name: str
-    priority: str
     amount_sen: int
     income_share_bp: int
     remaining_after_sen: int
@@ -287,8 +275,8 @@ def allocate_income_to_goals(
     """Split confirmed available income without allowing an LLM to set amounts.
 
     Bills and the emergency buffer are removed first. Goals then receive at
-    most their required payday contribution in priority, target-date, and
-    stable-id order. The stable ordering makes identical inputs reproducible.
+    most their required payday contribution in target-date and stable-id order.
+    The stable ordering makes identical inputs reproducible.
     """
     _require_int("income_amount_sen", income_amount_sen, minimum=1)
     commitments = _commitments_due_before_next_payday(snapshot)
@@ -297,14 +285,7 @@ def allocate_income_to_goals(
     available = min(income_amount_sen, available_cash)
     left = available
     allocations: list[GoalAllocation] = []
-    for goal in sorted(
-        goals,
-        key=lambda item: (
-            _PRIORITY_ORDER[item.priority],
-            item.target_date,
-            item.goal_id,
-        ),
-    ):
+    for goal in sorted(goals, key=lambda item: (item.target_date, item.goal_id)):
         need = min(goal.remaining_amount_sen, goal.required_contribution_sen)
         amount = min(left, need)
         if amount > 0:
@@ -312,7 +293,6 @@ def allocate_income_to_goals(
                 GoalAllocation(
                     goal_id=goal.goal_id,
                     name=goal.name,
-                    priority=goal.priority,
                     amount_sen=amount,
                     income_share_bp=amount * 10_000 // income_amount_sen,
                     remaining_after_sen=max(0, goal.remaining_amount_sen - amount),
@@ -345,7 +325,7 @@ def allocate_income_to_goals(
         assumptions=(
             "only confirmed income and financial records are used",
             "protected commitments and the emergency buffer are reserved first",
-            "goals are ordered by priority, target date, then stable goal id",
+            "goals are ordered by target date, then stable goal id",
             "each goal receives no more than its deterministic payday requirement",
         ),
         calculation_version=ALLOCATION_CALCULATION_VERSION,
@@ -369,8 +349,6 @@ def validate_goal_definition(goal: GoalDefinition, *, as_of_date: date | None = 
         raise ValueError("currency must be a three-letter uppercase ISO code")
     _require_int("target_amount_sen", goal.target_amount_sen, minimum=1)
     _require_int("current_saved_sen", goal.current_saved_sen)
-    if goal.priority not in GOAL_PRIORITIES:
-        raise ValueError(f"unsupported priority: {goal.priority}")
     if goal.status not in GOAL_STATUSES:
         raise ValueError(f"unsupported status: {goal.status}")
     if as_of_date is not None and goal.target_date < as_of_date and goal.status != "achieved":
@@ -483,38 +461,17 @@ def _other_goal_reserves(snapshot: FinancialSnapshot, goal_id: str) -> int:
     )
 
 
-def _higher_or_equal_priority_reserves(
-    snapshot: FinancialSnapshot, goal_id: str, priority: str
-) -> int:
-    """Return claims that must be funded before this goal's claim.
-
-    A lower-priority goal must not make a protected or important goal look less
-    fundable. Goals in the same tier still compete fairly; the actual income
-    allocation then resolves those ties by target date and stable goal id.
-    """
-    return sum(
-        plan.next_required_reserve_sen
-        for plan in snapshot.active_goal_plans
-        if plan.goal_id != goal_id
-        and _PRIORITY_ORDER[plan.priority] <= _PRIORITY_ORDER[priority]
-    )
-
-
-def _available_before_goal(
-    snapshot: FinancialSnapshot, goal_id: str, priority: str
-) -> int:
+def _available_before_goal(snapshot: FinancialSnapshot, goal_id: str) -> int:
     return max(
         0,
         snapshot.cash_available_sen
         - snapshot.emergency_buffer_sen
         - _commitments_due_before_next_payday(snapshot)
-        - _higher_or_equal_priority_reserves(snapshot, goal_id, priority),
+        - _other_goal_reserves(snapshot, goal_id),
     )
 
 
-def _payday_capacity(
-    snapshot: FinancialSnapshot, goal_id: str, priority: str, payday: date
-) -> int | None:
+def _payday_capacity(snapshot: FinancialSnapshot, goal_id: str, payday: date) -> int | None:
     income = snapshot.next_income_payday.amount_sen
     if income is None:
         return None
@@ -528,15 +485,15 @@ def _payday_capacity(
         0,
         income
         - cycle_commitments
-        - _higher_or_equal_priority_reserves(snapshot, goal_id, priority),
+        - _other_goal_reserves(snapshot, goal_id),
     )
 
 
 def _minimum_payday_capacity(
-    snapshot: FinancialSnapshot, goal_id: str, priority: str, through: date
+    snapshot: FinancialSnapshot, goal_id: str, through: date
 ) -> int | None:
     capacities = [
-        _payday_capacity(snapshot, goal_id, priority, payday)
+        _payday_capacity(snapshot, goal_id, payday)
         for payday in _paydays_through(snapshot, through)
     ]
     if not capacities or any(capacity is None for capacity in capacities):
@@ -640,9 +597,9 @@ def calculate_goal_feasibility(goal: GoalDefinition, snapshot: FinancialSnapshot
     paydays = _paydays_through(snapshot, goal.target_date)
     required = calculate_required_contribution(goal, snapshot)
     next_reserve = min(remaining, required)
-    available_now = _available_before_goal(snapshot, goal.goal_id, goal.priority)
+    available_now = _available_before_goal(snapshot, goal.goal_id)
     recurring_capacity = _minimum_payday_capacity(
-        snapshot, goal.goal_id, goal.priority, goal.target_date
+        snapshot, goal.goal_id, goal.target_date
     )
     risks: list[str] = []
     assumptions = [
@@ -650,7 +607,7 @@ def calculate_goal_feasibility(goal: GoalDefinition, snapshot: FinancialSnapshot
         f"{snapshot.next_income_payday.payday_date.isoformat()}",
         "confirmed cash, commitments, and account records are used",
         "emergency buffer and near-term commitments remain reserved",
-        "higher and equal-priority goals reserve capacity before this goal",
+        "all other active goals reserve capacity before this goal",
     ]
 
     if remaining == 0:
@@ -666,16 +623,12 @@ def calculate_goal_feasibility(goal: GoalDefinition, snapshot: FinancialSnapshot
         # never becomes an invented positive number.
         cash_covers_goal = available_now >= remaining
         schedule = build_goal_contribution_schedule(goal, snapshot, required)
-        first_payday_capacity = _payday_capacity(
-            snapshot, goal.goal_id, goal.priority, paydays[0]
-        )
+        first_payday_capacity = _payday_capacity(snapshot, goal.goal_id, paydays[0])
         first_capacity = available_now + (first_payday_capacity or 0)
         first_safe = first_capacity >= schedule[0].amount_sen
         future_safe = cash_covers_goal or all(
             (
-                capacity := _payday_capacity(
-                    snapshot, goal.goal_id, goal.priority, item.payday
-                )
+                capacity := _payday_capacity(snapshot, goal.goal_id, item.payday)
             )
             and capacity >= item.amount_sen
             for item in schedule[1:]
@@ -756,25 +709,19 @@ def calculate_goal_plan_for_contribution(
         snapshot,
         contribution_per_payday_sen=contribution_per_payday_sen,
     )
-    available_now = _available_before_goal(
-        snapshot, effective.goal_id, effective.priority
-    )
+    available_now = _available_before_goal(snapshot, effective.goal_id)
     cash_covers = available_now >= remaining
     first_safe = bool(schedule) and (
         available_now
         + (
-            _payday_capacity(
-                snapshot, effective.goal_id, effective.priority, schedule[0].payday
-            )
+            _payday_capacity(snapshot, effective.goal_id, schedule[0].payday)
             or 0
         )
         >= schedule[0].amount_sen
     )
     future_safe = all(
         (
-            capacity := _payday_capacity(
-                snapshot, effective.goal_id, effective.priority, item.payday
-            )
+            capacity := _payday_capacity(snapshot, effective.goal_id, item.payday)
         )
         and capacity >= item.amount_sen
         for item in schedule[1:]
@@ -791,7 +738,7 @@ def calculate_goal_plan_for_contribution(
         "the selected per-payday contribution is fixed",
         "confirmed cash, commitments, and account records are used",
         "emergency buffer and near-term commitments remain reserved",
-        "higher and equal-priority goals reserve capacity before this goal",
+        "all other active goals reserve capacity before this goal",
     ]
     if remaining == 0:
         risks.append("goal_already_achieved")
@@ -848,17 +795,15 @@ def _scenario(
     projected = calculate_projected_completion_date(goal, snapshot, contribution)
     target = projected or goal.target_date
     delay = max(0, (target - goal.target_date).days)
-    available_now = _available_before_goal(snapshot, goal.goal_id, goal.priority)
+    available_now = _available_before_goal(snapshot, goal.goal_id)
     cash_covers = available_now >= baseline.remaining_amount_sen
     scenario_goal = replace(goal, target_date=target)
     schedule = build_goal_contribution_schedule(
         scenario_goal, snapshot, contribution_per_payday_sen=contribution
     )
-    first_capacity = _available_before_goal(snapshot, goal.goal_id, goal.priority) + (
+    first_capacity = _available_before_goal(snapshot, goal.goal_id) + (
         (
-            _payday_capacity(
-                snapshot, goal.goal_id, goal.priority, schedule[0].payday
-            )
+            _payday_capacity(snapshot, goal.goal_id, schedule[0].payday)
             or 0
         )
         if schedule
@@ -866,9 +811,7 @@ def _scenario(
     )
     future_safe = all(
         (
-            capacity := _payday_capacity(
-                snapshot, goal.goal_id, goal.priority, item.payday
-            )
+            capacity := _payday_capacity(snapshot, goal.goal_id, item.payday)
         ) is not None
         and capacity >= item.amount_sen
         for item in schedule[1:]
@@ -921,7 +864,7 @@ def generate_goal_scenarios(
     baseline = calculate_goal_feasibility(goal, snapshot)
     required = baseline.required_contribution_per_payday_sen
     recurring = _minimum_payday_capacity(
-        snapshot, goal.goal_id, goal.priority, goal.target_date
+        snapshot, goal.goal_id, goal.target_date
     )
     income = snapshot.next_income_payday.amount_sen
 
@@ -960,7 +903,7 @@ def generate_goal_scenarios(
         # and do not invent percentage-based affordability.
         fallback = recurring
         if fallback is None:
-            fallback = _available_before_goal(snapshot, goal.goal_id, goal.priority)
+            fallback = _available_before_goal(snapshot, goal.goal_id)
         cash_safe = min(reduced_required, (fallback * 4) // 5)
         accelerated = min(
             required + _ceil_div(required, 4) if required else 0,
@@ -1069,7 +1012,6 @@ def evaluate_goal_impact(
         target_amount_sen=goal_plan.target_amount_sen,
         current_saved_sen=goal_plan.current_saved_sen,
         target_date=goal_plan.target_date,
-        priority="flexible",
         status="active",
     )
     projected = calculate_projected_completion_date(

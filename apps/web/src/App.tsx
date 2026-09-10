@@ -26,7 +26,9 @@ import { NavItem } from "./components/NavItem";
 import { ScrollContext } from "./components/Reveal";
 import { SheetHostContext } from "./components/Sheet";
 import {
+  GOAL_RECOMMENDATION_OFFER,
   GOAL_RECOMMENDATION_READY,
+  type GoalRecommendationOfferDetail,
   type GoalRecommendationReadyDetail,
 } from "./lib/goalRecommendationEvents";
 import { Activity } from "./screens/Activity";
@@ -63,6 +65,9 @@ export function App() {
   const [entry, setEntry] = useState<{ initialText: string } | null>(null);
   const [recommendationReadyGoalId, setRecommendationReadyGoalId] = useState<string | null>(null);
   const [recommendationGoalId, setRecommendationGoalId] = useState<string | null>(null);
+  const [recommendationFocusGoalId, setRecommendationFocusGoalId] = useState<string | null>(null);
+  const [recommendationOffer, setRecommendationOffer] = useState<GoalRecommendationOfferDetail | null>(null);
+  const recommendationOfferTimer = useRef<number | null>(null);
   const [now, setNow] = useState(() => new Date());
   // A sentence raised from Today or Activity, handed to the Butler to ask.
   const [pending, setPending] = useState<{ text: string; attachment?: EntryAttachment } | null>(
@@ -94,6 +99,27 @@ export function App() {
   useEffect(() => {
     const timer = setTimeout(() => setBoot(false), 2500);
     return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    const onOffer = (event: Event) => {
+      const detail = (event as CustomEvent<GoalRecommendationOfferDetail>).detail;
+      if (!detail?.goalId) return;
+      if (recommendationOfferTimer.current !== null) {
+        window.clearTimeout(recommendationOfferTimer.current);
+      }
+      recommendationOfferTimer.current = window.setTimeout(() => {
+        setRecommendationOffer(detail);
+        recommendationOfferTimer.current = null;
+      }, 3000);
+    };
+    window.addEventListener(GOAL_RECOMMENDATION_OFFER, onOffer);
+    return () => {
+      window.removeEventListener(GOAL_RECOMMENDATION_OFFER, onOffer);
+      if (recommendationOfferTimer.current !== null) {
+        window.clearTimeout(recommendationOfferTimer.current);
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -289,7 +315,11 @@ export function App() {
                       isError={foresight.isError}
                       onDriver={proposeDriver}
                       recommendationGoalId={recommendationGoalId ?? undefined}
-                      onRecommendationOpened={() => setRecommendationGoalId(null)}
+                      recommendationFocusGoalId={recommendationFocusGoalId ?? undefined}
+                      onRecommendationOpened={() => {
+                        setRecommendationGoalId(null);
+                        setRecommendationFocusGoalId(null);
+                      }}
                     />
                   )}
                   {signedIn && tab === "more" && (
@@ -340,10 +370,36 @@ export function App() {
               <span className="goal-recommendations-toast-mark"><IcCheck size={16} /></span>
               <span>
                 <b>Work recommendations ready</b>
-                <small>Tap to open {dashboard.data?.goals.find((goal) => goal.id === recommendationReadyGoalId)?.name ?? "your goal"}</small>
+                <small>Tap to see estimated pay and the effect on {dashboard.data?.goals.find((goal) => goal.id === recommendationReadyGoalId)?.name ?? "your goal"}</small>
               </span>
               <IcChev size={18} />
             </button>
+          )}
+
+          {signedIn && recommendationOffer && (
+            <section className="goal-recommendation-offer" role="dialog" aria-modal="false" aria-label="Part-time work suggestions">
+              <span className="goal-recommendation-offer-mark"><IcSpark size={18} /></span>
+              <div>
+                <p className="eyebrow">Optional goal boost</p>
+                <b>Want to reach {recommendationOffer.goalName || "your goal"} sooner?</b>
+                <small>Kira can suggest part-time work that fits your job, available hours and work preferences.</small>
+              </div>
+              <div className="goal-recommendation-offer-actions">
+                <button
+                  className="btn btn-primary btn-sm"
+                  type="button"
+                  onClick={() => {
+                    setRecommendationFocusGoalId(recommendationOffer.goalId);
+                    setRecommendationOffer(null);
+                    setPlanView("goals");
+                    if (tab !== "plan") go("plan", "goals");
+                  }}
+                >
+                  See suggestions
+                </button>
+                <button className="btn btn-quiet btn-sm" type="button" onClick={() => setRecommendationOffer(null)}>Not now</button>
+              </div>
+            </section>
           )}
 
           {signedIn && (

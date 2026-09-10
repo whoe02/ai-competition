@@ -70,7 +70,6 @@ def _goal_response(goal: Goal, current_plan_version: int | None = None) -> GoalD
         current_saved_sen=goal.saved.sen,
         target_date=goal.target_date,
         horizon=goal.horizon,
-        priority=goal.priority,
         status=goal.status,
         funding_account_ids=[uuid.UUID(value) for value in goal.funding_account_ids],
         current_plan_version=current_plan_version,
@@ -210,7 +209,6 @@ async def create_goal(
             target_amount_sen=body.target_amount_sen,
             current_saved_sen=body.current_saved_sen,
             target_date=body.target_date,
-            priority=body.priority,
             funding_account_ids=tuple(body.funding_account_ids),
             as_of_utc=_as_of_utc(),
         )
@@ -310,7 +308,7 @@ async def post_part_time_recommendation(
     user: CurrentUser,
     session: SessionDep,
 ) -> PartTimeJobRecommendationResponse:
-    """Ask AI for job-type wording around a deterministic income projection."""
+    """Ask AI for jobs and hourly ranges, then calculate their forecasts in code."""
     try:
         data = await create_part_time_recommendation(
             session,
@@ -319,7 +317,7 @@ async def post_part_time_recommendation(
             _as_of_utc(),
             available_hours_per_week=body.available_hours_per_week,
             work_mode=body.work_mode,
-            model=get_chat_model(streaming=False, temperature=0.2),
+            model=get_chat_model(temperature=0.2),
             transport_limitations=body.transport_limitations,
         )
     except GoalNotFound as exc:

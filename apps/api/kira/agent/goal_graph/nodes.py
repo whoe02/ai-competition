@@ -222,7 +222,6 @@ def _definition_for_existing(goal: Goal, intent: GoalIntent) -> GoalDefinition:
             intent.current_saved_sen if intent.current_saved_sen is not None else goal.saved.sen
         ),
         target_date=intent.target_date,
-        priority=intent.priority or goal.priority,
         status=goal.status,
         funding_account_ids=tuple(goal.funding_account_ids),
     )
@@ -252,7 +251,6 @@ async def goal_policy_guard(
             target_amount_sen=int(intent.target_amount_sen),
             current_saved_sen=int(intent.current_saved_sen),
             target_date=intent.target_date,
-            priority=intent.priority or "flexible",
             status="draft",
             funding_account_ids=tuple(str(value) for value in intent.funding_account_ids),
         )
@@ -278,7 +276,6 @@ async def goal_policy_guard(
             else definition.current_saved_sen
         ),
         target_date=intent.target_date or definition.target_date,
-        priority=intent.priority or definition.priority,
         funding_account_ids=(
             tuple(str(value) for value in intent.funding_account_ids)
             if intent.funding_account_ids
@@ -574,12 +571,10 @@ def _plan_changed(state: GoalGraphState) -> bool:
     definition_changed = after_definition is not None and (
         before_definition.goal_type,
         before_definition.name,
-        before_definition.priority,
         before_definition.funding_account_ids,
     ) != (
         after_definition.goal_type,
         after_definition.name,
-        after_definition.priority,
         after_definition.funding_account_ids,
     )
     return plan_changed or definition_changed
@@ -608,7 +603,6 @@ async def create_plan_change_draft(
                 target_amount_sen=definition.target_amount_sen,
                 current_saved_sen=definition.current_saved_sen,
                 target_date=definition.target_date,
-                priority=definition.priority,
                 funding_account_ids=tuple(
                     uuid.UUID(value) for value in definition.funding_account_ids
                 ),
@@ -655,8 +649,6 @@ def _approval_summary(draft: PlanChangeDraft) -> str:
         f"target {draft.after.target_date}"
     )
     summary = f"Goal plan change — before: {before}; after: {after}."
-    if draft.before is None:
-        summary += f" Priority: {draft.definition.priority}."
     return summary
 
 
@@ -702,12 +694,6 @@ async def approval_interrupt(
             "base_plan_version": draft.base_plan_version,
             "before": args["before"],
             "after": args["after"],
-            "before_priority": (
-                state["base_goal_definition"].priority
-                if state.get("base_goal_definition") is not None
-                else None
-            ),
-            "after_priority": draft.definition.priority,
         }
     ) or {"action": "reject"}
     try:
@@ -750,7 +736,6 @@ async def approval_interrupt(
                 else draft.definition.current_saved_sen
             ),
             target_date=edit.target_date or draft.definition.target_date,
-            priority=edit.priority or draft.definition.priority,
         )
         await butler_approvals.settle(
             runtime.context.session,

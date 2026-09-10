@@ -146,7 +146,6 @@ class Goal(Base):
     goal_type: Mapped[str] = mapped_column(String(40), default="custom_goal", index=True)
     currency: Mapped[str] = mapped_column(String(3), default="MYR")
     target_date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
-    priority: Mapped[str] = mapped_column(String(12), default="flexible", index=True)
     status: Mapped[str] = mapped_column(String(16), default="active", index=True)
     funding_account_ids: Mapped[list[str]] = mapped_column(JSON, default=list)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)

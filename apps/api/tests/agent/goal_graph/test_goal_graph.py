@@ -51,7 +51,6 @@ def create_intent(**changes) -> GoalIntent:
         "target_amount_sen": 100_000,
         "current_saved_sen": 20_000,
         "target_date": date(2026, 12, 31),
-        "priority": "important",
     }
     values.update(changes)
     return GoalIntent.model_validate(values)

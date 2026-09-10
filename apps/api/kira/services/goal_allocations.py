@@ -105,7 +105,6 @@ async def _goal_needs(
         GoalFundingNeed(
             goal_id=str(goal.id),
             name=goal.name,
-            priority=goal.priority,
             target_date=goal.target_date or plan.target_date,
             remaining_amount_sen=max(0, goal.target.sen - goal.saved.sen),
             required_contribution_sen=min(

@@ -7,15 +7,9 @@ import type { GoalApproval, GoalPlanDraft } from "../../api/goals";
 import { GoalApprovalSheet } from "../../components/GoalApprovalSheet";
 import { GoalPlanPreview, formatGoalDate } from "../../components/GoalPlanPreview";
 import { fmt, formatKeypadMoney, parseNonNegativeSen, parseSen } from "../../lib/money";
+import { announceGoalRecommendationOffer } from "../../lib/goalRecommendationEvents";
 
 type GoalType = NonNullable<GoalGraphIntent["goal_type"]>;
-type GoalPriority = NonNullable<GoalGraphIntent["priority"]>;
-
-const PRIORITY_HELP: Record<GoalPriority, string> = {
-  protected: "Fund first after bills and your emergency buffer. Use only for goals that cannot wait.",
-  important: "Fund after protected goals, before flexible goals.",
-  flexible: "Fund after protected and important goals. It may receive less when money is tight.",
-};
 
 export const GOAL_TYPES: { value: GoalType; label: string; hint: string }[] = [
   { value: "emergency_starter_fund", label: "Emergency starter fund", hint: "A first layer of protection" },
@@ -52,7 +46,6 @@ export function GoalCreate({
   const [target, setTarget] = useState("");
   const [saved, setSaved] = useState("0.00");
   const [targetDate, setTargetDate] = useState("");
-  const [priority, setPriority] = useState<GoalPriority>("important");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [approval, setApproval] = useState<GoalApproval | null>(null);
   const [calculation, setCalculation] = useState<GoalPlanDraft | null>(null);
@@ -91,7 +84,6 @@ export function GoalCreate({
         target_amount_sen: targetSen,
         current_saved_sen: savedSen,
         target_date: targetDate,
-        priority,
         funding_account_ids: [],
         wants_scenarios: false,
       });
@@ -191,7 +183,10 @@ export function GoalCreate({
             }}
             onSettled={(result) => {
               setApprovalOpen(false);
-              if (result === "approved") onActivated(goalId);
+              if (result === "approved") {
+                announceGoalRecommendationOffer(goalId, name.trim());
+                onActivated(goalId);
+              }
               else onBack();
             }}
           />
@@ -243,18 +238,6 @@ export function GoalCreate({
           <input aria-label="Target date" type="date" min={todayInput()} value={targetDate} onChange={(event) => setTargetDate(event.target.value)} aria-invalid={Boolean(errors.date)} />
           {errors.date && <small className="goal-field-error">{errors.date}</small>}
         </label>
-        <fieldset>
-          <legend className="eyebrow">Priority</legend>
-          <div className="goal-priority-options">
-            {(["protected", "important", "flexible"] as GoalPriority[]).map((value) => (
-              <button type="button" className={priority === value ? "selected" : ""} aria-pressed={priority === value} key={value} onClick={() => setPriority(value)}>
-                {value.replace(/^./, (letter) => letter.toUpperCase())}
-              </button>
-            ))}
-          </div>
-          <p className="goal-priority-help" role="status">{PRIORITY_HELP[priority]}</p>
-        </fieldset>
-
         {(errors.submit || create.isError) && (
           <p className="goal-inline-error" role="alert">
             {errors.submit || "KIRA could not calculate the plan. Check your connection and try again."}
@@ -263,7 +246,7 @@ export function GoalCreate({
         <button className="btn btn-primary goal-full-button" type="submit" disabled={create.isPending}>
           {create.isPending ? "Calculating safely…" : "Calculate plan"}
         </button>
-        <p className="goal-lock-note">Funding order is Protected → Important → Flexible. Goals in the same level are funded by target date, then a stable goal ID.</p>
+        <p className="goal-lock-note">All active goals reserve their approved amount. Confirmed income is allocated by target date.</p>
       </form>
     </div>
   );

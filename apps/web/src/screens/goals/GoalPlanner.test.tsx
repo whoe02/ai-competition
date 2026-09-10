@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DashboardToday, GoalDetail, GoalPlan, GoalScenario } from "@kira/contracts";
 
 import { GoalPlanner } from "./GoalPlanner";
+import { GOAL_RECOMMENDATION_OFFER } from "../../lib/goalRecommendationEvents";
 
 const SHORT_ID = "11111111-1111-4111-8111-111111111111";
 const LONG_ID = "22222222-2222-4222-8222-222222222222";
@@ -41,7 +42,6 @@ const DETAIL: GoalDetail = {
   current_saved_sen: 800000,
   target_date: "2028-12-31",
   horizon: "long",
-  priority: "important",
   status: "active",
   funding_account_ids: [],
   current_plan_version: 1,
@@ -109,9 +109,9 @@ function stream(...events: unknown[]) {
   });
 }
 
-function renderGoals() {
+function renderGoals(props: React.ComponentProps<typeof GoalPlanner> = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(<QueryClientProvider client={client}><GoalPlanner /></QueryClientProvider>);
+  return render(<QueryClientProvider client={client}><GoalPlanner {...props} /></QueryClientProvider>);
 }
 
 function detailFor(id: string, horizon: "short" | "long" = "long"): GoalDetail {
@@ -156,6 +156,8 @@ describe("Goal Planner", () => {
   it("sends integer sen, renders the backend plan, and applies only after approval", async () => {
     let runBody: Record<string, unknown> | null = null;
     let approvalBody: Record<string, unknown> | null = null;
+    const recommendationOffer = vi.fn();
+    window.addEventListener(GOAL_RECOMMENDATION_OFFER, recommendationOffer);
     vi.mocked(fetch).mockImplementation(async (input, init) => {
       const url = String(input);
       if (url.endsWith("/v1/dashboard/today")) return json(DASHBOARD);
@@ -219,14 +221,20 @@ describe("Goal Planner", () => {
     await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Approve" }));
     await waitFor(() => expect(approvalBody).toEqual({ action: "accept", args: null }));
     expect(await screen.findByText("First home")).toBeVisible();
+    expect(recommendationOffer).toHaveBeenCalledOnce();
+    expect((recommendationOffer.mock.calls[0]?.[0] as CustomEvent).detail).toEqual({
+      goalId: LONG_ID,
+      goalName: "First home",
+    });
+    window.removeEventListener(GOAL_RECOMMENDATION_OFFER, recommendationOffer);
   });
 
   it("filters real backend goals by horizon", async () => {
     const dashboard = {
       ...DASHBOARD,
       goals: [
-        { id: SHORT_ID, name: "Japan trip", horizon: "short", priority: "flexible", target_sen: 500000, saved_sen: 100000, monthly_sen: 50000, months_left: 8, note: "" },
-        { id: LONG_ID, name: "First home", horizon: "long", priority: "important", target_sen: 5000000, saved_sen: 800000, monthly_sen: 150000, months_left: 28, note: "" },
+        { id: SHORT_ID, name: "Japan trip", horizon: "short", target_sen: 500000, saved_sen: 100000, monthly_sen: 50000, months_left: 8, note: "" },
+        { id: LONG_ID, name: "First home", horizon: "long", target_sen: 5000000, saved_sen: 800000, monthly_sen: 150000, months_left: 28, note: "" },
       ],
     } satisfies DashboardToday;
     vi.mocked(fetch).mockImplementation(async (input) => {
@@ -253,7 +261,7 @@ describe("Goal Planner", () => {
 
   it("previews and confirms soft deletion from a hovered goal card", async () => {
     let deleted = false;
-    const goal = { id: LONG_ID, name: "First home", horizon: "long", priority: "important", target_sen: 5_000_000, saved_sen: 800_000, monthly_sen: 150_000, months_left: 28, note: "" } as const;
+    const goal = { id: LONG_ID, name: "First home", horizon: "long", target_sen: 5_000_000, saved_sen: 800_000, monthly_sen: 150_000, months_left: 28, note: "" } as const;
     vi.mocked(fetch).mockImplementation(async (input, init) => {
       const url = String(input);
       if (url.endsWith("/v1/dashboard/today")) {
@@ -345,7 +353,7 @@ describe("Goal Planner", () => {
   });
 
   it("keeps scenario selection local and rejects through the approval endpoint", async () => {
-    const dashboard = { ...DASHBOARD, goals: [{ id: LONG_ID, name: "First home", horizon: "long", priority: "important", target_sen: 5000000, saved_sen: 800000, monthly_sen: 150000, months_left: 28, note: "" }] } satisfies DashboardToday;
+    const dashboard = { ...DASHBOARD, goals: [{ id: LONG_ID, name: "First home", horizon: "long", target_sen: 5000000, saved_sen: 800000, monthly_sen: 150000, months_left: 28, note: "" }] } satisfies DashboardToday;
     let runCalls = 0;
     let decision: Record<string, unknown> | null = null;
     vi.mocked(fetch).mockImplementation(async (input, init) => {
@@ -387,54 +395,9 @@ describe("Goal Planner", () => {
     expect(await screen.findByText("Change rejected. Your current plan is unchanged.")).toBeVisible();
   });
 
-  it("requires approval before changing a goal's funding priority", async () => {
-    const dashboard = {
-      ...DASHBOARD,
-      goals: [{ id: LONG_ID, name: "First home", horizon: "long", priority: "important", target_sen: 5_000_000, saved_sen: 800_000, monthly_sen: 150_000, months_left: 28, note: "" }],
-    } satisfies DashboardToday;
-    let intent: Record<string, unknown> | null = null;
-    vi.mocked(fetch).mockImplementation(async (input, init) => {
-      const url = String(input);
-      if (url.endsWith("/v1/dashboard/today")) return json(dashboard);
-      if (url.endsWith(`/v1/goals/${LONG_ID}`)) return json(DETAIL);
-      if (url.endsWith(`/v1/goals/${LONG_ID}/plan`)) return json(PLAN);
-      if (url.endsWith("/v1/goals/runs")) {
-        intent = JSON.parse(String(init?.body)).intent;
-        return json({
-          request_id: "55555555-5555-4555-8555-555555555555",
-          thread_id: "66666666-6666-4666-8666-666666666666",
-          final_response: "Priority recalculated.", llm_calls: 0, goal_id: LONG_ID, feasible: true, errors: [],
-          approval: {
-            approval_id: APPROVAL_ID,
-            tool: "apply_goal_plan_change",
-            summary: "Change funding priority.",
-            base_plan_version: 1,
-            before: DRAFT,
-            after: DRAFT,
-            before_priority: "important",
-            after_priority: "protected",
-          },
-        });
-      }
-      return json({}, 404);
-    });
-    const user = userEvent.setup();
-    renderGoals();
-
-    await user.click((await screen.findAllByRole("button", { name: "View plan" }))[0]!);
-    expect(await screen.findByText("Choose what gets funded first")).toBeVisible();
-    await user.click(screen.getByRole("button", { name: "Protected" }));
-
-    expect(await screen.findByRole("dialog", { name: "Review goal plan change" })).toBeVisible();
-    expect(intent).toEqual({ action: "recalculate", goal_id: LONG_ID, priority: "protected", wants_scenarios: false });
-    expect(screen.getByText("Funding order changes")).toBeVisible();
-    expect(screen.getByText(/receives available goal money first/)).toBeVisible();
-    expect(screen.getByText(/required contribution stays the same/)).toBeVisible();
-  });
-
   it("sends edits back for recalculation and requires approval again", async () => {
     const replacementId = "77777777-7777-4777-8777-777777777777";
-    const dashboard = { ...DASHBOARD, goals: [{ id: LONG_ID, name: "First home", horizon: "long", priority: "important", target_sen: 5000000, saved_sen: 800000, monthly_sen: 150000, months_left: 28, note: "" }] } satisfies DashboardToday;
+    const dashboard = { ...DASHBOARD, goals: [{ id: LONG_ID, name: "First home", horizon: "long", target_sen: 5000000, saved_sen: 800000, monthly_sen: 150000, months_left: 28, note: "" }] } satisfies DashboardToday;
     const decisions: { id: string; body: Record<string, unknown> }[] = [];
     vi.mocked(fetch).mockImplementation(async (input, init) => {
       const url = String(input);
@@ -489,8 +452,31 @@ describe("Goal Planner", () => {
   it("opens compact work recommendations from their completion notice", async () => {
     const dashboard = {
       ...DASHBOARD,
-      goals: [{ id: LONG_ID, name: "First home", horizon: "long", priority: "important", target_sen: 5_000_000, saved_sen: 800_000, monthly_sen: 150_000, months_left: 28, note: "" }],
+      goals: [{ id: LONG_ID, name: "First home", horizon: "long", target_sen: 5_000_000, saved_sen: 800_000, monthly_sen: 150_000, months_left: 28, note: "" }],
     } satisfies DashboardToday;
+    const forecast = {
+      estimated_hourly_rate_min_sen: 3000,
+      estimated_hourly_rate_max_sen: 5000,
+      suggested_hours_per_week: 8,
+      suggested_work_days_per_week: 2,
+      pay_estimate_basis: "Specialised technical freelance work.",
+      estimated_daily_income_min_sen: 12000,
+      estimated_daily_income_max_sen: 20000,
+      estimated_weekly_income_min_sen: 24000,
+      estimated_weekly_income_max_sen: 40000,
+      estimated_monthly_income_min_sen: 104000,
+      estimated_monthly_income_max_sen: 173333,
+      goal_contribution_monthly_before_sen: 150000,
+      goal_contribution_monthly_with_job_min_sen: 254000,
+      goal_contribution_monthly_with_job_max_sen: 323333,
+      projected_completion_with_min_income: "2027-12-15",
+      projected_completion_with_max_income: "2027-06-18",
+      days_saved_min: 366,
+      days_saved_max: 546,
+      safe_to_spend_today_change_sen: 0,
+      future_daily_safe_to_spend_increase_min_sen: 8467,
+      future_daily_safe_to_spend_increase_max_sen: 10778,
+    };
     const recommendations = [
       {
         role_title: "Technical documentation specialist",
@@ -499,6 +485,7 @@ describe("Goal Planner", () => {
         work_arrangement: "Remote and asynchronous",
         first_step: "Create one public documentation sample for your portfolio.",
         cautions: ["Set clear revision limits before accepting work."],
+        ...forecast,
       },
       {
         role_title: "AI quality reviewer",
@@ -507,6 +494,7 @@ describe("Goal Planner", () => {
         work_arrangement: "Remote task-based work",
         first_step: "Prepare a simple evaluation rubric for a public example.",
         cautions: ["Avoid projects that conflict with your employer agreement."],
+        ...forecast,
       },
       {
         role_title: "Technical tutor",
@@ -515,6 +503,7 @@ describe("Goal Planner", () => {
         work_arrangement: "Remote scheduled sessions",
         first_step: "Outline one beginner lesson you can confidently teach.",
         cautions: ["Keep preparation time within your weekly limit."],
+        ...forecast,
       },
     ];
     vi.mocked(fetch).mockImplementation(async (input, init) => {
@@ -524,6 +513,7 @@ describe("Goal Planner", () => {
       if (url.endsWith(`/v1/goals/${LONG_ID}/plan`)) return json(PLAN);
       if (url.endsWith(`/v1/goals/${LONG_ID}/part-time-recommendation`) && init?.method === "POST") {
         return json({
+          recommendation_schema_version: 2,
           goal_id: LONG_ID,
           plan_version: 1,
           status: "available",
@@ -533,6 +523,7 @@ describe("Goal Planner", () => {
           source: "llm",
           preferences: { available_hours_per_week: 8, work_mode: "either", transport_limitations: "" },
           feasible_before: true,
+          projected_completion_before: "2028-12-15",
           safe_to_spend_changes: false,
           cash_effect: "Read-only scenario.",
         });
@@ -550,12 +541,16 @@ describe("Goal Planner", () => {
     expect(screen.getByText("Technical documentation specialist")).toBeVisible();
     expect(screen.getAllByText("Typical work")).toHaveLength(3);
     expect(screen.getAllByText("Why it fits")).toHaveLength(3);
+    expect(screen.getAllByText("Estimated hourly")).toHaveLength(3);
+    expect(screen.getAllByText("Estimated goal effect")).toHaveLength(3);
+    expect(screen.getAllByText("RM30.00–RM50.00")).toHaveLength(3);
+    expect(screen.getAllByText("No change")).toHaveLength(3);
   });
 
   it("keeps work recommendations available when the plan is high risk", async () => {
     const dashboard = {
       ...DASHBOARD,
-      goals: [{ id: LONG_ID, name: "First home", horizon: "long", priority: "important", target_sen: 5_000_000, saved_sen: 800_000, monthly_sen: 430_000, months_left: 10, note: "" }],
+      goals: [{ id: LONG_ID, name: "First home", horizon: "long", target_sen: 5_000_000, saved_sen: 800_000, monthly_sen: 430_000, months_left: 10, note: "" }],
     } satisfies DashboardToday;
     const highSharePlan = {
       ...PLAN,
@@ -578,6 +573,22 @@ describe("Goal Planner", () => {
     await user.click(await screen.findByRole("button", { name: "View plan" }));
 
     expect(await screen.findByRole("region", { name: "Part-time work reminder" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "See work recommendations" })).toBeEnabled();
+  });
+
+  it("opens and highlights the AI work section from an offer notification", async () => {
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith(`/v1/goals/${LONG_ID}`)) return json(DETAIL);
+      if (url.endsWith(`/v1/goals/${LONG_ID}/plan`)) return json(PLAN);
+      if (url.endsWith(`/v1/goals/${LONG_ID}/part-time-recommendation`)) return json(null);
+      return json({}, 404);
+    });
+
+    renderGoals({ recommendationFocusGoalId: LONG_ID });
+
+    const section = await screen.findByRole("region", { name: "Part-time work reminder" });
+    expect(section).toHaveClass("goal-part-time-highlight");
     expect(screen.getByRole("button", { name: "See work recommendations" })).toBeEnabled();
   });
 

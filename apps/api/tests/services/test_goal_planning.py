@@ -88,7 +88,6 @@ class TestPlanVersioning:
             target_amount_sen=60_000,
             current_saved_sen=10_000,
             target_date=date(2026, 12, 24),
-            priority="protected",
             funding_account_ids=(),
             as_of_utc=AS_OF,
         )
