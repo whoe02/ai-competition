@@ -387,10 +387,24 @@ function PartTimeRecommendationPage({
               </p>
               <div className="goal-part-time-forecast">
                 <p className="eyebrow">Estimated goal effect</p>
-                <span>Monthly goal saving <b>RM{fmt(item.goal_contribution_monthly_before_sen)} → {moneyRange(item.goal_contribution_monthly_with_job_min_sen, item.goal_contribution_monthly_with_job_max_sen)}</b></span>
-                <span>Goal completion <b>{formatGoalDate(recommendation.projected_completion_before ?? null)} → {completionRange(item.projected_completion_with_max_income, item.projected_completion_with_min_income)}</b></span>
-                <span>Time saved <b>{daysRange(item.days_saved_min, item.days_saved_max)}</b></span>
-                <span>Potential daily capacity after goal <b>+{moneyRange(item.future_daily_safe_to_spend_increase_min_sen, item.future_daily_safe_to_spend_increase_max_sen)}</b></span>
+                <div className="goal-part-time-comparison">
+                  <p>Monthly goal saving</p>
+                  <div>
+                    <span><small>Current plan</small><b>RM{fmt(item.goal_contribution_monthly_before_sen)}</b></span>
+                    <span className="projected"><small>With this job</small><b>{moneyRangeWithTo(item.goal_contribution_monthly_with_job_min_sen, item.goal_contribution_monthly_with_job_max_sen)}</b></span>
+                  </div>
+                </div>
+                <div className="goal-part-time-comparison">
+                  <p>Estimated goal completion</p>
+                  <div>
+                    <span><small>Current plan</small><b>{formatGoalDate(recommendation.projected_completion_before ?? null)}</b></span>
+                    <span className="projected"><small>With this job</small><b>{completionWindow(item.projected_completion_with_max_income, item.projected_completion_with_min_income)}</b></span>
+                  </div>
+                </div>
+                <div className="goal-part-time-benefits">
+                  <span><small>Finish your goal earlier by</small><b>{daysRange(item.days_saved_min, item.days_saved_max)}</b></span>
+                  <span><small>Extra daily capacity after the goal</small><b>{moneyRange(item.future_daily_safe_to_spend_increase_min_sen, item.future_daily_safe_to_spend_increase_max_sen)} more per day</b></span>
+                </div>
               </div>
               {(item.cautions ?? []).map((caution) => <small key={caution}>{caution}</small>)}
             </article>
@@ -411,11 +425,16 @@ function moneyRange(minimum: number, maximum: number): string {
   return minimum === maximum ? low : `${low}–RM${fmt(maximum)}`;
 }
 
-function completionRange(earliest: string | null, latest: string | null): string {
+function moneyRangeWithTo(minimum: number, maximum: number): string {
+  const low = `RM${fmt(minimum)}`;
+  return minimum === maximum ? low : `${low} to RM${fmt(maximum)}`;
+}
+
+function completionWindow(earliest: string | null, latest: string | null): string {
   if (!earliest && !latest) return "Not available";
   if (earliest === latest || !latest) return formatGoalDate(earliest);
   if (!earliest) return formatGoalDate(latest);
-  return `${formatGoalDate(earliest)}–${formatGoalDate(latest)}`;
+  return `${formatGoalDate(earliest)} to ${formatGoalDate(latest)}`;
 }
 
 function daysRange(minimum: number | null, maximum: number | null): string {

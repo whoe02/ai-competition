@@ -25,6 +25,18 @@ GoalType = Literal[
 ]
 
 
+def _json_integer(value: object) -> object:
+    """Accept a schema integer quoted by a tool-calling provider.
+
+    Only canonical base-10 integers are converted. Floats, formatted currency
+    and arbitrary text still fail the strict field validation instead of being
+    rounded or interpreted here.
+    """
+    if isinstance(value, str) and re.fullmatch(r"-?(?:0|[1-9]\d*)", value):
+        return int(value)
+    return value
+
+
 class GoalIntent(BaseModel):
     """LLM call #1 output. It interprets; it never calculates."""
 
@@ -43,6 +55,14 @@ class GoalIntent(BaseModel):
     scenario_label: str | None = Field(default=None, max_length=60)
     wants_scenarios: bool = False
     missing_fields: list[str] = Field(default_factory=list)
+
+    _normalise_json_integers = field_validator(
+        "target_amount_sen",
+        "current_saved_sen",
+        "contribution_per_payday_sen",
+        "proposed_spend_sen",
+        mode="before",
+    )(_json_integer)
 
 
 class GoalExplanation(BaseModel):
@@ -76,6 +96,13 @@ class PlanEdit(BaseModel):
     current_saved_sen: int | None = Field(default=None, strict=True, ge=0)
     target_date: date | None = None
     contribution_per_payday_sen: int | None = Field(default=None, strict=True, gt=0)
+
+    _normalise_json_integers = field_validator(
+        "target_amount_sen",
+        "current_saved_sen",
+        "contribution_per_payday_sen",
+        mode="before",
+    )(_json_integer)
 
 
 class ApprovalDecision(BaseModel):

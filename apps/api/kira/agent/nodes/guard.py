@@ -11,7 +11,8 @@ from __future__ import annotations
 import json
 import logging
 import time
-from typing import Any
+from types import NoneType
+from typing import Any, get_args
 
 from langchain_core.messages import AIMessage, ToolMessage
 from langgraph.runtime import Runtime
@@ -41,6 +42,45 @@ def _refusal(call: dict[str, Any], reason: str) -> ToolMessage:
         tool_call_id=call.get("id", ""),
         status="error",
     )
+
+
+def _validate_provider_arguments(spec, raw_args: dict[str, Any]):
+    """Validate tool JSON, repairing only a quoted null for nullable fields.
+
+    Some compatibility providers serialize an absent optional value as the
+    string ``"None"`` or ``"null"``. The model schema, rather than a list of
+    field names, decides whether that value may become ``None``. Everything
+    else remains under the original strict Pydantic validation.
+    """
+    try:
+        return spec.args_model.model_validate(raw_args)
+    except ValidationError as original:
+        normalised = dict(raw_args)
+        changed: list[str] = []
+        for error in original.errors():
+            location = error.get("loc", ())
+            value = error.get("input")
+            if (
+                len(location) != 1
+                or not isinstance(location[0], str)
+                or not isinstance(value, str)
+                or value.strip().casefold() not in {"none", "null"}
+            ):
+                continue
+            name = location[0]
+            field = spec.args_model.model_fields.get(name)
+            if field is None or NoneType not in get_args(field.annotation):
+                continue
+            normalised[name] = None
+            changed.append(name)
+        if not changed:
+            raise
+        log.info(
+            "butler.node guard normalised_provider_args tool=%s fields=%s",
+            spec.name,
+            changed,
+        )
+        return spec.args_model.model_validate(normalised)
 
 
 async def guard(state: ButlerState, runtime: Runtime[ButlerContext]) -> dict:
@@ -144,7 +184,7 @@ async def guard(state: ButlerState, runtime: Runtime[ButlerContext]) -> dict:
             continue
 
         try:
-            args = spec.args_model.model_validate(raw_args)
+            args = _validate_provider_arguments(spec, raw_args)
         except ValidationError as exc:
             reason = f"{name} was called with arguments it cannot accept: {exc.errors()}"
             refusals.append(reason)

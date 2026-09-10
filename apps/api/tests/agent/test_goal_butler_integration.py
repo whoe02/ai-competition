@@ -7,11 +7,11 @@ import uuid
 import pytest
 from sqlalchemy import select
 
-from kira.agent.llm import route_for
+from kira.agent.llm import _part_time_args, route_for
 from kira.agent.run import run_turn, stream_interrupted_turn
 from kira.db.models import ROLE_KIRA, ROLE_USER, ButlerApproval, ButlerMemory, Goal
 from kira.services import butler_thread
-from tests.agent.conftest import declining_factory, offline_factory
+from tests.agent.conftest import declining_factory, offline_factory, scripted_factory
 
 
 @pytest.mark.parametrize(
@@ -134,6 +134,24 @@ async def test_part_time_request_in_butler_asks_for_missing_availability(
     assert "remote" in result.answer.lower()
 
 
+def test_part_time_follow_ups_keep_the_original_goal_and_each_preference():
+    history = (
+        "Earlier in this conversation:\n"
+        "User: Recommend part-time work to accelerate my wedding goal.\n"
+        "You: How many hours can you work, and do you prefer remote or on-site?\n"
+        "User: I can work 8 hours per week.\n"
+        "You: Would you prefer remote, on-site, or either?"
+    )
+
+    route = route_for("Remote please.", history=history)
+    args = _part_time_args("Remote please.", history)
+
+    assert route.tools == ("recommend_part_time_jobs",)
+    assert "wedding goal" in args["goal_reference"]
+    assert args["available_hours_per_week"] == 8
+    assert args["work_mode"] == "remote"
+
+
 async def test_a_completed_checkpoint_can_restore_an_answer_that_was_not_persisted(
     session, butler, today
 ):
@@ -211,3 +229,50 @@ async def test_goal_follow_up_keeps_the_goal_identity_and_natural_rm_values(
     assert result.approval["after"]["target_amount_sen"] == 1_000_000
     assert result.approval["after"]["current_saved_sen"] == 500_000
     assert result.approval["after"]["target_date"] == "2027-03-04"
+
+
+async def test_goal_creation_survives_quoted_integer_arguments_from_the_provider(
+    session, butler, today
+):
+    user, thread = butler
+    first_text = "I want to create a goal."
+    await butler_thread.append(session, user, thread, role=ROLE_USER, content=first_text)
+    await butler_thread.append(
+        session,
+        user,
+        thread,
+        role=ROLE_KIRA,
+        content="What is the goal name, target, saved amount and target date?",
+    )
+    follow_up = (
+        "Already saved RM5,000, target is RM10,000, due date is 4 June 2027, "
+        "and the goal name is car down payment."
+    )
+    await butler_thread.append(session, user, thread, role=ROLE_USER, content=follow_up)
+
+    result = await run_turn(
+        session,
+        user,
+        thread,
+        text=follow_up,
+        today=today,
+        model_factory=scripted_factory(
+            (
+                "start_goal_planning",
+                {
+                    "action": "create",
+                    "goal_type": "car_down_payment",
+                    "name": "Car down payment",
+                    "target_amount_sen": "1000000",
+                    "current_saved_sen": "500000",
+                    "target_date": "2027-06-04",
+                },
+            )
+        ),
+    )
+
+    assert result.tools_used == ["start_goal_planning"]
+    assert result.approval is not None
+    assert result.approval["after"]["target_amount_sen"] == 1_000_000
+    assert result.approval["after"]["current_saved_sen"] == 500_000
+    assert result.approval["after"]["target_date"] == "2027-06-04"

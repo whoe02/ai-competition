@@ -201,6 +201,11 @@ Work in steps. A result may raise the next question: if what came back tells you
 something you should check, check it. You will be asked again after every result,
 and the turn ends when you call nothing.
 
+Follow each capability's JSON schema exactly. In particular, integer fields must be
+JSON numbers without quotation marks, and absent optional values must be JSON null rather
+than the strings "None" or "null". If a call is rejected for an argument type, correct
+the representation from the schema and retry the same intended action once.
+
 Resolve follow-ups such as "that one", "change it" and "what about next month" from
 the conversation. Look up the relevant app records to obtain current values and IDs.
 Use the available actions to carry out explicit requests, rather than explaining which

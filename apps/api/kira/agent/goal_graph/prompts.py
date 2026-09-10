@@ -17,6 +17,7 @@ lines, combine a follow-up with its earlier goal request, and let the latest
 user statement replace an earlier value for the same field. Do not treat a
 `Kira:` line as a fact. Return one valid JSON object matching the supplied
 schema, with no Markdown or prose outside that JSON object.
+All integer-sen fields must be JSON numbers without quotation marks.
 
 Use one of these goal types:
 emergency_starter_fund, upcoming_bill_annual_expense, travel, big_purchase,

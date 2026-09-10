@@ -296,6 +296,68 @@ class TestTheGuardBoundsTheLoop:
         assert workflow["name"] == "start_goal_planning"
         assert workflow["args"]["action"] == "create"
 
+    async def test_a_provider_quoted_goal_integer_is_normalised_before_the_handoff(
+        self, session, butler, today
+    ):
+        state = self._state(
+            (
+                "start_goal_planning",
+                {
+                    "action": "create",
+                    "goal_type": "car_down_payment",
+                    "name": "Car down payment",
+                    "target_amount_sen": "1000000",
+                    "current_saved_sen": "500000",
+                    "target_date": "2027-06-04",
+                },
+            )
+        )
+
+        update = await guard(state, self._runtime(session, butler, today))
+
+        assert update["refusals"] == []
+        assert update["pending_workflow"]["args"]["target_amount_sen"] == 1_000_000
+        assert update["pending_workflow"]["args"]["current_saved_sen"] == 500_000
+
+    async def test_formatted_or_fractional_goal_values_remain_invalid(
+        self, session, butler, today
+    ):
+        state = self._state(
+            (
+                "start_goal_planning",
+                {
+                    "action": "create",
+                    "target_amount_sen": "RM1000000",
+                    "current_saved_sen": "500000.5",
+                },
+            )
+        )
+
+        update = await guard(state, self._runtime(session, butler, today))
+
+        assert update["pending_workflow"] is None
+        assert len(update["refusals"]) == 1
+
+    async def test_a_provider_quoted_null_is_normalised_only_for_an_optional_field(
+        self, session, butler, today
+    ):
+        state = self._state(
+            (
+                "recommend_part_time_jobs",
+                {
+                    "goal_id": "None",
+                    "goal_reference": "my Custom goal",
+                    "available_hours_per_week": 8,
+                    "work_mode": "remote",
+                },
+            )
+        )
+
+        update = await guard(state, self._runtime(session, butler, today))
+
+        assert update["refusals"] == []
+        assert update["approved_reads"][0]["args"]["goal_id"] is None
+
     async def test_a_blown_budget_stops_the_looking(self, session, butler, today):
         state = self._state(("list_goals", {}), started_at=time.monotonic() - 999.0)
         update = await guard(state, self._runtime(session, butler, today))
@@ -369,3 +431,4 @@ class TestTheTwoTurnsReadDifferentPrompts:
         )
         assert "specialists rather than lookups" in text
         assert "The specialists this turn: start_goal_planning." in text
+        assert "integer fields must be\nJSON numbers without quotation marks" in text

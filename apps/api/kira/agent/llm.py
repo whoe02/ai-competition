@@ -1411,20 +1411,36 @@ _PART_TIME_FOLLOW_UP = re.compile(
 )
 
 
-def _last_user_from_history(history: str) -> str:
-    for line in reversed(history.splitlines()):
-        if line.startswith(_USER_SAID):
-            return line[len(_USER_SAID) :]
-    return ""
-
-
 def _following_part_time(history: str) -> bool:
-    return bool(_PART_TIME_WORK.search(_last_user_from_history(history)))
+    active = False
+    for line in history.splitlines():
+        if not line.startswith(_USER_SAID):
+            continue
+        said = line[len(_USER_SAID) :]
+        if _PART_TIME_WORK.search(said):
+            active = True
+        elif not (active and _PART_TIME_FOLLOW_UP.search(said)):
+            active = False
+    return active
+
+
+def _active_part_time_request(history: str) -> list[str]:
+    """Return a user-only request and its consecutive availability follow-ups."""
+    user_turns = [
+        line[len(_USER_SAID) :] for line in history.splitlines() if line.startswith(_USER_SAID)
+    ]
+    for index in range(len(user_turns) - 1, -1, -1):
+        if _PART_TIME_WORK.search(user_turns[index]):
+            following = user_turns[index + 1 :]
+            if all(_PART_TIME_FOLLOW_UP.search(turn) for turn in following):
+                return user_turns[index:]
+            return []
+    return []
 
 
 def _part_time_args(text: str, history: str = "") -> dict[str, Any]:
-    prior = _last_user_from_history(history) if _following_part_time(history) else ""
-    source = f"{prior} {text}".strip()
+    prior = _active_part_time_request(history) if _following_part_time(history) else []
+    source = " ".join([*prior, text]).strip()
     args: dict[str, Any] = {"goal_reference": source[:80]}
     hours = re.search(
         r"\b([1-9]|[1-3]\d|40)\s*(?:hours?|hrs?)(?:\s*(?:per|a|/)\s*week)?\b",

@@ -557,9 +557,15 @@ describe("Goal Planner", () => {
     expect(screen.getAllByText("Estimated hourly")).toHaveLength(3);
     expect(screen.getAllByText("Estimated goal effect")).toHaveLength(3);
     expect(screen.getAllByText("RM30.00–RM50.00")).toHaveLength(3);
-    expect(screen.getAllByText((_, element) => (
-      element?.tagName === "B" && element.textContent === "+RM84.67–RM107.78"
-    ))).toHaveLength(3);
+    expect(screen.getAllByText("Monthly goal saving")).toHaveLength(3);
+    expect(screen.getAllByText("Current plan")).toHaveLength(6);
+    expect(screen.getAllByText("With this job")).toHaveLength(6);
+    expect(screen.getAllByText("RM1,500.00")).toHaveLength(3);
+    expect(screen.getAllByText("RM2,540.00 to RM3,233.33")).toHaveLength(3);
+    expect(screen.getAllByText("15 Dec 2028")).toHaveLength(3);
+    expect(screen.getAllByText("18 Jun 2027 to 15 Dec 2027")).toHaveLength(3);
+    expect(screen.getAllByText("366–546 days")).toHaveLength(3);
+    expect(screen.getAllByText("RM84.67–RM107.78 more per day")).toHaveLength(3);
     expect(screen.getByRole("link", { name: "View & apply on Arbeitnow" })).toHaveAttribute(
       "href",
       "https://www.arbeitnow.com/jobs/ai-reviewer",
