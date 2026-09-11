@@ -1402,7 +1402,7 @@ def _goal_request_with_history(text: str, history: str) -> str:
 
 _PART_TIME_WORK = re.compile(
     r"\b(?:part[- ]?time|side[- ]?(?:job|work|gig|income)|freelanc(?:e|ing)|"
-    r"extra work|work recommendation|job recommendation)\b",
+    r"extra work|work recommendations?|job recommendations?)\b",
     re.I,
 )
 _PART_TIME_FOLLOW_UP = re.compile(

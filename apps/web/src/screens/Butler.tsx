@@ -497,7 +497,7 @@ export function Butler({
               )}
             </div>
           ) : (
-            <div className="bubble-kira" key={index}>
+            <div className={`bubble-kira${turn.workRecommendations?.length ? " bubble-kira-work" : ""}`} key={index}>
               {!turn.workRecommendations?.length && <Answer text={turn.text} />}
               {turn.workRecommendations?.map((recommendation) => (
                 <ButlerWorkRecommendations key={recommendation.goal_id} data={recommendation} />

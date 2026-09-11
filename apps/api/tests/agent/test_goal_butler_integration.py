@@ -195,6 +195,13 @@ def test_part_time_request_without_a_named_goal_does_not_use_the_full_sentence_a
     assert args["work_mode"] == "either"
 
 
+def test_plural_job_recommendations_are_routed_to_the_work_search():
+    route = route_for("I want to ask for job recommendations")
+
+    assert route.name == "part_time_jobs"
+    assert route.tools == ("recommend_part_time_jobs",)
+
+
 def test_part_time_request_retains_preferences_after_a_goal_workflow_turn():
     history = (
         "Earlier in this conversation:\n"

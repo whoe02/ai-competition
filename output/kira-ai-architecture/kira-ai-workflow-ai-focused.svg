@@ -1,0 +1,135 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2400" height="1350" viewBox="0 0 2400 1350" role="img" aria-labelledby="title desc">
+  <title id="title">KIRA AI implementation workflow</title>
+  <desc id="desc">AI-focused architecture showing multimodal input, Qwen reasoning orchestrated by LangGraph, five KIRA specialist intelligence systems, grounded data, human approval, and user-facing outcomes.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#061d18"/><stop offset=".55" stop-color="#0c3028"/><stop offset="1" stop-color="#071a16"/></linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#f4d481"/><stop offset="1" stop-color="#ca9d40"/></linearGradient>
+    <radialGradient id="brainGlow"><stop stop-color="#65d6b1" stop-opacity=".34"/><stop offset="1" stop-color="#65d6b1" stop-opacity="0"/></radialGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="160%"><feDropShadow dx="0" dy="12" stdDeviation="18" flood-color="#00100c" flood-opacity=".36"/></filter>
+    <filter id="softGlow" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="8" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0 10 5 0 10z" fill="#75d9ba"/></marker>
+    <marker id="arrowGold" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0 10 5 0 10z" fill="#edc76b"/></marker>
+
+    <!-- Simple presentation icons -->
+    <symbol id="i-chat" viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4V5Z"/><path d="M8 9h8M8 12h5"/></symbol>
+    <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M8 21h8"/></symbol>
+    <symbol id="i-receipt" viewBox="0 0 24 24"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3Z"/><path d="M9 8h6M9 12h6M9 16h4"/></symbol>
+    <symbol id="i-brain" viewBox="0 0 24 24"><path d="M9 4a4 4 0 0 0-4 4 4 4 0 0 0 0 7 4 4 0 0 0 4 5M15 4a4 4 0 0 1 4 4 4 4 0 0 1 0 7 4 4 0 0 1-4 5M9 4c0-2 6-2 6 0v16c0 2-6 2-6 0V4Z"/><path d="M9 9H6M15 8h3M9 15H6M15 14h3"/></symbol>
+    <symbol id="i-memory" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="7" ry="3"/><path d="M5 5v7c0 1.7 3.1 3 7 3s7-1.3 7-3V5M5 12v7c0 1.7 3.1 3 7 3s7-1.3 7-3v-7"/></symbol>
+    <symbol id="i-route" viewBox="0 0 24 24"><circle cx="6" cy="18" r="2"/><circle cx="18" cy="6" r="2"/><path d="M8 18h3c5 0 0-12 5-12"/></symbol>
+    <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5"/></symbol>
+    <symbol id="i-meal" viewBox="0 0 24 24"><path d="M7 3v8M4 3v5c0 2 6 2 6 0V3M7 11v10M16 3v18M16 3c5 3 5 9 0 11"/></symbol>
+    <symbol id="i-work" viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M9 7V4h6v3M3 12h18M10 12v2h4v-2"/></symbol>
+    <symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 20V5M4 20h17M7 16l4-5 3 3 6-8"/></symbol>
+    <symbol id="i-bell" viewBox="0 0 24 24"><path d="M5 17h14l-2-3V9a5 5 0 0 0-10 0v5l-2 3ZM10 20h4"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 20 6v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6l8-3Z"/><path d="m8.5 12 2.2 2.2 4.8-5"/></symbol>
+    <symbol id="i-spark" viewBox="0 0 24 24"><path d="m12 2 1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8L12 2ZM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8L19 16Z"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m8 12 2.5 2.5L16 9"/></symbol>
+    <symbol id="i-card" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18M7 15h4"/></symbol>
+
+    <style>
+      .title{font:700 52px Inter,ui-sans-serif,system-ui,sans-serif;fill:#f8f8f2;letter-spacing:-1.5px}.sub{font:400 23px Inter,ui-sans-serif,system-ui,sans-serif;fill:#b8d0c7}.eyebrow{font:700 16px Inter,ui-sans-serif,system-ui,sans-serif;fill:#efc766;letter-spacing:3px}.section{font:700 25px Inter,ui-sans-serif,system-ui,sans-serif;fill:#f7f8f2}.label{font:700 19px Inter,ui-sans-serif,system-ui,sans-serif;fill:#f7f8f2}.body{font:400 16px Inter,ui-sans-serif,system-ui,sans-serif;fill:#c0d2cb}.small{font:500 14px Inter,ui-sans-serif,system-ui,sans-serif;fill:#9fb8ae}.mini{font:600 13px Inter,ui-sans-serif,system-ui,sans-serif;fill:#98b2a8;letter-spacing:.2px}.goldText{fill:#f2cc70}.greenText{fill:#81dfc0}.white{fill:#fff}.panel{fill:#102f28;stroke:#385f54;stroke-width:1.6}.panel2{fill:#173d34;stroke:#4a786a;stroke-width:1.5}.node{fill:#0b2721;stroke:#42685e;stroke-width:1.4}.ai{fill:#193c50;stroke:#5790aa;stroke-width:1.5}.agent{fill:#173f35;stroke:#59b394;stroke-width:1.6}.gate{fill:#4d2c20;stroke:#ce8263;stroke-width:1.5}.ground{fill:#3e321d;stroke:#aa843e;stroke-width:1.5}.iconCircle{fill:#23604f;stroke:#64b99d;stroke-width:1.2}.icon{fill:none;stroke:#effaf6;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.flow{fill:none;stroke:#75d9ba;stroke-width:3;marker-end:url(#arrow)}.flowSoft{fill:none;stroke:#569c87;stroke-width:2.4;stroke-dasharray:8 8;marker-end:url(#arrow)}.flowGold{fill:none;stroke:#edc76b;stroke-width:3;marker-end:url(#arrowGold)}
+    </style>
+  </defs>
+
+  <rect width="2400" height="1350" fill="url(#bg)"/>
+  <circle cx="2110" cy="20" r="470" fill="#2d7963" opacity=".10"/><circle cx="40" cy="1270" r="370" fill="#e5b952" opacity=".05"/>
+
+  <!-- Header -->
+  <g transform="translate(54 36)">
+    <rect width="78" height="78" rx="23" fill="url(#gold)" filter="url(#shadow)"/><use href="#i-spark" x="20" y="20" width="38" height="38" style="fill:none;stroke:#0c2a22;stroke-width:1.8"/>
+    <text x="103" y="20" class="eyebrow">KIRA · AI MONEY BUTLER</text>
+    <text x="103" y="67" class="title">AI implementation workflow</text>
+    <text x="103" y="101" class="sub">How KIRA understands, reasons, delegates, predicts and turns AI decisions into trusted user actions</text>
+    <rect x="1920" y="10" width="365" height="62" rx="18" fill="#14372f" stroke="#4a786a"/>
+    <circle cx="1953" cy="41" r="10" fill="#72d9b8" filter="url(#softGlow)"/>
+    <text x="1976" y="36" class="label">Built with LangGraph + Qwen</text>
+    <text x="1976" y="57" class="small">Specialist agents · grounded AI · HITL</text>
+  </g>
+
+  <!-- Inputs -->
+  <g transform="translate(54 175)" filter="url(#shadow)">
+    <rect width="320" height="760" rx="30" class="panel"/>
+    <text x="26" y="40" class="eyebrow">01 · UNDERSTAND</text><text x="26" y="77" class="section">Multimodal input</text>
+    <g transform="translate(22 110)"><rect width="276" height="142" rx="22" class="node"/><circle cx="47" cy="48" r="28" class="iconCircle"/><use href="#i-chat" x="33" y="34" width="28" height="28" class="icon"/><text x="86" y="44" class="label">Natural conversation</text><text x="86" y="70" class="body">Questions, follow-ups</text><text x="86" y="94" class="body">and action requests</text><text x="22" y="124" class="small goldText">Example · “Plan my lunch today”</text></g>
+    <g transform="translate(22 270)"><rect width="276" height="142" rx="22" class="node"/><circle cx="47" cy="48" r="28" class="iconCircle"/><use href="#i-mic" x="33" y="34" width="28" height="28" class="icon"/><text x="86" y="44" class="label">Voice intelligence</text><text x="86" y="70" class="body">faster-whisper converts</text><text x="86" y="94" class="body">speech into Butler context</text><text x="22" y="124" class="small greenText">Voice question or expense</text></g>
+    <g transform="translate(22 430)"><rect width="276" height="142" rx="22" class="node"/><circle cx="47" cy="48" r="28" class="iconCircle"/><use href="#i-receipt" x="33" y="34" width="28" height="28" class="icon"/><text x="86" y="44" class="label">Visual understanding</text><text x="86" y="70" class="body">PaddleOCR reads receipt</text><text x="86" y="94" class="body">fields with confidence</text><text x="22" y="124" class="small greenText">Image → reviewable proposal</text></g>
+    <g transform="translate(22 600)"><rect width="276" height="126" rx="22" class="ground"/><circle cx="47" cy="43" r="28" fill="#624d27"/><use href="#i-memory" x="33" y="29" width="28" height="28" class="icon"/><text x="86" y="39" class="label">Personal context</text><text x="86" y="65" class="body">Goals · finances · profile</text><text x="86" y="90" class="body">preferences · chat memory</text><text x="22" y="113" class="small goldText">Grounds every AI turn</text></g>
+  </g>
+
+  <path d="M374 553 H410" class="flow"/>
+
+  <!-- Central AI orchestration -->
+  <g transform="translate(420 175)" filter="url(#shadow)">
+    <rect width="690" height="760" rx="30" class="panel"/>
+    <text x="26" y="40" class="eyebrow">02 · REASON &amp; ORCHESTRATE</text><text x="26" y="77" class="section">Butler Agent · LangGraph</text>
+
+    <g transform="translate(22 106)"><rect width="646" height="102" rx="22" class="agent"/><circle cx="55" cy="51" r="31" class="iconCircle"/><use href="#i-memory" x="39" y="35" width="32" height="32" class="icon"/><text x="101" y="42" class="label">Context Intelligence</text><text x="101" y="70" class="body">Loads financial snapshot, active goals, conversation</text><text x="101" y="92" class="small">and long-term preferences before the model reasons</text></g>
+
+    <path d="M345 208 V237" class="flow"/>
+    <circle cx="345" cy="342" r="112" fill="url(#brainGlow)"/>
+    <circle cx="345" cy="342" r="90" fill="#183f50" stroke="#6aa5ba" stroke-width="2.2"/>
+    <circle cx="345" cy="342" r="68" fill="#102e3d" stroke="#4a8098" stroke-width="1.5"/>
+    <use href="#i-brain" x="308" y="278" width="74" height="74" class="icon"/>
+    <text x="345" y="378" text-anchor="middle" class="label">Qwen reasoning</text><text x="345" y="402" text-anchor="middle" class="small white">Understand intent · choose capability</text>
+
+    <rect x="22" y="273" width="184" height="138" rx="20" class="node"/><use href="#i-route" x="40" y="293" width="28" height="28" class="icon"/><text x="78" y="315" class="label">Intent Router</text><text x="40" y="346" class="body">Conversation</text><text x="40" y="370" class="body">Goal · Meal · Work</text><text x="40" y="394" class="body">Forecast · Ledger</text>
+    <rect x="484" y="273" width="184" height="138" rx="20" class="node"/><use href="#i-shield" x="502" y="293" width="28" height="28" class="icon"/><text x="540" y="315" class="label">AI Guardrails</text><text x="502" y="346" class="body">Typed tool schemas</text><text x="502" y="370" class="body">Loop + time limits</text><text x="502" y="394" class="body">Evidence boundaries</text>
+    <path d="M206 342 H249" class="flow"/><path d="M441 342 H484" class="flow"/>
+
+    <g transform="translate(22 450)"><rect width="646" height="126" rx="22" class="ai"/><text x="28" y="35" class="label">Agentic reasoning loop</text><text x="28" y="63" class="body">PLAN</text><path d="M85 59 H144" class="flow"/><text x="161" y="63" class="body">CALL TOOL / AGENT</text><path d="M310 59 H369" class="flow"/><text x="386" y="63" class="body">OBSERVE</text><path d="M460 59 H519" class="flow"/><text x="536" y="63" class="body">REASON</text><text x="323" y="96" text-anchor="middle" class="small greenText">Specialist evidence returns to Qwen until the request is complete</text><path d="M578 78 C578 119 68 119 68 79" class="flowSoft"/></g>
+
+    <g transform="translate(22 600)"><rect width="306" height="126" rx="22" class="gate"/><circle cx="48" cy="46" r="27" fill="#74432f"/><use href="#i-shield" x="34" y="32" width="28" height="28" class="icon"/><text x="88" y="42" class="label">Human approval</text><text x="88" y="69" class="body">Required before writes</text><text x="25" y="102" class="small goldText">Accept · edit · reject</text></g>
+    <g transform="translate(362 600)"><rect width="306" height="126" rx="22" class="agent"/><circle cx="48" cy="46" r="27" class="iconCircle"/><use href="#i-spark" x="34" y="32" width="28" height="28" class="icon"/><text x="88" y="42" class="label">Grounded composer</text><text x="88" y="69" class="body">Explains verified results</text><text x="25" y="102" class="small greenText">Answer + evidence + next action</text></g>
+  </g>
+
+  <path d="M1110 553 H1146" class="flow"/>
+
+  <!-- Specialist AI systems -->
+  <g transform="translate(1156 175)" filter="url(#shadow)">
+    <rect width="760" height="760" rx="30" class="panel"/>
+    <text x="26" y="40" class="eyebrow">03 · SPECIALIST AI SYSTEMS</text><text x="26" y="77" class="section">Purpose-built intelligence</text>
+
+    <g transform="translate(22 108)"><rect width="348" height="174" rx="22" class="agent"/><circle cx="49" cy="48" r="29" class="iconCircle"/><use href="#i-target" x="34" y="33" width="30" height="30" class="icon"/><text x="91" y="43" class="label">Goal Planning Agent</text><text x="25" y="91" class="body">Understands natural-language goals</text><text x="25" y="117" class="body">Builds feasible plans and scenarios</text><text x="25" y="148" class="small goldText">LangGraph subgraph + finance solver</text></g>
+    <g transform="translate(390 108)"><rect width="348" height="174" rx="22" class="agent"/><circle cx="49" cy="48" r="29" class="iconCircle"/><use href="#i-meal" x="34" y="33" width="30" height="30" class="icon"/><text x="91" y="43" class="label">Day Planner Agent</text><text x="25" y="91" class="body">Combines budget and preferences</text><text x="25" y="117" class="body">Ranks real nearby meal choices</text><text x="25" y="148" class="small goldText">Safe-to-Spend + maps + route facts</text></g>
+
+    <g transform="translate(22 302)"><rect width="348" height="174" rx="22" class="ai"/><circle cx="49" cy="48" r="29" fill="#285870"/><use href="#i-work" x="34" y="33" width="30" height="30" class="icon"/><text x="91" y="43" class="label">Work Recommender AI</text><text x="25" y="91" class="body">Expands job search dynamically</text><text x="25" y="117" class="body">Ranks the 3 best live opportunities</text><text x="25" y="148" class="small goldText">Fit + pay + goal acceleration</text></g>
+    <g transform="translate(390 302)"><rect width="348" height="174" rx="22" class="ai"/><circle cx="49" cy="48" r="29" fill="#285870"/><use href="#i-chart" x="34" y="33" width="30" height="30" class="icon"/><text x="91" y="43" class="label">Foresight AI</text><text x="25" y="91" class="body">Learns spending behavior patterns</text><text x="25" y="117" class="body">Simulates future financial outcomes</text><text x="25" y="148" class="small goldText">Monte Carlo probability + levers</text></g>
+
+    <g transform="translate(22 496)"><rect width="716" height="154" rx="22" class="panel2"/><circle cx="49" cy="48" r="29" class="iconCircle"/><use href="#i-bell" x="34" y="33" width="30" height="30" class="icon"/><text x="91" y="43" class="label">Proactive Intelligence · Briefing + Hindsight</text><text x="25" y="91" class="body">Detects anomalies, unfunded bills and future buffer risk · compares past advice with actual behavior</text><text x="25" y="122" class="small greenText">Nightly personalized guidance → user response → stronger behavior profile</text></g>
+
+    <g transform="translate(22 674)"><rect width="716" height="52" rx="16" class="ground"/><text x="358" y="33" text-anchor="middle" class="small goldText">GROUNDED BY · confirmed finance data · user memory · maps/routing · live job boards</text></g>
+  </g>
+
+  <path d="M1916 553 H1952" class="flow"/>
+
+  <!-- Outputs -->
+  <g transform="translate(1962 175)" filter="url(#shadow)">
+    <rect width="384" height="760" rx="30" class="panel"/>
+    <text x="24" y="40" class="eyebrow">04 · ACT</text><text x="24" y="77" class="section">AI-powered outcomes</text>
+    <g transform="translate(20 108)"><rect width="344" height="112" rx="21" class="node"/><circle cx="47" cy="45" r="27" class="iconCircle"/><use href="#i-chat" x="33" y="31" width="28" height="28" class="icon"/><text x="86" y="40" class="label">Butler answer</text><text x="86" y="67" class="body">Clear response + evidence</text><text x="22" y="94" class="small greenText">Streaming AI progress</text></g>
+    <g transform="translate(20 238)"><rect width="344" height="112" rx="21" class="node"/><circle cx="47" cy="45" r="27" class="iconCircle"/><use href="#i-meal" x="33" y="31" width="28" height="28" class="icon"/><text x="86" y="40" class="label">Personal meal plan</text><text x="86" y="67" class="body">Place · budget · route</text><text x="22" y="94" class="small goldText">Ready to add to the day</text></g>
+    <g transform="translate(20 368)"><rect width="344" height="112" rx="21" class="node"/><circle cx="47" cy="45" r="27" class="iconCircle"/><use href="#i-target" x="33" y="31" width="28" height="28" class="icon"/><text x="86" y="40" class="label">Actionable goal plan</text><text x="86" y="67" class="body">Saving amount · date · scenarios</text><text x="22" y="94" class="small goldText">Approval card before saving</text></g>
+    <g transform="translate(20 498)"><rect width="344" height="112" rx="21" class="node"/><circle cx="47" cy="45" r="27" class="iconCircle"/><use href="#i-work" x="33" y="31" width="28" height="28" class="icon"/><text x="86" y="40" class="label">Top 3 work ideas</text><text x="86" y="67" class="body">Fit · pay · goal impact</text><rect x="22" y="80" width="148" height="25" rx="10" fill="url(#gold)"/><text x="96" y="98" text-anchor="middle" style="font:700 12px Inter,system-ui;fill:#10281f">View &amp; apply ↗</text></g>
+    <g transform="translate(20 628)"><rect width="344" height="98" rx="21" class="node"/><circle cx="47" cy="43" r="27" class="iconCircle"/><use href="#i-chart" x="33" y="29" width="28" height="28" class="icon"/><text x="86" y="39" class="label">Forecast + briefing</text><text x="86" y="66" class="body">Risk, probability and next step</text><text x="22" y="88" class="small greenText">Personalized continuously</text></g>
+  </g>
+
+  <!-- AI principles -->
+  <g transform="translate(54 968)">
+    <rect width="2292" height="106" rx="26" fill="#0a261f" stroke="#467265" stroke-width="1.5"/>
+    <text x="24" y="34" class="eyebrow">KIRA AI DESIGN PRINCIPLES</text>
+    <g transform="translate(24 51)"><use href="#i-brain" width="28" height="28" class="icon"/><text x="40" y="21" class="label">AI chooses and explains</text></g>
+    <g transform="translate(470 51)"><use href="#i-check" width="28" height="28" class="icon"/><text x="40" y="21" class="label">Code verifies money</text></g>
+    <g transform="translate(875 51)"><use href="#i-shield" width="28" height="28" class="icon"/><text x="40" y="21" class="label">User approves changes</text></g>
+    <g transform="translate(1320 51)"><use href="#i-memory" width="28" height="28" class="icon"/><text x="40" y="21" class="label">Memory personalizes</text></g>
+    <g transform="translate(1740 51)"><use href="#i-spark" width="28" height="28" class="icon"/><text x="40" y="21" class="label">Evidence keeps AI grounded</text></g>
+  </g>
+
+  <!-- Three end-to-end AI journeys -->
+  <g transform="translate(54 1100)">
+    <text x="0" y="22" class="eyebrow">LIVE DEMO FLOWS</text>
+    <g transform="translate(0 42)" filter="url(#shadow)"><rect width="728" height="158" rx="24" class="panel2"/><circle cx="43" cy="44" r="27" class="iconCircle"/><use href="#i-meal" x="29" y="30" width="28" height="28" class="icon"/><text x="84" y="40" class="label">“Plan my daily meal”</text><text x="28" y="82" class="body">Conversation → context → Day Planner AI → grounded ranking</text><text x="28" y="111" class="body">→ suitable place, price, route and alternatives</text><text x="28" y="140" class="small greenText">AI PERSONALIZATION + REAL-WORLD CONTEXT</text></g>
+    <g transform="translate(782 42)" filter="url(#shadow)"><rect width="728" height="158" rx="24" class="panel2"/><circle cx="43" cy="44" r="27" class="iconCircle"/><use href="#i-target" x="29" y="30" width="28" height="28" class="icon"/><text x="84" y="40" class="label">“Create my savings goal”</text><text x="28" y="82" class="body">Conversation → Goal Agent → plan + scenario reasoning</text><text x="28" y="111" class="body">→ explanation → approval → persistent goal</text><text x="28" y="140" class="small greenText">AI INTENT + DETERMINISTIC FINANCE</text></g>
+    <g transform="translate(1564 42)" filter="url(#shadow)"><rect width="728" height="158" rx="24" class="panel2"/><circle cx="43" cy="44" r="27" class="iconCircle"/><use href="#i-work" x="29" y="30" width="28" height="28" class="icon"/><text x="84" y="40" class="label">“Help me reach it faster”</text><text x="28" y="82" class="body">Goal context → dynamic job search → Work Recommender AI</text><text x="28" y="111" class="body">→ top 3 matches + income/date effect + apply action</text><text x="28" y="140" class="small greenText">LIVE RETRIEVAL + AI RANKING + ACTION</text></g>
+  </g>
+</svg>

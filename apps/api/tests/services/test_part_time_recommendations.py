@@ -108,6 +108,8 @@ def test_part_time_prompt_explicitly_requests_json_for_dashscope_structured_outp
     assert "deterministic backend code" in PART_TIME_RECOMMENDER_PROMPT.casefold()
     assert "maximum, not a quota" in PART_TIME_RECOMMENDER_PROMPT.casefold()
     assert "return fewer jobs" in PART_TIME_RECOMMENDER_PROMPT.casefold()
+    assert "globally remote roles are eligible by default" in PART_TIME_RECOMMENDER_PROMPT.casefold()
+    assert "malaysia-friendly" not in PART_TIME_RECOMMENDER_PROMPT.casefold()
 
 
 def test_part_time_selection_may_return_fewer_live_jobs_instead_of_forcing_bad_matches():
