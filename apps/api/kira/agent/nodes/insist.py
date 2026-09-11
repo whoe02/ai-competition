@@ -196,7 +196,39 @@ async def insist(state: ButlerState, runtime: Runtime[ButlerContext]) -> dict:
                         ],
                     )
                 ]
-            }
+                }
+
+    # A user naming a goal after Butler asked which one to use is continuing a
+    # work search, not requesting that the goal plan be edited. Preserve that
+    # state-machine decision even if the online model mistakes "accelerate" for
+    # a replanning request and proposes start_goal_planning.
+    if route.name == "part_time_jobs":
+        if _already_answered(messages, PART_TIME):
+            return {}
+        spec = REGISTRY.get(PART_TIME)
+        if spec is None or spec.is_write:  # pragma: no cover - registry contract
+            return {}
+        events.emit(
+            runtime,
+            events.THINKING,
+            text="Matching work ideas to your goal and availability",
+        )
+        return {
+            "messages": [
+                AIMessage(
+                    id=reply.id,
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": PART_TIME,
+                            "args": _part_time_args(text, state.get("history_block", "")),
+                            "id": PART_TIME_CALL_ID,
+                            "type": "tool_call",
+                        }
+                    ],
+                )
+            ]
+        }
 
     # The model asked for something, so it is engaging with its tools and its
     # arguments are better than this node's. That covers the write path too: a
@@ -214,12 +246,6 @@ async def insist(state: ButlerState, runtime: Runtime[ButlerContext]) -> dict:
         arguments = _goal_workflow_args(goal_request, attachment)
         thinking = "Calculating the goal from your confirmed figures"
         call_id = GOAL_PLAN_CALL_ID if route.name == GOAL_WORKFLOW else GOAL_CALL_ID
-    elif route.name == "part_time_jobs":
-        desired = PART_TIME
-        arguments = _part_time_args(text, state.get("history_block", ""))
-        thinking = "Matching work ideas to your goal and availability"
-        call_id = PART_TIME_CALL_ID
-
     if desired is not None:
         if _already_answered(messages, desired):
             return {}

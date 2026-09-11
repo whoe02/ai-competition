@@ -134,6 +134,39 @@ async def test_part_time_request_in_butler_asks_for_missing_availability(
     assert "remote" in result.answer.lower()
 
 
+async def test_goal_choice_after_work_search_cannot_be_rerouted_to_goal_replanning(
+    session, butler, today
+):
+    user, thread = butler
+    await butler_thread.append(
+        session,
+        user,
+        thread,
+        role=ROLE_USER,
+        content="I want part-time work recommendations.",
+    )
+    await butler_thread.append(
+        session,
+        user,
+        thread,
+        role=ROLE_KIRA,
+        content="To find verified live work ideas, tell me which goal you want to accelerate.",
+    )
+    await session.commit()
+
+    result = await run_turn(
+        session,
+        user,
+        thread,
+        text="I want to accelerate my wedding goal.",
+        today=today,
+        model_factory=scripted_factory(("start_goal_planning", {"action": "replan"})),
+    )
+
+    assert result.tools_used == ["recommend_part_time_jobs"]
+    assert "target date" not in result.answer.casefold()
+
+
 def test_part_time_follow_ups_keep_the_original_goal_and_each_preference():
     history = (
         "Earlier in this conversation:\n"
@@ -176,6 +209,20 @@ def test_part_time_request_retains_preferences_after_a_goal_workflow_turn():
     assert args["goal_reference"] == ""
     assert args["available_hours_per_week"] == 15
     assert args["work_mode"] == "either"
+
+
+def test_goal_choice_continues_an_outstanding_work_search_without_replanning():
+    history = (
+        "Earlier in this conversation:\n"
+        "User: I want part-time work recommendations.\n"
+        "You: To find verified live work ideas, tell me which goal you want to accelerate."
+    )
+
+    route = route_for("I want to accelerate my education goal.", history=history)
+    args = _part_time_args("I want to accelerate my education goal.", history)
+
+    assert route.tools == ("recommend_part_time_jobs",)
+    assert args["goal_reference"] == "education"
 
 
 async def test_a_completed_checkpoint_can_restore_an_answer_that_was_not_persisted(

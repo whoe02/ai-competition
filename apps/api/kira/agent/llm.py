@@ -1456,13 +1456,32 @@ _EXPLICIT_GOAL_REFERENCE = re.compile(
     r"(?=[,.!?;]|$)",
     re.I,
 )
+_STANDALONE_GOAL_REFERENCE = re.compile(
+    r"^\s*(?:my\s+)?(?P<reference>[\w][\w\s-]{0,70}?)"
+    r"\s+(?:goal|fund|savings?)\s*[.!?]?\s*$",
+    re.I,
+)
 
 
 def _explicit_goal_reference(text: str) -> str:
-    match = _EXPLICIT_GOAL_REFERENCE.search(text)
+    match = _EXPLICIT_GOAL_REFERENCE.search(text) or _STANDALONE_GOAL_REFERENCE.match(text)
     if not match:
         return ""
     return " ".join(match.group("reference").split())
+
+
+def _awaiting_part_time_goal(history: str) -> bool:
+    """Whether Butler's latest visible question is choosing a work-search goal.
+
+    This is workflow state derived from the persisted transcript, not a list of
+    goal names. It lets a natural answer such as "accelerate my education goal"
+    continue the already-requested job search instead of opening replanning.
+    """
+    for line in reversed(history.splitlines()):
+        if line.startswith("You: "):
+            response = line[len("You: ") :].casefold()
+            return "verified live work ideas" in response and "which goal" in response
+    return False
 
 
 def _part_time_args(text: str, history: str = "") -> dict[str, Any]:
@@ -1774,6 +1793,8 @@ def route_for(text: str, attachment: dict[str, Any] | None = None, history: str 
     """
     if attachment and attachment.get("is_transaction", True):
         return ROUTES[0]
+    if _awaiting_part_time_goal(history) and _explicit_goal_reference(text):
+        return _PART_TIME
     if _PART_TIME_FOLLOW_UP.search(text) and _following_part_time(history):
         return _PART_TIME
     if _goal_followup(text, history):
