@@ -147,9 +147,35 @@ def test_part_time_follow_ups_keep_the_original_goal_and_each_preference():
     args = _part_time_args("Remote please.", history)
 
     assert route.tools == ("recommend_part_time_jobs",)
-    assert "wedding goal" in args["goal_reference"]
+    assert args["goal_reference"] == "wedding"
     assert args["available_hours_per_week"] == 8
     assert args["work_mode"] == "remote"
+
+
+def test_part_time_request_without_a_named_goal_does_not_use_the_full_sentence_as_a_goal():
+    args = _part_time_args(
+        "I want part-time job recommendations for 15 hours per week and either work mode."
+    )
+
+    assert args["goal_reference"] == ""
+    assert args["available_hours_per_week"] == 15
+    assert args["work_mode"] == "either"
+
+
+def test_part_time_request_retains_preferences_after_a_goal_workflow_turn():
+    history = (
+        "Earlier in this conversation:\n"
+        "User: I want part-time job recommendations, 15 hours per week and either work mode.\n"
+        "You: Tell me which goal you want to accelerate.\n"
+        "User: Create a house down payment goal.\n"
+        "You: Your plan is ready."
+    )
+
+    args = _part_time_args("I want part-time work recommendations.", history)
+
+    assert args["goal_reference"] == ""
+    assert args["available_hours_per_week"] == 15
+    assert args["work_mode"] == "either"
 
 
 async def test_a_completed_checkpoint_can_restore_an_answer_that_was_not_persisted(

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 
 import type { ButlerThread, Capture, Category, HindsightResponse } from "@kira/contracts";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -70,6 +70,25 @@ function planPreview(value: unknown): GoalPlanPreview | null {
     return null;
   }
   return plan as GoalPlanPreview;
+}
+
+function savedWorkRecommendations(value: unknown): ButlerWorkRecommendation[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is ButlerWorkRecommendation => {
+    if (!item || typeof item !== "object") return false;
+    const recommendation = item as Partial<ButlerWorkRecommendation>;
+    return typeof recommendation.goal_id === "string"
+      && Array.isArray(recommendation.recommendations)
+      && recommendation.recommendations.every((job) => (
+        Boolean(job)
+        && typeof job.role_title === "string"
+        && typeof job.why_relevant === "string"
+        && typeof job.estimated_hourly_rate_min_sen === "number"
+        && typeof job.estimated_hourly_rate_max_sen === "number"
+        && typeof job.estimated_monthly_income_min_sen === "number"
+        && typeof job.estimated_monthly_income_max_sen === "number"
+      ));
+  });
 }
 
 function approvalView(
@@ -158,6 +177,7 @@ export function Butler({
         text: message.content,
         evidence: message.evidence as EvidenceRow[],
         attachment: (message.attachment as Attachment) ?? null,
+        workRecommendations: savedWorkRecommendations(message.work_recommendations),
         resumeMessageId:
           index === thread.messages.length - 1 && message.role === "user"
             ? message.id
@@ -478,7 +498,7 @@ export function Butler({
             </div>
           ) : (
             <div className="bubble-kira" key={index}>
-              <Answer text={turn.text} hideBody={Boolean(turn.workRecommendations?.length)} />
+              {!turn.workRecommendations?.length && <Answer text={turn.text} />}
               {turn.workRecommendations?.map((recommendation) => (
                 <ButlerWorkRecommendations key={recommendation.goal_id} data={recommendation} />
               ))}
@@ -590,14 +610,29 @@ export function Butler({
 }
 
 /** The first line is the answer; the rest is the reasoning behind it. */
-function Answer({ text, hideBody = false }: { text: string; hideBody?: boolean }) {
-  const [head, ...rest] = text.split("\n");
+function Answer({ text }: { text: string }) {
+  const [head = "", ...rest] = text.split("\n");
   return (
     <>
-      <p className="kira-say">{head}</p>
-      {!hideBody && rest.length > 0 && <div className="kira-sub butler-answer-body">{rest.join("\n")}</div>}
+      <p className="kira-say"><InlineMarkdown text={head} /></p>
+      {rest.length > 0 && <div className="kira-sub butler-answer-body"><InlineMarkdown text={rest.join("\n")} /></div>}
     </>
   );
+}
+
+function InlineMarkdown({ text }: { text: string }) {
+  const parts: ReactNode[] = [];
+  const emphasis = /\*\*([^*\n]+)\*\*/g;
+  let offset = 0;
+  for (const match of text.matchAll(emphasis)) {
+    const [source, content = ""] = match;
+    const index = match.index ?? offset;
+    if (index > offset) parts.push(text.slice(offset, index));
+    parts.push(<strong key={`${index}-${content}`}>{content}</strong>);
+    offset = index + source.length;
+  }
+  if (offset < text.length) parts.push(text.slice(offset));
+  return <>{parts}</>;
 }
 
 const money = (sen: number) => `RM${(sen / 100).toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;

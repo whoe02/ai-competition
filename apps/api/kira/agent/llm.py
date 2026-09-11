@@ -1424,24 +1424,59 @@ def _following_part_time(history: str) -> bool:
     return active
 
 
-def _active_part_time_request(history: str) -> list[str]:
-    """Return a user-only request and its consecutive availability follow-ups."""
+def _latest_part_time_context(history: str) -> list[str]:
+    """Return the latest work request and any explicit preference follow-ups.
+
+    Availability and preferred work mode are user preferences, rather than a
+    property of a particular plan. They remain useful when a user creates or
+    approves a goal between asking about work and asking Butler to search.
+    """
     user_turns = [
         line[len(_USER_SAID) :] for line in history.splitlines() if line.startswith(_USER_SAID)
     ]
     for index in range(len(user_turns) - 1, -1, -1):
         if _PART_TIME_WORK.search(user_turns[index]):
-            following = user_turns[index + 1 :]
-            if all(_PART_TIME_FOLLOW_UP.search(turn) for turn in following):
-                return user_turns[index:]
-            return []
+            return [
+                user_turns[index],
+                *[
+                    turn for turn in user_turns[index + 1 :]
+                    if _PART_TIME_FOLLOW_UP.search(turn)
+                ],
+            ]
     return []
 
 
+# This extracts only an explicitly possessive goal phrase. It does not try to
+# infer a goal from a whole sentence: a request for "part-time work" is not a
+# goal name, and selecting a goal must remain the service's authoritative,
+# ownership-checked decision.
+_EXPLICIT_GOAL_REFERENCE = re.compile(
+    r"\b(?:accelerate|boost|help|support)\s+(?:my\s+)?"
+    r"(?P<reference>[\w][\w\s-]{0,70}?)(?:\s+(?:goal|fund|savings?))?"
+    r"(?=[,.!?;]|$)",
+    re.I,
+)
+
+
+def _explicit_goal_reference(text: str) -> str:
+    match = _EXPLICIT_GOAL_REFERENCE.search(text)
+    if not match:
+        return ""
+    return " ".join(match.group("reference").split())
+
+
 def _part_time_args(text: str, history: str = "") -> dict[str, Any]:
-    prior = _active_part_time_request(history) if _following_part_time(history) else []
+    prior = _latest_part_time_context(history)
     source = " ".join([*prior, text]).strip()
-    args: dict[str, Any] = {"goal_reference": source[:80]}
+    # An empty reference is intentional. The goal service can safely select a
+    # sole active goal, or return a focused choice request when several exist.
+    # It must never receive the entire job-search sentence as a supposed name.
+    args: dict[str, Any] = {
+        "goal_reference": (
+            _explicit_goal_reference(text)
+            or _explicit_goal_reference(prior[0] if prior else "")
+        )[:80]
+    }
     hours = re.search(
         r"\b([1-9]|[1-3]\d|40)\s*(?:hours?|hrs?)(?:\s*(?:per|a|/)\s*week)?\b",
         source,

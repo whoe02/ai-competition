@@ -337,6 +337,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/butler/threads/{thread_id}/messages/{message_id}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resume Interrupted Message
+         * @description Resume one persisted user turn without replaying its actions.
+         */
+        post: operations["resume_interrupted_message_v1_butler_threads__thread_id__messages__message_id__resume_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/butler/messages": {
         parameters: {
             query?: never;
@@ -1033,6 +1053,10 @@ export interface components {
             attachment: {
                 [key: string]: unknown;
             } | null;
+            /** Work Recommendations */
+            work_recommendations?: {
+                [key: string]: unknown;
+            }[];
             /**
              * Created At
              * Format: date-time
@@ -3032,6 +3056,38 @@ export interface operations {
                 "application/json": components["schemas"]["ButlerAskRequest"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resume_interrupted_message_v1_butler_threads__thread_id__messages__message_id__resume_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+                message_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

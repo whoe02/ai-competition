@@ -330,6 +330,13 @@ def route_after_tools(state: ButlerState) -> str:
     # balance after all.
     if "just_talk" in (state.get("tools_used") or []):
         return "compose"
+    # The job-search tool is itself the complete workflow: its success is a
+    # verified structured payload rendered by the client, while a missing
+    # preference or goal is a question for the user. Sending either outcome
+    # back to the model caused it to call list_goals and retry the same
+    # incomplete search within one turn.
+    if (state.get("tools_used") or []) == ["recommend_part_time_jobs"]:
+        return "compose"
     if state.get("pending_workflow"):
         return "workflow"
     if state.get("pending_write"):

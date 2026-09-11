@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import date, datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
@@ -648,6 +648,7 @@ class ButlerMessageResponse(ResponseModel):
     content: str
     evidence: list[tuple[str, str]]
     attachment: dict | None
+    work_recommendations: list[dict[str, Any]] = Field(default_factory=list)
     created_at: datetime
 
 

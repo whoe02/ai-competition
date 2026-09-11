@@ -403,8 +403,11 @@ function PartTimeRecommendationPage({
                 </div>
                 <div className="goal-part-time-benefits">
                   <span><small>Finish your goal earlier by</small><b>{daysRange(item.days_saved_min, item.days_saved_max)}</b></span>
-                  <span><small>Extra daily capacity after the goal</small><b>{moneyRange(item.future_daily_safe_to_spend_increase_min_sen, item.future_daily_safe_to_spend_increase_max_sen)} more per day</b></span>
+                  <span><small>Estimated daily capacity after goal completion</small><b>{moneyRange(item.future_daily_safe_to_spend_increase_min_sen, item.future_daily_safe_to_spend_increase_max_sen)} per day</b></span>
                 </div>
+                <p className="goal-part-time-capacity-note">
+                  Forecast only — it combines this job’s estimated income with the RM{fmt(item.goal_contribution_monthly_before_sen)} monthly amount that is no longer reserved once this goal is complete. It does not change today’s Safe to Spend.
+                </p>
               </div>
               {(item.cautions ?? []).map((caution) => <small key={caution}>{caution}</small>)}
             </article>
@@ -413,7 +416,7 @@ function PartTimeRecommendationPage({
         <section className="goal-part-time-card">
           <p className="eyebrow">How to read this forecast</p>
           <p className="goal-muted">Pay is an AI estimate before costs or tax, not a guaranteed offer. Calculations assume all side income goes to this goal.</p>
-          <p className="goal-muted">The future daily amount applies only after the goal finishes, if the work continues and your commitments remain unchanged.</p>
+          <p className="goal-muted">Daily capacity is a future estimate only: it applies after the goal finishes, if the work continues and your commitments remain unchanged. Your Safe to Spend today is not changed.</p>
         </section>
       </div>
     </div>

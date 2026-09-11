@@ -573,7 +573,9 @@ describe("Goal Planner", () => {
     expect(screen.getAllByText("15 Dec 2028")).toHaveLength(3);
     expect(screen.getAllByText("18 Jun 2027 to 15 Dec 2027")).toHaveLength(3);
     expect(screen.getAllByText("366–546 days")).toHaveLength(3);
-    expect(screen.getAllByText("RM84.67–RM107.78 more per day")).toHaveLength(3);
+    expect(screen.getAllByText("Estimated daily capacity after goal completion")).toHaveLength(3);
+    expect(screen.getAllByText("RM84.67–RM107.78 per day")).toHaveLength(3);
+    expect(screen.getAllByText(/It does not change today’s Safe to Spend/)).toHaveLength(3);
     expect(screen.getByRole("link", { name: "View & apply on Arbeitnow" })).toHaveAttribute(
       "href",
       "https://www.arbeitnow.com/jobs/ai-reviewer",

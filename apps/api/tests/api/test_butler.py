@@ -77,6 +77,35 @@ class TestThread:
         assert body["pending_approvals"] == []
         assert body["id"]
 
+    async def test_saved_work_recommendations_are_returned_with_the_thread(
+        self, butler_client, session
+    ):
+        user = (
+            await session.execute(select(User).where(User.email == DEMO_EMAIL))
+        ).scalar_one()
+        thread = await butler_thread.ensure_thread(session, user)
+        saved = [{
+            "goal_id": "fcd5b535-4034-4ac8-bd4d-b9b6c454b10d",
+            "goal_name": "Holiday fund",
+            "recommendations": [{
+                "role_title": "Remote project coordinator",
+                "apply_url": "https://www.arbeitnow.com/jobs/remote-project-coordinator",
+            }],
+        }]
+        await butler_thread.append(
+            session,
+            user,
+            thread,
+            role=ROLE_KIRA,
+            content="I found a live work idea.",
+            work_recommendations=saved,
+        )
+        await session.commit()
+
+        messages = (await butler_client.get("/v1/butler/thread")).json()["messages"]
+
+        assert messages[-1]["work_recommendations"] == saved
+
 
 class TestAsking:
     async def test_the_stream_ends_with_done(self, butler_client):

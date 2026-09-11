@@ -202,9 +202,47 @@ describe("Butler", () => {
     expect(screen.getByRole("link", { name: /View & apply for Remote project coordinator/ })).toHaveAttribute(
       "href", "https://www.arbeitnow.com/jobs/remote-project-coordinator",
     );
+    expect(screen.getByText("Live work ideas · Holiday fund")).toBeVisible();
+    expect(screen.queryByText(/Here are live work ideas/)).not.toBeInTheDocument();
     expect(screen.queryByText(/raw Markdown is not the job UI/)).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /View & apply for Remote project coordinator/ })).toHaveClass("butler-work-apply");
     await waitFor(() => expect(ready).toHaveBeenCalledOnce());
     window.removeEventListener(GOAL_RECOMMENDATION_READY, ready);
+  });
+
+  it("keeps the work table after reloading a saved conversation", async () => {
+    const savedThread = {
+      ...EMPTY_THREAD,
+      messages: [{
+        id: "saved-work-message",
+        role: "kira",
+        content: "Here are **live work ideas**.\n- raw Markdown is not the job UI.",
+        evidence: [],
+        attachment: null,
+        work_recommendations: [{
+          goal_id: "goal-work",
+          goal_name: "Holiday fund",
+          recommendations: [{
+            role_title: "Remote project coordinator",
+            apply_url: "https://www.arbeitnow.com/jobs/remote-project-coordinator",
+            why_relevant: "Matches the user's coordination background and availability.",
+            estimated_hourly_rate_min_sen: 2_500,
+            estimated_hourly_rate_max_sen: 4_000,
+            estimated_monthly_income_min_sen: 200_000,
+            estimated_monthly_income_max_sen: 320_000,
+          }],
+        }],
+        created_at: "2026-09-11T00:00:00Z",
+      }],
+    } as ButlerThread;
+
+    setup(savedThread);
+
+    expect(await screen.findByRole("table")).toHaveAccessibleName("Work recommendations for Holiday fund");
+    expect(screen.getByRole("link", { name: /View & apply for Remote project coordinator/ })).toHaveAttribute(
+      "href", "https://www.arbeitnow.com/jobs/remote-project-coordinator",
+    );
+    expect(screen.queryByText(/raw Markdown is not the job UI/)).not.toBeInTheDocument();
   });
 
   it("creates a new conversation before sending and offers a fresh start", async () => {

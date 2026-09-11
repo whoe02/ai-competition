@@ -7,9 +7,10 @@ evidence is already fixed by the time this runs.
 
 from __future__ import annotations
 
+import json
 import re
 
-from langchain_core.messages import AIMessage, SystemMessage
+from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
 from langgraph.runtime import Runtime
 
 from kira.agent import events, prompt
@@ -88,9 +89,71 @@ def _evidence_block(rows: list[list[str]]) -> str:
     return "These are the figures the tools returned. Use them exactly:\n" + lines
 
 
+def _part_time_reply(messages: list[object]) -> str | None:
+    """Use the verified job-search outcome, never model-written listings.
+
+    The web client renders successful records as a structured table with real
+    application buttons. Letting the composer repeat them in prose can turn a
+    failed search into plausible but unverified roles and URLs, so both success
+    and failure have a short source-derived response here instead.
+    """
+    for message in reversed(messages):
+        if not isinstance(message, ToolMessage) or message.name != "recommend_part_time_jobs":
+            continue
+        try:
+            value = json.loads(message.content) if isinstance(message.content, str) else None
+        except json.JSONDecodeError:
+            return "I couldn’t read the live work-search result. Please try again."
+        if not isinstance(value, dict):
+            return "I couldn’t read the live work-search result. Please try again."
+
+        goal_name = value.get("goal_name")
+        goal = goal_name if isinstance(goal_name, str) and goal_name.strip() else "your goal"
+        recommendations = value.get("recommendations")
+        if (
+            value.get("status") == "available"
+            and isinstance(recommendations, list)
+            and recommendations
+        ):
+            # The rich listing panel is the response the user needs. This text
+            # remains in the transcript for accessibility, but the client
+            # deliberately suppresses it beside that panel.
+            return f"Verified live work ideas for {goal}."
+
+        if value.get("status") == "needs_input":
+            missing = {
+                field for field in value.get("missing_fields", []) if isinstance(field, str)
+            }
+            questions: list[str] = []
+            if "goal_reference" in missing:
+                questions.append("which goal you want to accelerate")
+            if "available_hours_per_week" in missing:
+                questions.append("how many hours you can work each week")
+            if "work_mode" in missing:
+                questions.append("whether you prefer remote, on-site, or either")
+            if questions:
+                requested = ", ".join(questions[:-1])
+                requested = f"{requested} and {questions[-1]}" if requested else questions[-1]
+                return f"To find verified live work ideas, tell me {requested}."
+
+        reason = value.get("reason")
+        detail = reason.strip() if isinstance(reason, str) and reason.strip() else (
+            "No verified listings matched the current search."
+        )
+        return (
+            f"I couldn’t provide verified live work ideas for {goal} right now. "
+            f"{detail} I haven’t listed unverified alternatives."
+        )
+    return None
+
+
 async def compose(state: ButlerState, runtime: Runtime[ButlerContext]) -> dict:
     events.emit(runtime, events.THINKING, text="Putting it in words")
     evidence = state.get("evidence") or []
+    part_time_reply = _part_time_reply(list(state.get("messages") or []))
+    if part_time_reply is not None:
+        events.emit(runtime, events.TOKEN, text=part_time_reply)
+        return {"answer": part_time_reply, "messages": [AIMessage(content=part_time_reply)]}
     conversation_turn = "just_talk" in (state.get("tools_used") or [])
     system = SystemMessage(
         prompt.composing_prompt(

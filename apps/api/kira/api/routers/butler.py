@@ -75,6 +75,7 @@ async def _thread_payload(session: AsyncSession, user: User, thread) -> ButlerTh
                 "content": message.content,
                 "evidence": [list(row) for row in message.evidence],
                 "attachment": message.attachment,
+                "work_recommendations": list(message.work_recommendations),
                 "created_at": message.created_at,
             }
             for message in history
@@ -252,6 +253,7 @@ async def _run_locked(
                 content=final["answer"],
                 evidence=final.get("evidence") or [],
                 tool_calls=[{"name": name} for name in final.get("tools_used") or []],
+                work_recommendations=final.get("work_recommendations") or [],
             )
         await session.commit()
 
@@ -294,6 +296,7 @@ async def _resume_interrupted(
                     content=final["answer"],
                     evidence=final.get("evidence") or [],
                     tool_calls=[{"name": name} for name in final.get("tools_used") or []],
+                    work_recommendations=final.get("work_recommendations") or [],
                 )
             await session.commit()
 
