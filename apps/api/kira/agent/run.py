@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Any
 
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, ToolMessage
 from langgraph.types import Command
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -50,6 +50,7 @@ class TurnResult:
     # turn thought for, the other is what delegation cost.
     iterations: int = 0
     child_llm_calls: int = 0
+    work_recommendations: list[dict[str, Any]] = field(default_factory=list)
 
     @property
     def llm_calls(self) -> int:
@@ -76,6 +77,32 @@ def _context(
 
 def _config(graph_thread: str) -> dict[str, Any]:
     return {"configurable": {"thread_id": graph_thread}}
+
+
+def _work_recommendations(messages: list[Any]) -> list[dict[str, Any]]:
+    """Return the latest successful saved work result for each goal.
+
+    ToolMessages are the post-validation, provider-grounded records. Reading
+    them here keeps Butler's rich rendering and its goal-page notification in
+    lockstep without trusting prose generated after the tool ran.
+    """
+    by_goal: dict[str, dict[str, Any]] = {}
+    for message in messages:
+        if not isinstance(message, ToolMessage) or message.name != "recommend_part_time_jobs":
+            continue
+        try:
+            value = json.loads(message.content) if isinstance(message.content, str) else None
+        except json.JSONDecodeError:
+            continue
+        if (
+            not isinstance(value, dict)
+            or value.get("status") != "available"
+            or not isinstance(value.get("goal_id"), str)
+            or not isinstance(value.get("recommendations"), list)
+        ):
+            continue
+        by_goal[value["goal_id"]] = value
+    return list(by_goal.values())
 
 
 def _debug_value(value: Any) -> str:
@@ -124,6 +151,7 @@ async def _result(graph, config) -> TurnResult:
         learned=list(values.get("learned") or []),
         iterations=values.get("iterations", 0),
         child_llm_calls=values.get("child_llm_calls", 0),
+        work_recommendations=_work_recommendations(list(values.get("messages") or [])),
     )
 
 
@@ -182,6 +210,7 @@ async def stream_turn(
         "approval": result.approval,
         "learned": result.learned,
         "llm_calls": result.llm_calls,
+        "work_recommendations": result.work_recommendations,
     }
 
 
@@ -257,6 +286,7 @@ async def stream_interrupted_turn(
         "applied": result.applied,
         "learned": result.learned,
         "llm_calls": result.llm_calls,
+        "work_recommendations": result.work_recommendations,
     }
 
 

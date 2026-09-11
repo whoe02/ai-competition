@@ -251,6 +251,14 @@ describe("Goal Planner", () => {
 
     expect(await screen.findByText("Japan trip")).toBeVisible();
     expect(await screen.findByText("First home")).toBeVisible();
+    await waitFor(() => {
+      expect(screen.getByLabelText("Japan trip plan summary")).toHaveTextContent("Remaining");
+      expect(screen.getByLabelText("Japan trip plan summary")).toHaveTextContent("Per payday");
+      expect(screen.getByLabelText("Japan trip plan summary")).toHaveTextContent("Target date");
+      expect(screen.getByLabelText("First home plan summary")).toHaveTextContent("Remaining");
+      expect(screen.getByLabelText("First home plan summary")).toHaveTextContent("Per payday");
+      expect(screen.getByLabelText("First home plan summary")).toHaveTextContent("Target date");
+    });
     await user.click(screen.getByRole("button", { name: "Short-term" }));
     expect(screen.getByText("Japan trip")).toBeVisible();
     expect(screen.queryByText("First home")).not.toBeInTheDocument();

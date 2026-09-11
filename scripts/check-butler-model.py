@@ -9,7 +9,16 @@ import asyncio
 import sys
 
 from kira.agent.llm import get_chat_model, offline_reason
+from kira.agent.tools import REGISTRY
 from kira.config import get_settings
+from langchain_core.messages import HumanMessage
+from pydantic import BaseModel
+
+
+class _CapabilityProbe(BaseModel):
+    """Small provider-neutral schema used only by this operator check."""
+
+    status: str
 
 
 async def main() -> int:
@@ -18,27 +27,55 @@ async def main() -> int:
     print(f"model    : {settings.butler_model}")
     print(f"fallback : {settings.butler_fallback_model or 'none'}")
     print(f"endpoint : {settings.dashscope_base_url}")
-    print(f"key      : {'set (' + settings.dashscope_api_key[:6] + '…)' if settings.dashscope_api_key else 'NOT SET'}")
+    print(f"key      : {'configured' if settings.dashscope_api_key else 'NOT SET'}")
 
     if reason is not None:
         print(f"\nOFFLINE — {reason}.")
         print("The Butler will answer from its scripted routes, not from a model.")
         return 1
 
-    print("\nOnline. Asking the model one question…")
+    print("\nOnline. Checking chat, tool calling, and structured output…")
 
     try:
-        reply = await get_chat_model().ainvoke(
-            "Reply with exactly: kira online"
+        model = get_chat_model()
+        reply = await model.ainvoke(
+            [HumanMessage(content="Reply with exactly: kira online")]
         )
-    except Exception as exc:
+        # Binding an empty list does not put a `tools` field in every provider
+        # request. Bind the real registry to test the same request Butler makes.
+        tool_reply = await model.bind_tools(REGISTRY.schemas()).ainvoke(
+            [
+                HumanMessage(
+                    content=(
+                        "Reply with exactly: kira tools online. "
+                        "Do not call a tool for this capability check."
+                    )
+                )
+            ]
+        )
+        structured = await model.with_structured_output(_CapabilityProbe).ainvoke(
+            [
+                HumanMessage(
+                    content=(
+                        'Return one JSON object with exactly {"status":"kira structured online"}. '
+                        "Do not include Markdown."
+                    )
+                )
+            ]
+        )
+    except Exception as exc:  # noqa: BLE001 - reports any provider failure to the operator
         print(f"\nFAILED — {type(exc).__name__}: {exc}")
-        print("The Butler would try its fallback model, then go offline.")
+        print(
+            "The configured model cannot complete every Butler capability. "
+            "Choose a tool-capable primary/fallback pair before using it."
+        )
         await _list_models(settings)
         return 2
 
     print(f"model said: {str(reply.content).strip()!r}")
-    print("\nOK — the Butler is on the model.")
+    print(f"tools said: {str(tool_reply.content).strip()!r}")
+    print(f"structured said: {structured.status!r}")
+    print("\nOK — the Butler model supports every required request shape.")
     return 0
 
 
@@ -54,7 +91,7 @@ async def _list_models(settings) -> None:
             )
         response.raise_for_status()
         ids = sorted(item["id"] for item in response.json().get("data", []))
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - network diagnostics must remain best effort
         print(f"\n(could not list models: {type(exc).__name__}: {exc})")
         return
 

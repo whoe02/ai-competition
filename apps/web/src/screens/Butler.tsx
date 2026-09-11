@@ -10,6 +10,7 @@ import {
   resumeAnswer,
   type ApprovalView,
   type AppAction,
+  type ButlerWorkRecommendation,
   type ChangeSetLine,
   type ButlerEvent,
   type EvidenceRow,
@@ -28,6 +29,7 @@ import { OnScreen } from "../components/Sheet";
 import { TrackRecord } from "../components/TrackRecord";
 import { VoiceSheet } from "../components/VoiceSheet";
 import { takeButlerHandoff } from "../lib/butlerHandoff";
+import { announceGoalRecommendationReady } from "../lib/goalRecommendationEvents";
 
 type Attachment = (Capture & { preview?: string }) | null;
 
@@ -41,6 +43,7 @@ type Turn = {
   approvals?: ApprovalView[];
   applied?: boolean;
   resumeMessageId?: string;
+  workRecommendations?: ButlerWorkRecommendation[];
 };
 
 /** What the graph is doing right now, before there is an answer to show. */
@@ -259,6 +262,9 @@ export function Butler({
         case "app_action":
           onAppAction?.(event);
           break;
+        case "goal_recommendation_ready":
+          announceGoalRecommendationReady(event.goal_id);
+          break;
         case "approval":
           state = {
             ...state,
@@ -295,6 +301,7 @@ export function Butler({
               // a fenced start_goal_planning(...) call reappeared in chat.
               text: event.answer,
               evidence: event.evidence?.length ? event.evidence : state.evidence,
+              workRecommendations: event.work_recommendations,
               approval: standing,
               applied: Boolean(event.applied),
             },
@@ -471,7 +478,10 @@ export function Butler({
             </div>
           ) : (
             <div className="bubble-kira" key={index}>
-              <Answer text={turn.text} />
+              <Answer text={turn.text} hideBody={Boolean(turn.workRecommendations?.length)} />
+              {turn.workRecommendations?.map((recommendation) => (
+                <ButlerWorkRecommendations key={recommendation.goal_id} data={recommendation} />
+              ))}
               <Evidence rows={turn.evidence} />
               {[...(turn.approvals ?? []), ...(turn.approval ? [turn.approval] : [])].map((proposal) => (
                 <Approval
@@ -580,13 +590,37 @@ export function Butler({
 }
 
 /** The first line is the answer; the rest is the reasoning behind it. */
-function Answer({ text }: { text: string }) {
+function Answer({ text, hideBody = false }: { text: string; hideBody?: boolean }) {
   const [head, ...rest] = text.split("\n");
   return (
     <>
       <p className="kira-say">{head}</p>
-      {rest.length > 0 && <div className="kira-sub butler-answer-body">{rest.join("\n")}</div>}
+      {!hideBody && rest.length > 0 && <div className="kira-sub butler-answer-body">{rest.join("\n")}</div>}
     </>
+  );
+}
+
+const money = (sen: number) => `RM${(sen / 100).toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+function ButlerWorkRecommendations({ data }: { data: ButlerWorkRecommendation }) {
+  if (data.recommendations.length === 0) return null;
+  return (
+    <section className="butler-work-recommendations" aria-label={`Work recommendations for ${data.goal_name ?? "your goal"}`}>
+      <p className="eyebrow on-ink">Live work ideas · {data.goal_name ?? "your goal"}</p>
+      <div className="butler-work-table" role="table" aria-label={`Work recommendations for ${data.goal_name ?? "your goal"}`}>
+        <div className="butler-work-table-head" role="row">
+          <span role="columnheader">Role</span><span role="columnheader">Estimated pay</span><span role="columnheader">Apply</span>
+        </div>
+        {data.recommendations.map((job) => (
+          <div className="butler-work-table-row" role="row" key={job.apply_url ?? `${job.role_title}-${job.job_company}`}>
+            <span role="cell"><b>{job.role_title}</b><small>{[job.job_company, job.job_location].filter(Boolean).join(" · ")}</small><em>{job.why_relevant}</em></span>
+            <span role="cell"><b>{money(job.estimated_hourly_rate_min_sen)}–{money(job.estimated_hourly_rate_max_sen)}/hr</b><small>{money(job.estimated_monthly_income_min_sen)}–{money(job.estimated_monthly_income_max_sen)}/month</small></span>
+            <span role="cell">{job.apply_url ? <a className="butler-work-apply" href={job.apply_url} target="_blank" rel="noreferrer">View & apply<span className="sr-only"> for {job.role_title}</span></a> : <small>Link unavailable</small>}</span>
+          </div>
+        ))}
+      </div>
+      {data.overall_guidance && <p className="butler-work-guidance">{data.overall_guidance}</p>}
+    </section>
   );
 }
 

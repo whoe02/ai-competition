@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ButlerThread } from "@kira/contracts";
 
 import { handToButler, takeButlerHandoff } from "../lib/butlerHandoff";
+import { GOAL_RECOMMENDATION_READY } from "../lib/goalRecommendationEvents";
 import { Butler } from "./Butler";
 
 const EMPTY_THREAD: ButlerThread = {
@@ -163,6 +164,47 @@ describe("Butler", () => {
     await waitFor(() => expect(onAppAction).toHaveBeenCalledWith(expect.objectContaining({
       action: "navigate", tab: "activity", category: "food",
     })));
+  });
+
+  it("renders verified work ideas as a table and announces their goal notification", async () => {
+    const ready = vi.fn();
+    window.addEventListener(GOAL_RECOMMENDATION_READY, ready);
+    vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(streamed(sse(
+      { type: "goal_recommendation_ready", goal_id: "goal-work", goal_name: "Holiday fund" },
+      {
+        type: "done",
+        answer: "Here are **live work ideas**.\n- raw Markdown is not the job UI.",
+        approval: null,
+        work_recommendations: [{
+          goal_id: "goal-work",
+          goal_name: "Holiday fund",
+          overall_guidance: "Compare each listing's terms before applying.",
+          recommendations: [{
+            role_title: "Remote project coordinator",
+            job_company: "Live Company",
+            job_location: "Remote",
+            job_source: "arbeitnow",
+            apply_url: "https://www.arbeitnow.com/jobs/remote-project-coordinator",
+            why_relevant: "Matches the user's coordination background and availability.",
+            estimated_hourly_rate_min_sen: 2_500,
+            estimated_hourly_rate_max_sen: 4_000,
+            estimated_monthly_income_min_sen: 200_000,
+            estimated_monthly_income_max_sen: 320_000,
+          }],
+        }],
+      },
+    )))));
+    const user = setup();
+
+    await user.type(screen.getByLabelText("Ask Kira"), "Find work for my holiday goal{Enter}");
+
+    expect(await screen.findByRole("table")).toHaveAccessibleName("Work recommendations for Holiday fund");
+    expect(screen.getByRole("link", { name: /View & apply for Remote project coordinator/ })).toHaveAttribute(
+      "href", "https://www.arbeitnow.com/jobs/remote-project-coordinator",
+    );
+    expect(screen.queryByText(/raw Markdown is not the job UI/)).not.toBeInTheDocument();
+    await waitFor(() => expect(ready).toHaveBeenCalledOnce());
+    window.removeEventListener(GOAL_RECOMMENDATION_READY, ready);
   });
 
   it("creates a new conversation before sending and offers a fresh start", async () => {

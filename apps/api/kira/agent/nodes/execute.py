@@ -73,6 +73,21 @@ async def tools(state: ButlerState, runtime: Runtime[ButlerContext]) -> dict:
         )
         if spec.is_ui and isinstance(result.value, dict) and result.value.get("app_action"):
             events.emit(runtime, events.APP_ACTION, **result.value["app_action"])
+        if (
+            spec.name == "recommend_part_time_jobs"
+            and isinstance(result.value, dict)
+            and result.value.get("status") == "available"
+            and isinstance(result.value.get("goal_id"), str)
+        ):
+            # This is emitted by the successful, persisted recommendation tool
+            # rather than requested from the model. A Butler turn therefore
+            # triggers the same ready notice as the Goal Planner page.
+            events.emit(
+                runtime,
+                events.GOAL_RECOMMENDATION_READY,
+                goal_id=result.value["goal_id"],
+                goal_name=result.value.get("goal_name", ""),
+            )
         for row in result.evidence:
             pair = row.as_pair()
             if pair not in evidence:

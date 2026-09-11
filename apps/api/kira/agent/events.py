@@ -22,6 +22,7 @@ EVIDENCE = "evidence"
 TOKEN = "token"
 APPROVAL = "approval"
 APP_ACTION = "app_action"
+GOAL_RECOMMENDATION_READY = "goal_recommendation_ready"
 DONE = "done"
 ERROR = "error"
 

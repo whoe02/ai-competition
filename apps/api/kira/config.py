@@ -13,7 +13,12 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     # `enable_decoding=False` stops the env sources from JSON-parsing list
     # fields before validation, so CORS_ORIGINS can be written plainly.
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore", enable_decoding=False)
+    # Docker Compose injects the repository `.env` into the container. For
+    # local commands launched from `apps/api`, also look two directories up so
+    # diagnostics and the server resolve the same configuration.
+    model_config = SettingsConfigDict(
+        env_file=(".env", "../../.env"), extra="ignore", enable_decoding=False
+    )
 
     database_url: str = "postgresql+asyncpg://kira:kira@localhost:5432/kira"
     jwt_secret: str = "development-only-replace-with-a-secure-jwt-secret"
@@ -30,11 +35,11 @@ class Settings(BaseSettings):
     dashscope_api_key: str = ""
     dashscope_base_url: str = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
     # The model every turn is asked of first.
-    butler_model: str = "qwen3.5-35b-a3b"
+    butler_model: str = "qwen-plus"
     # Tried with the same call when the main model errors: an id this key is
     # not served, a rate limit, a timeout. Only when both fail does a turn
     # drop to the offline stand-in. Blank disables the middle rung.
-    butler_fallback_model: str = "qwen3.6-plus"
+    butler_fallback_model: str = "qwen-flash"
     # Forced offline; the Butler also falls back on a missing key or a failed call.
     butler_offline: bool = False
     butler_max_tool_iterations: int = 6

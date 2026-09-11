@@ -440,9 +440,15 @@ def _normalise_job_payload(
                 normalised[field] = source_fields[field]
             # Keep valid model explanations, but repair omitted/null prose from
             # the same live record so presentation mistakes do not cause a 503.
-            for field in ("why_relevant", "first_step", "pay_estimate_basis"):
+            for field in ("why_relevant", "first_step"):
                 if not isinstance(normalised.get(field), str) or not normalised[field]:
                     normalised[field] = source_fields[field]
+            # The model estimates the structured hourly range, but the basis
+            # must remain an explanation of that estimate rather than another
+            # unvalidated pay claim.  Taking this from the selected live record
+            # makes every currency and compensation format safe without
+            # maintaining a list of provider-specific wording patterns.
+            normalised["pay_estimate_basis"] = source_fields["pay_estimate_basis"]
         for field, keys in numeric_aliases.items():
             raw_value = next(
                 (raw_job[key] for key in keys if raw_job.get(key) is not None),

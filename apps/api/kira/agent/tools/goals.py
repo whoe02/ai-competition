@@ -130,6 +130,10 @@ async def _recommend_part_time(ctx: ToolContext, args: PartTimeRecommendationArg
             ),
             transport_limitations=args.transport_limitations,
         )
+        # The recommendation itself is stored by the shared service. The name
+        # is presentation context for this Butler turn, so it is kept out of
+        # the persisted plan payload and derived from the owned goal here.
+        value["goal_name"] = goal.name
     except PlannedGoalNotFound:
         value = {
             "status": "not_available",

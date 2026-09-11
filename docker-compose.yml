@@ -38,7 +38,7 @@ services:
       DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
       DASHSCOPE_BASE_URL: ${DASHSCOPE_BASE_URL:-https://dashscope-intl.aliyuncs.com/compatible-mode/v1}
       BUTLER_MODEL: ${BUTLER_MODEL:-qwen-plus}
-      BUTLER_FALLBACK_MODEL: ${BUTLER_FALLBACK_MODEL:-}
+      BUTLER_FALLBACK_MODEL: ${BUTLER_FALLBACK_MODEL:-qwen-flash}
       BUTLER_OFFLINE: ${BUTLER_OFFLINE:-0}
       # Road distances for the day planner. Off, or with the router unreachable
       # from the venue, every place comes back labelled "straight line" and the

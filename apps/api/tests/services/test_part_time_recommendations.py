@@ -163,6 +163,44 @@ def test_part_time_selection_may_return_fewer_live_jobs_instead_of_forcing_bad_m
     ]
 
 
+def test_part_time_selection_uses_live_listing_for_pay_basis_when_model_cites_money():
+    """Provider compensation wording cannot invalidate an otherwise safe job choice."""
+    listing = JobListing(
+        id="remotive:task-priced",
+        title="Remote task reviewer",
+        company="Source Employer",
+        location="Remote",
+        job_type="Freelance",
+        apply_url="https://remotive.com/remote-jobs/task-priced",
+        source="remotive",
+        description="Review submitted tasks against documented quality requirements.",
+    )
+    selected = part_time_service._validated_job_selection(
+        {
+            "recommendations": [
+                {
+                    "source_job_id": listing.id,
+                    "role_title": listing.title,
+                    "typical_tasks": listing.description,
+                    "why_relevant": "Flexible remote review work suits the supplied availability.",
+                    "work_arrangement": "Freelance; Remote",
+                    "first_step": "Read the current requirements and submit an application.",
+                    "pay_estimate_basis": "Task-based USD compensation depends on approval rates.",
+                    "cautions": [],
+                    **PAY_ESTIMATE,
+                }
+            ],
+            "overall_guidance": "Compare each live listing before committing your available time.",
+        },
+        model_candidates=[listing],
+        current_job_title="Project coordinator",
+        recommendation_count=1,
+    )
+
+    assert "USD" not in selected.recommendations[0].pay_estimate_basis
+    assert "Remote task reviewer" in selected.recommendations[0].pay_estimate_basis
+
+
 def test_part_time_selection_can_report_no_suitable_current_listing():
     selected = part_time_service._validated_job_selection(
         {

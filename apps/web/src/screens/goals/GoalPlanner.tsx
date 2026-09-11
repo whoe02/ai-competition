@@ -241,13 +241,11 @@ function GoalCard({
       <div className="goal-card-title"><div><p>{detail.data ? goalTypeLabel(detail.data.goal_type) : "Goal"}</p><h2>{goal.name}</h2></div><b>{progress}%</b></div>
       <div className="goal-progress" role="progressbar" aria-label={`${goal.name} progress`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}><i style={{ width: `${progress}%` }} /></div>
       <div className="goal-card-money"><div><span>Saved</span><strong>RM{fmt(saved)}</strong></div><div><span>Target</span><strong>RM{fmt(target)}</strong></div></div>
-      {primary && (
-        <div className="goal-card-plan">
-          <span>Remaining <b>{plan.data ? `RM${fmt(plan.data.remaining_amount_sen)}` : "Loading…"}</b></span>
-          <span>Per payday <b>{plan.data ? `RM${fmt(plan.data.required_contribution_per_payday_sen)}` : "Loading…"}</b></span>
-          <span>Target date <b>{formatGoalDate(detail.data?.target_date ?? null)}</b></span>
-        </div>
-      )}
+      <div className="goal-card-plan" aria-label={`${goal.name} plan summary`}>
+        <span>Remaining <b>{plan.data ? `RM${fmt(plan.data.remaining_amount_sen)}` : "Loading…"}</b></span>
+        <span>Per payday <b>{plan.data ? `RM${fmt(plan.data.required_contribution_per_payday_sen)}` : "Loading…"}</b></span>
+        <span>Target date <b>{formatGoalDate(plan.data?.target_date ?? detail.data?.target_date ?? null)}</b></span>
+      </div>
       {(detail.isError || plan.isError) && <p className="goal-card-warning">Some plan details are temporarily unavailable.</p>}
       <button className={`btn ${primary ? "btn-accent" : "btn-line"} goal-full-button`} onClick={onView}>View plan</button>
     </article>

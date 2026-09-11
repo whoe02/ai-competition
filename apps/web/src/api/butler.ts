@@ -50,6 +50,24 @@ export type AppAction = {
   plan_view?: "daily" | "goals" | "foresight";
 };
 
+export type ButlerWorkRecommendation = {
+  goal_id: string;
+  goal_name?: string;
+  overall_guidance?: string | null;
+  recommendations: Array<{
+    role_title: string;
+    job_company?: string | null;
+    job_location?: string | null;
+    job_source?: "arbeitnow" | "remotive" | null;
+    apply_url?: string | null;
+    why_relevant: string;
+    estimated_hourly_rate_min_sen: number;
+    estimated_hourly_rate_max_sen: number;
+    estimated_monthly_income_min_sen: number;
+    estimated_monthly_income_max_sen: number;
+  }>;
+};
+
 export type ButlerEvent =
   | { type: "message"; id: string; role: string }
   | { type: "thinking"; text: string }
@@ -57,6 +75,7 @@ export type ButlerEvent =
   | { type: "evidence"; rows: EvidenceRow[] }
   | { type: "token"; text: string }
   | ({ type: "app_action" } & AppAction)
+  | { type: "goal_recommendation_ready"; goal_id: string; goal_name?: string }
   | {
       type: "approval";
       approval_id: string;
@@ -77,6 +96,7 @@ export type ButlerEvent =
       approval: { approval_id: string; summary: string } | null;
       applied?: { tool: string; summary: string } | null;
       llm_calls?: number;
+      work_recommendations?: ButlerWorkRecommendation[];
     }
   | { type: "error"; message: string };
 
