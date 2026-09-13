@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-import type { BriefingInboxResponse, DashboardToday } from "@kira/contracts";
+import type { BriefingInboxResponse, DashboardToday, ForesightResponse } from "@kira/contracts";
 
 import type { Tab } from "../App";
 import type { PlanView } from "./Plan";
@@ -27,11 +27,37 @@ type TodayProps = {
   isLoading: boolean;
   isError: boolean;
   briefing?: BriefingInboxResponse | null;
+  foresight?: ForesightResponse;
   go: (tab: Tab, planView?: PlanView) => void;
+  onAskButler?: (text: string) => void;
   onRetry?: () => void;
 };
 
-export function Today({ data, isLoading, isError, briefing, go, onRetry }: TodayProps) {
+type TodayInsight = {
+  goalName: string;
+  probability: number;
+  targetDate: string;
+  message: string;
+};
+
+function todayInsight(data: DashboardToday, foresight?: ForesightResponse): TodayInsight | null {
+  if (!foresight || foresight.profile_days < 14) return null;
+  const focus = [...foresight.outlooks]
+    .sort((left, right) => left.probability_bp - right.probability_bp || left.target_date.localeCompare(right.target_date))
+    .find((outlook) => outlook.probability_bp < 7_000);
+  if (!focus) return null;
+  const goal = data.goals.find((candidate) => candidate.id === focus.goal_id);
+  if (!goal) return null;
+  const probability = Math.round(focus.probability_bp / 100);
+  return {
+    goalName: goal.name,
+    probability,
+    targetDate: focus.target_date,
+    message: `At your current pace, ${goal.name} has a ${probability}% chance of being ready by ${DAY_MONTH.format(new Date(`${focus.target_date}T00:00:00`))}.`,
+  };
+}
+
+export function Today({ data, isLoading, isError, briefing, foresight, go, onAskButler, onRetry }: TodayProps) {
   const [maths, setMaths] = useState(false);
 
   // A wrong number is worse than no number, so neither state guesses.
@@ -73,6 +99,7 @@ export function Today({ data, isLoading, isError, briefing, go, onRetry }: Today
   const paceOver = spent > share;
   const pacePct = share > 0 ? Math.min(1, spent / share) : 0;
   const waiting = (briefing?.pending_proposal_count ?? 0) + data.drafts_waiting;
+  const insight = todayInsight(data, foresight);
   const due = next ? new Date(`${next.due_date}T00:00:00`) : null;
   const rows: [string, string, boolean?][] = [
     ["In hand", fmt(data.balance_sen)],
@@ -143,6 +170,28 @@ export function Today({ data, isLoading, isError, briefing, go, onRetry }: Today
             )}
           </section>
         </Reveal>
+
+        {insight && (
+          <Reveal delay={20}>
+            <section className="today-insight" aria-label="Kira's insight">
+              <span className="today-insight-mark" aria-hidden="true"><IcSpark size={18} /></span>
+              <div>
+                <p className="today-insight-label">Kira noticed</p>
+                <h2>{insight.goalName} needs a closer look</h2>
+                <p>{insight.message}</p>
+                <button
+                  className="today-insight-action"
+                  onClick={() => onAskButler?.(
+                    `Kira's forecast says my ${insight.goalName} goal has a ${insight.probability}% chance of reaching its target on ${insight.targetDate}. Explain why in plain language and show safe, approval-only ways to improve it. Do not make any changes.`,
+                  )}
+                >
+                  Talk it through with Kira
+                  <IcArrow size={16} />
+                </button>
+              </div>
+            </section>
+          </Reveal>
+        )}
 
         <Reveal delay={30}>
           <div className="ledger">

@@ -2,7 +2,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { DashboardToday } from "@kira/contracts";
+import type { DashboardToday, ForesightResponse } from "@kira/contracts";
 
 import { Today } from "./Today";
 
@@ -44,6 +44,23 @@ const DATA = {
   ],
 } as DashboardToday;
 
+const FORESIGHT: ForesightResponse = {
+  horizon_days: 180,
+  dates: ["2026-09-04"],
+  p10: [{ sen: 300000, currency: "MYR" }],
+  p50: [{ sen: 400000, currency: "MYR" }],
+  p90: [{ sen: 500000, currency: "MYR" }],
+  outlooks: [{
+    goal_id: "g1",
+    target_date: "2027-02-15",
+    probability_bp: 6200,
+    median_shortfall: { sen: 30000, currency: "MYR" },
+  }],
+  drivers: [],
+  profile_days: 90,
+  assumption: "Based on confirmed spending. It is a projection, not a promise.",
+};
+
 function renderToday(overrides: Partial<Parameters<typeof Today>[0]> = {}) {
   return render(<Today data={DATA} isLoading={false} isError={false} go={vi.fn()} {...overrides} />);
 }
@@ -59,6 +76,31 @@ describe("Today", () => {
   it("greets the user by name", () => {
     renderToday();
     expect(screen.getByText(/Floyd/)).toBeInTheDocument();
+  });
+
+  it("turns an at-risk forecast into a Butler conversation", async () => {
+    const onAskButler = vi.fn();
+    renderToday({ foresight: FORESIGHT, onAskButler });
+    const user = userEvent.setup();
+
+    expect(screen.getByText("Emergency top-up needs a closer look")).toBeInTheDocument();
+    expect(screen.getByText(/62% chance of being ready by 15 February/i)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /talk it through with Kira/i }));
+
+    expect(onAskButler).toHaveBeenCalledWith(
+      expect.stringContaining("safe, approval-only ways to improve it"),
+    );
+  });
+
+  it("does not create noise from an on-track forecast", () => {
+    renderToday({
+      foresight: {
+        ...FORESIGHT,
+        outlooks: [{ ...FORESIGHT.outlooks[0]!, probability_bp: 7100 }],
+      },
+    });
+
+    expect(screen.queryByLabelText("Kira's insight")).not.toBeInTheDocument();
   });
 
   it("names the next commitment with its amount and countdown", () => {

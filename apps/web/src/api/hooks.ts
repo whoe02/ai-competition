@@ -175,6 +175,7 @@ function useLedgerWrite<TData, TVariables>(mutationFn: (variables: TVariables) =
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: activityKey }),
         queryClient.invalidateQueries({ queryKey: dashboardTodayKey }),
+        queryClient.invalidateQueries({ queryKey: foresightKey }),
       ]);
     },
   });

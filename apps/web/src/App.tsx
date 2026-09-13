@@ -77,7 +77,10 @@ export function App() {
   const screenRef = useRef<HTMLDivElement>(null);
   const dashboard = useDashboardToday(signedIn);
   const briefing = useBriefingToday(signedIn);
-  const foresight = useForesight(signedIn && tab === "plan");
+  // It is fetched in the background on Today so a useful risk can become one
+  // short, actionable insight. The full forecast remains available when the
+  // Butler explicitly opens it, but it is not a destination people must find.
+  const foresight = useForesight(signedIn && (tab === "today" || tab === "plan"));
   const hindsight = useHindsight(signedIn && tab === "butler");
   const [category, setCategory] = useState<string | null>(null);
   const activity = useActivity(signedIn && tab === "activity", category);
@@ -267,7 +270,12 @@ export function App() {
                       isLoading={dashboard.isLoading}
                       isError={dashboard.isError}
                       briefing={briefing.data}
+                      foresight={foresight.data}
                       go={go}
+                      onAskButler={(text) => {
+                        setPending({ text });
+                        go("butler");
+                      }}
                       onRetry={() => void dashboard.refetch()}
                     />
                   )}

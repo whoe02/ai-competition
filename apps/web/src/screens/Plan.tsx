@@ -115,11 +115,22 @@ export function Plan({
         </div>
       ) : (
         <div id="plan-goals-panel" role="tabpanel" aria-labelledby="plan-goals-tab">
-          <GoalPlanner
-            recommendationGoalId={recommendationGoalId}
-            recommendationFocusGoalId={recommendationFocusGoalId}
-            onRecommendationOpened={onRecommendationOpened}
-          />
+          {view === "foresight" ? (
+            <Foresight
+              data={data}
+              goals={goals}
+              isLoading={isLoading}
+              isError={isError}
+              onBack={() => setView("goals")}
+              onDriver={onDriver}
+            />
+          ) : (
+            <GoalPlanner
+              recommendationGoalId={recommendationGoalId}
+              recommendationFocusGoalId={recommendationFocusGoalId}
+              onRecommendationOpened={onRecommendationOpened}
+            />
+          )}
         </div>
       )}
     </>

@@ -84,20 +84,15 @@ function renderPlan(overrides: Partial<Parameters<typeof Plan>[0]> = {}) {
 }
 
 describe("Plan", () => {
-  async function openForesight() {
-    const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: /open foresight/i }));
-    return user;
+  function renderForesight(overrides: Partial<Parameters<typeof Plan>[0]> = {}) {
+    return renderPlan({ ...overrides, initialView: "foresight" });
   }
 
-  it("keeps forecasts in a dedicated Foresight section", async () => {
+  it("keeps forecasts out of the Goals page until Kira explicitly opens them", () => {
     renderPlan();
     expect(screen.getByText("What are you saving toward?")).toBeInTheDocument();
     expect(screen.queryByText("62%")).not.toBeInTheDocument();
-
-    await openForesight();
-    expect(screen.getAllByText(/62% likely by/i)).toHaveLength(2);
-    expect(screen.getAllByText("Emergency top-up")).toHaveLength(2);
+    expect(screen.queryByRole("button", { name: /open foresight/i })).not.toBeInTheDocument();
   });
 
   it("uses the shared reveal motion when Goals is selected", async () => {
@@ -111,30 +106,27 @@ describe("Plan", () => {
   });
 
   it("states the assumption next to the number, not in a tooltip", async () => {
-    renderPlan();
-    await openForesight();
+    renderForesight();
     expect(screen.getByText(/last 90 days/i)).toBeInTheDocument();
     expect(screen.getByText(/not a promise/i)).toBeInTheDocument();
   });
 
   it("renders one driver card per ranked change", async () => {
-    renderPlan();
-    await openForesight();
+    renderForesight();
     expect(screen.getAllByRole("button", { name: /let kira do it/i })).toHaveLength(
       FORECAST.drivers.length,
     );
   });
 
   it("shows what a driver buys, before and after", async () => {
-    renderPlan();
-    await openForesight();
+    renderForesight();
     expect(screen.getByText("62% → 91%")).toBeInTheDocument();
   });
 
   it("hands a driver to the Butler instead of applying it", async () => {
     const onDriver = vi.fn();
-    renderPlan({ onDriver });
-    const user = await openForesight();
+    renderForesight({ onDriver });
+    const user = userEvent.setup();
 
     await user.click(screen.getAllByRole("button", { name: /let kira do it/i })[0]!);
 
@@ -142,8 +134,7 @@ describe("Plan", () => {
   });
 
   it("says so plainly when there is not enough history to forecast", async () => {
-    renderPlan({ data: { ...FORECAST, outlooks: [], drivers: [], profile_days: 3 } });
-    await openForesight();
+    renderForesight({ data: { ...FORECAST, outlooks: [], drivers: [], profile_days: 3 } });
     expect(screen.getByText(/not enough history/i)).toBeInTheDocument();
   });
 });
