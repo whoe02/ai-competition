@@ -8,6 +8,7 @@ import re
 from asyncio import gather
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import replace
+from html import unescape
 from time import perf_counter
 from typing import Any, Literal
 
@@ -37,7 +38,7 @@ from kira.services.goal_planning import (
 logger = logging.getLogger("uvicorn.error.kira.part_time_recommender")
 logger.setLevel(logging.INFO)
 WorkMode = Literal["remote", "on_site", "either"]
-RECOMMENDATION_SCHEMA_VERSION = 5
+RECOMMENDATION_SCHEMA_VERSION = 6
 REMOTIVE_JOBS_URL = "https://remotive.com/api/remote-jobs"
 ARBEITNOW_JOBS_URL = "https://www.arbeitnow.com/api/job-board-api"
 JobSource = Literal["remotive", "arbeitnow"]
@@ -69,6 +70,48 @@ def _migrate_v4_part_time_recommendation(
 
     migrated = {key: value for key, value in cached.items() if key != "safe_to_spend_changes"}
     migrated["recommendations"] = migrated_recommendations
+    migrated["recommendation_schema_version"] = 5
+    return migrated
+
+
+def _migrate_v5_part_time_recommendation(
+    cached: dict[str, object],
+) -> dict[str, object] | None:
+    """Remove encoded provider markup from display fields in saved results."""
+    recommendations = cached.get("recommendations")
+    if not isinstance(recommendations, list):
+        return None
+
+    text_limits = {
+        "job_company": 160,
+        "job_location": 160,
+        "role_title": 72,
+        "typical_tasks": 150,
+        "why_relevant": 150,
+        "work_arrangement": 100,
+        "first_step": 120,
+        "pay_estimate_basis": 120,
+    }
+    migrated_recommendations: list[dict[str, object]] = []
+    for recommendation in recommendations:
+        if not isinstance(recommendation, dict):
+            return None
+        migrated = dict(recommendation)
+        for field, limit in text_limits.items():
+            if isinstance(migrated.get(field), str):
+                migrated[field] = _compact_text(_plain_text(migrated[field], limit), limit)
+        cautions = migrated.get("cautions")
+        if isinstance(cautions, list):
+            migrated["cautions"] = [
+                _compact_text(_plain_text(caution, 90), 90)
+                if isinstance(caution, str)
+                else caution
+                for caution in cautions
+            ]
+        migrated_recommendations.append(migrated)
+
+    migrated = dict(cached)
+    migrated["recommendations"] = migrated_recommendations
     migrated["recommendation_schema_version"] = RECOMMENDATION_SCHEMA_VERSION
     return migrated
 
@@ -77,6 +120,7 @@ _PART_TIME_RECOMMENDATION_MIGRATIONS: dict[
     int, Callable[[dict[str, object]], dict[str, object] | None]
 ] = {
     4: _migrate_v4_part_time_recommendation,
+    5: _migrate_v5_part_time_recommendation,
 }
 
 
@@ -121,6 +165,9 @@ def _stored_source_job_ids(cached: Mapping[str, object]) -> set[str]:
     }
 
 
+_GLOBAL_REMOTE_ELIGIBILITY = "Globally remote roles are eligible by default"
+
+
 PART_TIME_RECOMMENDER_PROMPT = """You are Kira's part-time work recommender.
 
 Select up to three distinct real job listings from the supplied candidate set
@@ -131,8 +178,8 @@ candidate ID; never invent an employer, title, job, or application URL.
 Treat selection_requirements.recommendation_count as a maximum, not a quota.
 Return fewer jobs, or an empty recommendations array, when the live candidates
 do not genuinely fit the user's professional background, weekly hours, work
-mode, and any explicit location or transport constraints. Globally remote roles
-are eligible by default when the user has not supplied a location restriction.
+mode, and any explicit location or transport constraints. __GLOBAL_REMOTE_ELIGIBILITY__
+when the user has not supplied a location restriction.
 Never fill a slot with a role that
 the listing says needs full-time availability when the user supplied part-time
 hours. Never select an on-site role whose stated location conflicts with the
@@ -143,7 +190,8 @@ call a listing part-time, remote, contract, or freelance unless its candidate
 record supports that claim, and summarize tasks only from that record.
 
 For every role, estimate a conservative hourly pay range in integer Malaysian
-sen as the app's currency representation, plus realistic whole-number hours and work days per week. Suggested hours
+sen as the app's currency representation, plus realistic whole-number hours and work days per week.
+Suggested hours
 must not exceed the user's available hours. Base the range on the role's skill
 level, arrangement, and part-time or freelance context. Explain the
 estimate basis briefly without claiming it is verified live market data.
@@ -192,7 +240,7 @@ The numeric values above only demonstrate valid JSON types. Replace them with
 role-specific estimates that respect the user's available hours. The
 recommendations array may contain zero to three objects. Do not use job_1,
 job_2, job_3, or any alternative top-level keys.
-"""
+""".replace("__GLOBAL_REMOTE_ELIGIBILITY__", _GLOBAL_REMOTE_ELIGIBILITY)
 
 PART_TIME_SEARCH_QUERY_PROMPT = """You plan live job-board searches for part-time work.
 
@@ -532,8 +580,17 @@ def _input_context(
 
 
 def _plain_text(value: object, limit: int = 1_500) -> str:
-    """Strip provider HTML before it reaches the recommendation model."""
-    text = re.sub(r"<[^>]+>", " ", value if isinstance(value, str) else "")
+    """Decode and strip provider markup before it reaches the UI or model."""
+    text = value if isinstance(value, str) else ""
+    # Arbeitnow can HTML-escape its already-HTML description. Decode a small,
+    # bounded number of times so both forms become plain text, without treating
+    # user-facing content as markup after the sanitation boundary.
+    for _ in range(2):
+        decoded = unescape(text)
+        if decoded == text:
+            break
+        text = decoded
+    text = re.sub(r"<[^>]+>", " ", text)
     return " ".join(text.split())[:limit]
 
 

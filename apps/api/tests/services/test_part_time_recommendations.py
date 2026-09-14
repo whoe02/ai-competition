@@ -108,7 +108,8 @@ def test_part_time_prompt_explicitly_requests_json_for_dashscope_structured_outp
     assert "deterministic backend code" in PART_TIME_RECOMMENDER_PROMPT.casefold()
     assert "maximum, not a quota" in PART_TIME_RECOMMENDER_PROMPT.casefold()
     assert "return fewer jobs" in PART_TIME_RECOMMENDER_PROMPT.casefold()
-    assert "globally remote roles are eligible by default" in PART_TIME_RECOMMENDER_PROMPT.casefold()
+    remote_eligibility = "globally remote roles are eligible by default"
+    assert remote_eligibility in PART_TIME_RECOMMENDER_PROMPT.casefold()
     assert "malaysia-friendly" not in PART_TIME_RECOMMENDER_PROMPT.casefold()
 
 
@@ -340,6 +341,13 @@ def test_part_time_compacts_valid_but_overlong_provider_prose() -> None:
     assert result.overall_guidance.endswith("…")
 
 
+def test_plain_text_decodes_encoded_provider_markup_before_display() -> None:
+    assert part_time_service._plain_text(
+        "&lt;p&gt;&lt;strong&gt;Location&lt;/strong&gt;&lt;br&gt;"
+        "Data Engineer &amp; platform work.&lt;/p&gt;"
+    ) == "Location Data Engineer & platform work."
+
+
 def test_model_candidate_context_is_size_bounded_and_source_diverse(monkeypatch) -> None:
     settings = part_time_service.get_settings().model_copy(
         update={
@@ -406,7 +414,10 @@ async def test_arbeitnow_source_keeps_an_on_site_listing_and_provider_link(monke
                         "slug": "ai-engineer-kuala-lumpur",
                         "company_name": "Source Employer",
                         "title": "AI Engineer",
-                        "description": "Build and review production AI systems.",
+                        "description": (
+                            "&lt;p&gt;&lt;strong&gt;Location&lt;/strong&gt;&lt;br&gt;"
+                            "Build and review production AI systems.&lt;/p&gt;"
+                        ),
                         "remote": False,
                         "url": "https://www.arbeitnow.com/jobs/ai-engineer-kuala-lumpur",
                         "location": "Kuala Lumpur",
@@ -435,6 +446,7 @@ async def test_arbeitnow_source_keeps_an_on_site_listing_and_provider_link(monke
     assert candidates[0].source == "arbeitnow"
     assert candidates[0].location == "Kuala Lumpur"
     assert candidates[0].apply_url == "https://www.arbeitnow.com/jobs/ai-engineer-kuala-lumpur"
+    assert candidates[0].description == "Location Build and review production AI systems."
 
 
 class _JobModel:
@@ -577,7 +589,7 @@ async def test_part_time_preview_is_read_only_and_uses_user_income_estimate(sess
 
     assert recommendation["status"] == "available"
     assert recommendation["source"] == "job_board_ranked"
-    assert recommendation["recommendation_schema_version"] == 5
+    assert recommendation["recommendation_schema_version"] == 6
     assert len(recommendation["recommendations"]) == 3
     assert recommendation["preferences"] == {
         "available_hours_per_week": 8,
@@ -619,15 +631,22 @@ async def test_part_time_preview_is_read_only_and_uses_user_income_estimate(sess
             for item in recommendation["recommendations"]
         ],
     }
+    legacy["recommendations"][1]["typical_tasks"] = (
+        "&lt;p&gt;&lt;strong&gt;Location&lt;/strong&gt;&lt;br&gt;"
+        "Review developer documentation for accuracy and clarity.&lt;/p&gt;"
+    )
     record = await current_plan_record(session, user, goal.id)
     record.part_time_recommendation_data = legacy
     await session.commit()
 
     migrated = await get_stored_part_time_recommendation(session, user, goal.id)
     assert migrated is not None
-    assert migrated["recommendation_schema_version"] == 5
+    assert migrated["recommendation_schema_version"] == 6
     assert "safe_to_spend_changes" not in migrated
     assert all("safe_to_spend_today_change_sen" not in item for item in migrated["recommendations"])
+    assert migrated["recommendations"][1]["typical_tasks"] == (
+        "Location Review developer documentation for accuracy and clarity."
+    )
     persisted = await current_plan_record(session, user, goal.id)
     assert persisted.part_time_recommendation_data == migrated
 

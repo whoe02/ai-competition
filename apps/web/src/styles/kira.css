@@ -1342,6 +1342,7 @@ body { background: #E7EAE5; }
 .goal-recommendations-page .goal-part-time-option .goal-section-head>span:last-child{min-width:0;max-width:calc(100% - 45px);font-size:12px;text-align:right;overflow-wrap:anywhere;}
 .goal-recommendations-page .goal-part-time-option h3{font-size:21px;line-height:1.25;}
 .goal-recommendations-page .goal-part-time-source{font-size:12.5px!important;line-height:1.45!important;}
+.goal-recommendations-page .goal-part-time-option dd,.goal-recommendations-page .goal-part-time-option p,.goal-recommendations-page .goal-part-time-option small{overflow-wrap:anywhere;}
 .goal-recommendations-page .goal-part-time-apply{padding:11px 16px;border-color:transparent;
   background:linear-gradient(135deg,#347d67,#245f4f);color:#fff;
   box-shadow:0 10px 22px -14px rgba(22,82,65,.9);font-size:13px;font-weight:800;}
