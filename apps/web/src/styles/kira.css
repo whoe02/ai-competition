@@ -1328,18 +1328,18 @@ body { background: #E7EAE5; }
   box-shadow:0 10px 24px -14px rgba(0,0,0,.8);font-weight:800;}
 .goal-recommendations-refresh .btn:disabled{opacity:.72;color:#fff;}
 .goal-recommendations-refresh small{font-size:11.5px;line-height:1.45;color:rgba(241,244,240,.67);}
-.goal-recommendations-page .goal-content{gap:15px;}
+.goal-recommendations-page .goal-content{width:100%;min-width:0;gap:15px;}
 .goal-recommendations-page .goal-recommendations-hero{padding:22px;border-radius:24px;
   box-shadow:0 18px 38px -28px rgba(6,24,19,.9);}
 .goal-recommendations-page .goal-recommendations-hero h2{font-size:26px;}
 .goal-recommendations-page .goal-recommendations-hero .eyebrow{color:var(--accent-lit);}
 .goal-recommendations-page .goal-recommendations-hero>p:last-of-type{font-size:13.5px;}
-.goal-recommendations-page .goal-part-time-options{gap:15px;}
-.goal-recommendations-page .goal-part-time-option{gap:13px;padding:20px;border-radius:22px;
+.goal-recommendations-page .goal-part-time-options{display:grid;grid-template-columns:minmax(0,1fr);width:100%;min-width:0;gap:15px;}
+.goal-recommendations-page .goal-part-time-option{width:100%;min-width:0;max-width:100%;gap:13px;padding:20px;border-radius:22px;
   background:rgba(255,255,255,.82);border-color:rgba(25,62,51,.14);
   box-shadow:0 18px 38px -32px rgba(12,38,31,.7);}
 .goal-recommendations-page .goal-part-time-number{width:31px;height:31px;font-size:13px;}
-.goal-recommendations-page .goal-part-time-option .goal-section-head>span:last-child{font-size:12px;}
+.goal-recommendations-page .goal-part-time-option .goal-section-head>span:last-child{min-width:0;max-width:calc(100% - 45px);font-size:12px;text-align:right;overflow-wrap:anywhere;}
 .goal-recommendations-page .goal-part-time-option h3{font-size:21px;line-height:1.25;}
 .goal-recommendations-page .goal-part-time-source{font-size:12.5px!important;line-height:1.45!important;}
 .goal-recommendations-page .goal-part-time-apply{padding:11px 16px;border-color:transparent;
